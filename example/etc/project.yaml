@@ -1,0 +1,22 @@
+HTTP:
+  host: "172.24.27.3"
+  port: 8082
+
+Mysql:
+  host: "0.0.0.0"
+  port: 3306
+  user: "root"
+  password: ""
+  database: "ormar_test"
+
+Redis:
+  host: "0.0.0.0"
+  port: 6379
+
+Server:
+  tx_port: "8089"
+  rx_port: "8088"
+
+Kafka:
+  addrs: [ "10.64.5.70:30095", "10.64.5.70:30094", "10.64.5.70:30093" ]
+  topics: [ "NCC_FORWARD_BROADCAST", "NCC_FORWARD_UNICAST" ]
