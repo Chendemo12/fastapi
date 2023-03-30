@@ -25,22 +25,34 @@ func APIRouter(prefix string, tags []string) *Router {
 	return fgr
 }
 
+type Option struct {
+	Params       godantic.QueryParameter `json:"params" description:"查询参数,结构体"`
+	Description  string                  `json:"description" description:"路由描述"`
+	Summary      string                  `json:"summary" description:"摘要描述"`
+	Tags         []string                `json:"tags" description:"路由标签"`
+	Dependencies []fiber.Handler         `json:"-" description:"依赖"`
+	Handlers     []fiber.Handler         `json:"-" description:"处理函数"`
+	Deprecated   bool                    `json:"deprecated" description:"是否禁用"`
+}
+
 // Route 一个完整的路由对象，此对象会在程序启动时生成swagger文档
 // 其中相对路径Path不能重复，否则后者会覆盖前者
 type Route struct {
-	wsHandler     WSHandler          `description:"websocket处理器"`
-	ResponseModel *godantic.Metadata `description:"响应体元数据"`
-	RequestModel  *godantic.Metadata `description:"请求体元数据"`
-	RelativePath  string             `json:"relative_path" description:"相对路由"`
-	Method        string             `json:"method" description:"请求方法"`
-	Summary       string             `json:"summary" description:"摘要描述"`
-	Description   string             `json:"description" description:"详细描述"`
-	Tags          []string           `json:"tags" description:"路由标签"`
-	QueryFields   []*godantic.QModel `json:"-" description:"查询参数"`
-	Handlers      []fiber.Handler    `json:"-" description:"处理函数"`
-	Dependencies  []HandlerFunc      `json:"-" description:"依赖"`
-	PathFields    []*godantic.QModel `json:"-" description:"路径参数"`
-	deprecated    bool               `description:"是否禁用"`
+	wsHandler        WSHandler                     `description:"websocket处理器"`
+	ResponseModel    *godantic.Metadata            `description:"响应体元数据"`
+	RequestModel     *godantic.Metadata            `description:"请求体元数据"`
+	requestValidate  RouteModelValidateHandlerFunc `description:"请求体校验函数"`
+	responseValidate RouteModelValidateHandlerFunc `description:"返回值校验函数"`
+	Description      string                        `json:"description" description:"详细描述"`
+	Summary          string                        `json:"summary" description:"摘要描述"`
+	Method           string                        `json:"method" description:"请求方法"`
+	RelativePath     string                        `json:"relative_path" description:"相对路由"`
+	Tags             []string                      `json:"tags" description:"路由标签"`
+	QueryFields      []*godantic.QModel            `json:"-" description:"查询参数"`
+	Handlers         []fiber.Handler               `json:"-" description:"处理函数"`
+	Dependencies     []HandlerFunc                 `json:"-" description:"依赖"`
+	PathFields       []*godantic.QModel            `json:"-" description:"路径参数"`
+	deprecated       bool                          `description:"是否禁用"`
 }
 
 func (f *Route) LowerMethod() string { return strings.ToLower(f.Method) }
@@ -106,6 +118,9 @@ func (f *Route) SetRequestModel(m godantic.SchemaIface) *Route {
 	return f
 }
 
+// SetReq 设置请求体对象
+//
+//	@param	m	any	请求体对象
 func (f *Route) SetReq(m godantic.SchemaIface) *Route { return f.SetRequestModel(m) }
 
 // Path 合并路由
@@ -113,6 +128,7 @@ func (f *Route) SetReq(m godantic.SchemaIface) *Route { return f.SetRequestModel
 //	@param	prefix	string	路由组前缀
 func (f *Route) Path(prefix string) string { return CombinePath(prefix, f.RelativePath) }
 
+// NewRequestModel 创建一个新的请求体模型
 func (f *Route) NewRequestModel() any {
 	if f.ResponseModel == nil {
 		return nil
@@ -172,10 +188,14 @@ func (f *Router) IncludeRouter(router *Router) *Router {
 }
 
 func (f *Router) method(
-	method, relativePath, summary string,
-	queryModel godantic.QueryParameter, requestModel, responseModel godantic.SchemaIface,
-	handler HandlerFunc,
-	additions []any,
+	method string, // 路由方法
+	relativePath string, // 相对路由
+	summary string, // 路由摘要
+	queryModel godantic.QueryParameter, // 查询参数, POST/PATCH/PUT
+	requestModel godantic.SchemaIface, // 请求体, POST/PATCH/PUT
+	responseModel godantic.SchemaIface, // 响应体, All
+	handler HandlerFunc, // handler
+	opts ...*Option, // 附加参数
 ) *Route {
 	route := &Route{
 		Method:        method,
@@ -194,29 +214,52 @@ func (f *Router) method(
 
 	if requestModel != nil {
 		route.RequestModel = godantic.BaseModelToMetadata(requestModel)
+		// TODO: 请求体校验方法
+	} else {
+		// 缺省以屏蔽请求体校验
+		route.requestValidate = routeModelDoNothing
 	}
+
 	if responseModel != nil {
 		route.ResponseModel = godantic.BaseModelToMetadata(responseModel)
+
+		switch route.ResponseModel.SchemaType() {
+
+		case godantic.StringType:
+			route.responseValidate = stringResponseValidation
+		case godantic.BoolType:
+			route.responseValidate = boolResponseValidation
+		case godantic.NumberType:
+			route.responseValidate = numberResponseValidation
+		case godantic.IntegerType:
+			route.responseValidate = integerResponseValidation
+		case godantic.ArrayType:
+			route.responseValidate = arrayResponseValidation
+		case godantic.ObjectType:
+			route.responseValidate = structResponseValidation
+		}
+	} else {
+		// 对于返回值类型，允许缺省返回值以屏蔽返回值校验
+		route.responseValidate = routeModelDoNothing
 	}
+
 	// 路由处理函数，默认仅一个
 	handlers := []fiber.Handler{routeHandler(handler)}
 	deprecated := false // 是否禁用此路由
 	if f.deprecated {   // 若路由组被禁用，则此路由必禁用
 		deprecated = true
 	}
-
-	for _, adt := range additions {
-		rt := reflect.TypeOf(adt)
-		switch rt.Kind() {
-		case reflect.String:
-			if adt == "deprecated" {
-				deprecated = true
-			}
-		case reflect.Func:
-			// 发现fiber.handler
-			handlers = append(handlers, routeHandler(adt.(HandlerFunc)))
+	if len(opts) > 0 {
+		opt := opts[0]
+		deprecated = opt.Deprecated
+		if opt.Description != "" {
+			route.Description = opt.Description
+		}
+		for _, h := range opt.Handlers {
+			handlers = append(handlers, h)
 		}
 	}
+
 	route.deprecated = deprecated
 	route.Handlers = handlers
 
@@ -239,7 +282,7 @@ func (f *Router) method(
 			qm := &godantic.QModel{
 				Title:  name,
 				Name:   name,
-				Tag:    reflect.StructTag(`json:"` + name + `"`),
+				Tag:    reflect.StructTag(`json:"` + name + `,omitempty"`),
 				OType:  godantic.StringType,
 				InPath: true,
 			}
@@ -264,13 +307,22 @@ func (f *Router) method(
 //	@param	handler			[]HandlerFunc			路由处理方法
 //	@param	addition		any						附加参数，如："deprecated"用于禁用此路由
 func (f *Router) GET(
-	path string, responseModel godantic.SchemaIface, summary string, handler HandlerFunc, addition ...any,
+	path string,
+	responseModel godantic.SchemaIface,
+	summary string,
+	handler HandlerFunc,
+	opts ...*Option,
 ) *Route {
 	// 对于查询参数仅允许struct类型
 	return f.method(
-		http.MethodGet, path, summary,
-		nil, nil, responseModel,
-		handler, addition,
+		http.MethodGet,
+		path,
+		summary,
+		nil,
+		nil,
+		responseModel,
+		handler,
+		opts...,
 	)
 }
 
@@ -282,13 +334,18 @@ func (f *Router) GET(
 //	@param	handler			[]HandlerFunc			路由处理方法
 //	@param	addition		any						附加参数
 func (f *Router) DELETE(
-	path string, responseModel godantic.SchemaIface, summary string, handler HandlerFunc, addition ...any,
+	path string, responseModel godantic.SchemaIface, summary string, handler HandlerFunc, opts ...*Option,
 ) *Route {
 	// 对于查询参数仅允许struct类型
 	return f.method(
-		http.MethodDelete, path, summary,
-		nil, nil, responseModel,
-		handler, addition,
+		http.MethodDelete,
+		path,
+		summary,
+		nil,
+		nil,
+		responseModel,
+		handler,
+		opts...,
 	)
 }
 
@@ -305,12 +362,17 @@ func (f *Router) POST(
 	requestModel, responseModel godantic.SchemaIface,
 	summary string,
 	handler HandlerFunc,
-	addition ...any,
+	opts ...*Option,
 ) *Route {
 	return f.method(
-		http.MethodPost, path, summary,
-		nil, requestModel, responseModel,
-		handler, addition,
+		http.MethodPost,
+		path,
+		summary,
+		nil,
+		requestModel,
+		responseModel,
+		handler,
+		opts...,
 	)
 }
 
@@ -320,12 +382,17 @@ func (f *Router) PATCH(
 	requestModel, responseModel godantic.SchemaIface,
 	summary string,
 	handler HandlerFunc,
-	addition ...any,
+	opts ...*Option,
 ) *Route {
 	return f.method(
-		http.MethodPatch, path, summary,
-		nil, requestModel, responseModel,
-		handler, addition,
+		http.MethodPatch,
+		path,
+		summary,
+		nil,
+		requestModel,
+		responseModel,
+		handler,
+		opts...,
 	)
 }
 
@@ -335,12 +402,17 @@ func (f *Router) PUT(
 	requestModel, responseModel godantic.SchemaIface,
 	summary string,
 	handler HandlerFunc,
-	addition ...any,
+	opts ...*Option,
 ) *Route {
 	return f.method(
-		http.MethodPut, path, summary,
-		nil, requestModel, responseModel,
-		handler, addition,
+		http.MethodPut,
+		path,
+		summary,
+		nil,
+		requestModel,
+		responseModel,
+		handler,
+		opts...,
 	)
 }
 
@@ -369,4 +441,24 @@ func CombinePath(prefix, path string) string {
 		return prefix[:len(prefix)-1] + path
 	}
 	return prefix + path
+}
+
+// DoesPathParamsFound 是否查找到路径参数
+//
+//	@param	path	string	路由
+func DoesPathParamsFound(path string) (map[string]bool, bool) {
+	pathParameters := make(map[string]bool, 0)
+	// 查找路径中的参数
+	for _, p := range strings.Split(path, constant.PathSeparator) {
+		if strings.HasPrefix(p, constant.PathParamPrefix) {
+			// 识别到路径参数
+			if strings.HasSuffix(p, constant.OptionalPathParamSuffix) {
+				// 可选路径参数
+				pathParameters[p[1:len(p)-1]] = false
+			} else {
+				pathParameters[p[1:]] = true
+			}
+		}
+	}
+	return pathParameters, len(pathParameters) > 0
 }

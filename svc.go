@@ -129,6 +129,37 @@ func (s *Service) Done() <-chan struct{} { return s.ctx.Done() }
 // Scheduler 获取内部调度器
 func (s *Service) Scheduler() *Scheduler { return s.scheduler }
 
+// Validate 结构体验证
+//
+//	@param	stc	any	需要校验的结构体
+//	@param	ctx	any	当校验不通过时需要返回给客户端的附加信息，仅第一个有效
+//	@return
+func (s *Service) Validate(stc any, ctx ...map[string]any) *Response {
+	err := s.validate.StructCtx(s.ctx, stc)
+	if err != nil { // 模型验证错误
+		err, _ := err.(validator.ValidationErrors) // validator的校验错误信息
+
+		if nums := len(err); nums == 0 {
+			return validationErrorResponse()
+		} else {
+			ves := make([]*godantic.ValidationError, nums) // 自定义的错误信息
+			for i := 0; i < nums; i++ {
+				ves[i] = &godantic.ValidationError{
+					Loc:  []string{"body", err[i].Field()},
+					Msg:  err[i].Error(),
+					Type: err[i].Type().String(),
+				}
+				if len(ctx) > 0 {
+					ves[i].Ctx = ctx[0]
+				}
+			}
+			return validationErrorResponse(ves...)
+		}
+	}
+
+	return nil
+}
+
 // ------------------------------------------------------------------------------------
 
 // Context 路由上下文信息, 也是钩子函数的操作句柄
@@ -185,29 +216,7 @@ func (c *Context) Validator() *validator.Validate { return c.svc.validate }
 //	@param	ctx	any	当校验不通过时需要返回给客户端的附加信息，仅第一个有效
 //	@return
 func (c *Context) Validate(stc any, ctx ...map[string]any) *Response {
-	err := c.svc.validate.StructCtx(c.svc.ctx, stc)
-	if err != nil { // 模型验证错误
-		err, _ := err.(validator.ValidationErrors) // validator的校验错误信息
-
-		if nums := len(err); nums == 0 {
-			return validationErrorResponse()
-		} else {
-			ves := make([]*godantic.ValidationError, nums) // 自定义的错误信息
-			for i := 0; i < nums; i++ {
-				ves[i] = &godantic.ValidationError{
-					Loc:  []string{"body", err[i].Field()},
-					Msg:  err[i].Error(),
-					Type: err[i].Type().String(),
-				}
-				if len(ctx) > 0 {
-					ves[i].Ctx = ctx[0]
-				}
-			}
-			return validationErrorResponse(ves...)
-		}
-	}
-
-	return nil
+	return c.svc.Validate(stc, ctx...)
 }
 
 // BodyParser 序列化请求体

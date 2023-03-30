@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"github.com/Chendemo12/fastapi/godantic"
 	"github.com/Chendemo12/fastapi/internal/core"
+	"github.com/Chendemo12/fastapi/openapi"
 	"github.com/Chendemo12/fastapi/tool"
 	"github.com/gofiber/fiber/v2"
 	fiberu "github.com/gofiber/fiber/v2/utils"
@@ -21,6 +22,13 @@ type HandlerFunc = func(s *Context) *Response
 
 // StackTraceHandlerFunc 错误堆栈处理函数, 即 recover 方法
 type StackTraceHandlerFunc = func(c *fiber.Ctx, e any)
+
+// RouteModelValidateHandlerFunc 返回值校验方法
+//
+//	@param	resp	any					响应体
+//	@param	meta	*godantic.Metadata	模型元数据
+//	@return	*Response 响应体
+type RouteModelValidateHandlerFunc func(resp any, meta *godantic.Metadata) *Response
 
 // routeHandler 路由处理方法(装饰器实现)，用于请求体校验和返回体序列化，同时注入全局服务依赖,
 // 此方法接收一个业务层面的路由钩子方法 HandlerFunc，
@@ -193,6 +201,7 @@ func (c *Context) workflow() {
 //
 //	@return	*Response 校验结果, 若校验不通过则修改 Response.StatusCode 和 Response.Content
 func (c *Context) responseBodyValidate() {
+
 	// 对于返回值类型，允许缺省返回值以屏蔽返回值校验
 	if c.route.ResponseModel == nil || core.ResponseValidateDisabled {
 		return
@@ -203,77 +212,14 @@ func (c *Context) responseBodyValidate() {
 		return
 	}
 
-	switch c.route.ResponseModel.SchemaType() {
+	// 返回值校验，若响应体为nil或关闭了参数校验，则返回原内容
+	resp := c.route.responseValidate(c.response.Content, c.route.ResponseModel)
 
-	case godantic.StringType:
-		c.stringResponseValidation()
-	case godantic.NumberType:
-		c.numberResponseValidation()
-	case godantic.IntegerType:
-		c.integerResponseValidation()
-	case godantic.ArrayType:
-		c.arrayResponseValidation()
-	case godantic.ObjectType:
-		c.structResponseValidation()
-
-	case godantic.BoolType:
-		rt := godantic.ReflectObjectType(c.response.Content)
-		if rt.Kind() != reflect.Bool {
-			//校验不通过, 修改 Response.StatusCode 和 Response.Content
-			c.response.StatusCode = http.StatusUnprocessableEntity
-			c.response.Content = modelCannotBeBoolResponse(c.route.ResponseModel.Name()).Content
-		}
-	}
-}
-
-func (c *Context) stringResponseValidation() {
-	if c.route.ResponseModel.SchemaType() != godantic.StringType {
-		c.response.StatusCode = http.StatusUnprocessableEntity
-		c.response.Content = modelCannotBeStringResponse(c.route.ResponseModel.Name()).Content
-	}
-}
-
-func (c *Context) integerResponseValidation() {
-	rt := godantic.ReflectObjectType(c.response.Content)
-	if godantic.ReflectKindToOType(rt.Kind()) != godantic.IntegerType {
-		c.response.StatusCode = http.StatusUnprocessableEntity
-		c.response.Content = modelCannotBeIntegerResponse(c.route.ResponseModel.Name()).Content
-	}
-}
-
-func (c *Context) numberResponseValidation() {
-	rt := godantic.ReflectObjectType(c.response.Content)
-	if godantic.ReflectKindToOType(rt.Kind()) != godantic.NumberType {
-		c.response.StatusCode = http.StatusUnprocessableEntity
-		c.response.Content = modelCannotBeNumberResponse(c.route.ResponseModel.Name()).Content
-	}
-}
-
-func (c *Context) arrayResponseValidation() {
-	rt := godantic.ReflectObjectType(c.response.Content)
-	if godantic.ReflectKindToOType(rt.Kind()) != godantic.ArrayType {
-		// TODO: notImplemented 暂不校验子元素
-		c.response.StatusCode = http.StatusUnprocessableEntity
-		c.response.Content = modelCannotBeArrayResponse("Array").Content
-	} else {
-		if rt.Elem().Kind() == reflect.Uint8 { // 对于字节流对象, 覆盖以响应正确的数值
-			c.response = c.StreamResponse(bytes.NewReader(c.response.Content.([]byte)))
-		}
-	}
-}
-
-func (c *Context) structResponseValidation() {
-	rt := godantic.ReflectObjectType(c.response.Content)
-	// 类型校验
-	if rt.Kind() != reflect.Struct || c.route.ResponseModel != nil && c.route.ResponseModel.String() != rt.String() {
-		c.response.StatusCode = http.StatusUnprocessableEntity
-		c.response.Content = objectModelNotMatchResponse(c.route.ResponseModel.String(), rt.String()).Content
-		c.Logger().Error(c.response.Content)
-	}
-	// 字段类型校验, 字段的值需符合tag要求
-	if resp := c.Validate(c.response.Content, whereServerError); resp != nil {
-		c.Logger().Error(resp.Content)
-		c.response = resp
+	// 校验不通过, 修改 Response.StatusCode 和 Response.Content
+	if resp != nil {
+		c.response.StatusCode = resp.StatusCode
+		c.response.Content = resp.Content
+		c.Logger().Warn(c.response.Content)
 	}
 }
 
@@ -341,4 +287,80 @@ func (c *Context) write() error {
 	default:
 		return c.ec.JSON(c.response.Content)
 	}
+}
+
+// 未定义返回值或关闭了返回值校验
+func routeModelDoNothing(content any, meta *godantic.Metadata) *Response {
+	return nil
+}
+
+func boolResponseValidation(content any, meta *godantic.Metadata) *Response {
+	rt := godantic.ReflectObjectType(content)
+	if rt.Kind() != reflect.Bool {
+		// 校验不通过, 修改 Response.StatusCode 和 Response.Content
+		return modelCannotBeBoolResponse(meta.Name())
+	}
+
+	return nil
+}
+
+func stringResponseValidation(content any, meta *godantic.Metadata) *Response {
+	// TODO: 对于字符串类型，减少内存复制
+	if meta.SchemaType() != godantic.StringType {
+		return modelCannotBeStringResponse(meta.Name())
+	}
+
+	return nil
+}
+
+func integerResponseValidation(content any, meta *godantic.Metadata) *Response {
+	rt := godantic.ReflectObjectType(content)
+	if godantic.ReflectKindToOType(rt.Kind()) != godantic.IntegerType {
+		return modelCannotBeIntegerResponse(meta.Name())
+	}
+
+	return nil
+}
+
+func numberResponseValidation(content any, meta *godantic.Metadata) *Response {
+	rt := godantic.ReflectObjectType(content)
+	if godantic.ReflectKindToOType(rt.Kind()) != godantic.NumberType {
+		return modelCannotBeNumberResponse(meta.Name())
+	}
+
+	return nil
+}
+
+func arrayResponseValidation(content any, meta *godantic.Metadata) *Response {
+	rt := godantic.ReflectObjectType(content)
+	if godantic.ReflectKindToOType(rt.Kind()) != godantic.ArrayType {
+		// TODO: notImplemented 暂不校验子元素
+		return modelCannotBeArrayResponse("Array")
+	} else {
+		if rt.Elem().Kind() == reflect.Uint8 { // 对于字节流对象, 覆盖以响应正确的数值
+			return &Response{
+				StatusCode:  http.StatusOK,
+				Content:     bytes.NewReader(content.([]byte)),
+				Type:        StreamResponseType,
+				ContentType: openapi.MIMETextPlain,
+			}
+		}
+	}
+
+	return nil
+}
+
+func structResponseValidation(content any, meta *godantic.Metadata) *Response {
+	rt := godantic.ReflectObjectType(content)
+	// 类型校验
+	if rt.Kind() != reflect.Struct && meta.String() != rt.String() {
+		return objectModelNotMatchResponse(meta.String(), rt.String())
+	}
+	// 字段类型校验, 字段的值需符合tag要求
+	resp := appEngine.service.Validate(content, whereServerError)
+	if resp != nil {
+		return resp
+	}
+
+	return nil
 }

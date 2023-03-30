@@ -17,9 +17,9 @@ func JoinMessages(c *Conn, term string) io.Reader {
 }
 
 type joinReader struct {
+	r    io.Reader
 	c    *Conn
 	term string
-	r    io.Reader
 }
 
 func (r *joinReader) Read(p []byte) (int, error) {

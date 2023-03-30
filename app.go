@@ -107,6 +107,15 @@ func (f *FastApi) mountUserRoutes() {
 	for _, router := range f.routers {
 		rtr := f.engine.Group(router.Prefix)
 		for _, route := range router.Routes() {
+			// 全局禁用返回值校验
+			if core.ResponseValidateDisabled {
+				route.responseValidate = routeModelDoNothing
+			}
+			// 全局禁用请求体校验
+			if core.RequestValidateDisabled {
+				route.requestValidate = routeModelDoNothing
+			}
+
 			meta := f.service.queryRouteMeta(CombinePath(router.Prefix, route.RelativePath))
 
 			switch route.Method {
@@ -139,7 +148,7 @@ func (f *FastApi) mountUserRoutes() {
 	}
 }
 
-// initialize 初始化FastApi,并完成服务依赖的建立
+// 初始化FastApi,并完成服务依赖的建立
 // FastApi启动前，必须显式的初始化FastApi的基本配置，若初始化中发生异常则panic
 //  1. 记录工作地址： host:Port
 //  2. 创建fiber.App createFiberApp
@@ -165,27 +174,6 @@ func (f *FastApi) initialize() *FastApi {
 	f.mountUserRoutes()
 	// 创建 OpenApi Swagger 文档, 必须等上层注册完路由之后才能调用
 	f.createOpenApiDoc()
-
-	return f
-}
-
-// serve 初始化服务
-func (f *FastApi) serve() *FastApi {
-	f.isFieldsOk().initialize().ActivateHotSwitch()
-
-	// 执行启动前事件
-	for _, event := range f.events {
-		if event.Type == startupEvent {
-			event.Fc()
-		}
-	}
-
-	f.isStarted <- struct{}{} // 解除阻塞上层的任务
-	f.service.Logger().Debug("HTTP server listening on: " + f.service.Addr())
-
-	// 在各种初始化及启动事件执行完成之后触发
-	f.service.scheduler.Run()
-	defer close(f.isStarted)
 
 	return f
 }
@@ -500,7 +488,21 @@ func (f *FastApi) Run(host, port string) {
 	if !fiber.IsChild() {
 		f.host = host
 		f.port = port
-		f.serve()
+		f.isFieldsOk().initialize().ActivateHotSwitch()
+
+		// 执行启动前事件
+		for _, event := range f.events {
+			if event.Type == startupEvent {
+				event.Fc()
+			}
+		}
+
+		f.isStarted <- struct{}{} // 解除阻塞上层的任务
+		f.service.Logger().Debug("HTTP server listening on: " + f.service.Addr())
+
+		// 在各种初始化及启动事件执行完成之后触发
+		f.service.scheduler.Run()
+		close(f.isStarted)
 	}
 
 	go func() {
@@ -547,4 +549,11 @@ func New(title, version string, debug bool, svc UserService) *FastApi {
 	})
 
 	return appEngine
+}
+
+// resetRunMode 重设运行时环境
+//
+//	@param	md	string	开发环境
+func resetRunMode(md bool) {
+	core.SetMode(md)
 }

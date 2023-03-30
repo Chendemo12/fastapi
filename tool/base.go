@@ -3,7 +3,9 @@ package tool
 import (
 	"encoding/base64"
 	jsoniter "github.com/json-iterator/go"
+	"reflect"
 	"strings"
+	"unsafe"
 )
 
 const hexTable = "0123456789abcdef"
@@ -121,10 +123,10 @@ func Has[T comparable](s []T, x T) bool {
 	return false
 }
 
-// Reverse 数组倒序, 就地修改
+// Reversed 数组倒序, 就地修改
 //
 //	@param	s	*[]T	需要倒序的序列
-func Reverse[T any](s *[]T) {
+func Reversed[T any](s *[]T) {
 	length := len(*s)
 	var temp T
 	for i := 0; i < length/2; i++ {
@@ -147,4 +149,20 @@ func IsEqual[T comparable](a, b []T) bool {
 		}
 	}
 	return true
+}
+
+// B2S 将[]byte转换为字符串,(就地修改)零内存分配
+func B2S(b []byte) string {
+	return *(*string)(unsafe.Pointer(&b))
+}
+
+// S2B 将字符串转换为[]byte,(就地修改)零内存分配
+func S2B(s string) (b []byte) {
+	bh := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+	sh := (*reflect.StringHeader)(unsafe.Pointer(&s))
+	bh.Data = sh.Data
+	bh.Cap = sh.Len
+	bh.Len = sh.Len
+
+	return b
 }

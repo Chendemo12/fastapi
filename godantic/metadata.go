@@ -87,12 +87,12 @@ func (m *MetaField) InnerModel() *Metadata {
 // Metadata 数据模型 BaseModel 的元信息
 type Metadata struct {
 	model       SchemaIface     `description:"数据模型,对于预定义类型,此字段无意义"`
+	rType       reflect.Type    `description:"结构体元数据"`
 	description string          `description:"模型描述"`
 	oType       OpenApiDataType `description:"OpenApi 数据类型"`
 	names       []string        `description:"结构体名称,包名.结构体名称"`
 	fields      []*MetaField    `description:"结构体字段"`
 	innerFields []*MetaField    `description:"内部字段"`
-	rType       reflect.Type    `description:"结构体元数据"`
 }
 
 func (m *Metadata) ReflectType() reflect.Type { return m.rType }

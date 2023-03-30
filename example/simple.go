@@ -118,13 +118,13 @@ type ForwardLinkInfo struct {
 	ModType     string      `json:"mod_type"`
 	FecRate     string      `json:"fec_rate"`
 	FecType     string      `json:"fec_type"`
-	TunnelNo    int         `json:"tunnel_no" validate:"required, oneof=1 0"`
+	PositionRcu PositionGeo `json:"position_rcu"`
+	PositionCu  PositionGeo `json:"position_cu"`
+	PositionSat PositionGeo `json:"position_sat"`
 	IfFrequency int         `json:"if_frequency" description:"中频频点"`
 	SymbolRate  int         `json:"symbol_rate" description:"符号速率"`
 	FreqOffset  int         `json:"freq_offset"`
-	PositionCu  PositionGeo `json:"position_cu"`
-	PositionRcu PositionGeo `json:"position_rcu"`
-	PositionSat PositionGeo `json:"position_sat"`
+	TunnelNo    int         `json:"tunnel_no" validate:"required, oneof=1 0"`
 	Power       float32     `json:"power" validate:"required, gte=-100, lte=70"`
 	Reset       bool        `json:"reset"`
 }

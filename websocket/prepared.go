@@ -32,8 +32,8 @@ type prepareKey struct {
 
 // preparedFrame contains data in wire representation.
 type preparedFrame struct {
-	once sync.Once
 	data []byte
+	once sync.Once
 }
 
 // NewPreparedMessage returns an initialized PreparedMessage. You can then send
@@ -94,8 +94,8 @@ func (pm *PreparedMessage) frame(key prepareKey) (int, []byte, error) {
 }
 
 type prepareConn struct {
-	buf bytes.Buffer
 	net.Conn
+	buf bytes.Buffer
 }
 
 func (pc *prepareConn) Write(p []byte) (int, error)        { return pc.buf.Write(p) }
