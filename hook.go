@@ -186,7 +186,7 @@ func (c *Context) workflow() {
 	for _, link := range links {
 		link()
 		if c.response != nil {
-			break // 当任意环节校验失败时,即终止下文环节
+			return // 当任意环节校验失败时,即终止下文环节
 		}
 	}
 
