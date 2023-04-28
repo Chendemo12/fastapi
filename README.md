@@ -1,4 +1,4 @@
-# FastApi
+# FastApi-Golang
 
 - `FastApi`的`Golang`实现;
 - 基于`Fiber`;
@@ -6,7 +6,7 @@
 ## Usage:
 
 ```bash
-go get https://github.com/Chendemo12/fastapi
+go get https://github.com/Chendemo12/fastapi-go
 ```
 
 ### 查看在线文档
@@ -18,9 +18,9 @@ godoc -http=:6060
 
 # 或：pkgsite 推荐
 go install golang.org/x/pkgsite/cmd/pkgsite@latest
-cd fastapi/
+cd fastapi-go/
 pkgsite -http=:6060 -list=false
-# 浏览器打开：http://127.0.0.1:6060/github.com/Chendemo12/fastapi
+# 浏览器打开：http://127.0.0.1:6060/github.com/Chendemo12/fastapi-go
 ```
 
 ### `struct`内存对齐
