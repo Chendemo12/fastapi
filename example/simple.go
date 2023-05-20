@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/Chendemo12/fastapi"
@@ -46,7 +47,7 @@ func serverValidateErrorExample(c *fastapi.Context) *fastapi.Response {
 
 type ComplexModel struct {
 	fastapi.BaseModel
-	Name    string    `json:"name" validate:"required, isdefault=12, oneof=lee wang fan"`
+	Name    string    `json:"name" validate:"required,oneof=lee wang fan"`
 	Steps   []Step    `json:"steps"`
 	Actions []*Action `json:"actions"`
 }
@@ -65,7 +66,7 @@ type Action struct {
 
 func getComplexModelExample(s *fastapi.Context) *fastapi.Response {
 	return s.OKResponse(&ComplexModel{
-		Name:    "name",
+		Name:    "lee",
 		Steps:   nil,
 		Actions: nil,
 	})
@@ -74,7 +75,7 @@ func getComplexModelExample(s *fastapi.Context) *fastapi.Response {
 type LogonForm struct {
 	fastapi.BaseModel
 	Name   string `json:"name" description:"姓名" validate:"required"`
-	Age    string `json:"age" description:"年龄" validate:"required, isdefault=23, gte=50"`
+	Age    string `json:"age" description:"年龄" validate:"required,gte=50"`
 	Father string `json:"father"`
 	Family string `json:"family"`
 }
@@ -173,7 +174,7 @@ func getTunnels(c *fastapi.Context) *fastapi.Response {
 
 func intToInts(s *fastapi.Context) *fastapi.Response {
 	i := 0
-	err := s.ShouldBindJSON(&i)
+	err := s.BodyParser(&i)
 	if err != nil {
 		return err
 	}
@@ -214,13 +215,17 @@ func makeRouter() *fastapi.Router {
 			"/tunnel/work", &ReturnLinkInfo{}, &ForwardLinkInfo{}, "带请求体和响应体验证的POST请求", setReturnLinks,
 		)
 
-		exampleRouter.DELETE("/tunnel/work", nil, "缺省返回值示例", func(s *fastapi.Context) *fastapi.Response {
-			return s.OKResponse("anything is allowed")
-		})
+		exampleRouter.DELETE(
+			"/tunnel/work", nil, "缺省返回值示例",
+			func(s *fastapi.Context) *fastapi.Response {
+				return s.OKResponse("anything is allowed")
+			})
 
-		exampleRouter.POST("/base-model", fastapi.Int, fastapi.Bytes, "基本数据类型的示例", func(s *fastapi.Context) *fastapi.Response {
-			return s.OKResponse([]byte("123456"))
-		})
+		exampleRouter.POST(
+			"/base-model", fastapi.Int, fastapi.Bytes, "基本数据类型的示例",
+			func(s *fastapi.Context) *fastapi.Response {
+				return s.StreamResponse(bytes.NewReader([]byte("hello world")))
+			})
 
 		exampleRouter.Websocket("/ws", nil)
 	}
@@ -244,7 +249,7 @@ func makeRouter() *fastapi.Router {
 
 	arrayRouter := fastapi.APIRouter("/example", []string{"Array"})
 	{
-		arrayRouter.PATCH("/base/int", fastapi.Uint8, fastapi.Ints, "将提交的数字转换成数组并返回示例", intToInts)
+		arrayRouter.POST("/base/int", fastapi.Uint8, fastapi.Ints, "将提交的数字转换成数组并返回示例", intToInts)
 		arrayRouter.POST("/tunnels", fastapi.Ints, fastapi.List(&Tunnel{}), "返回值是数组类型的示例", getTunnels)
 	}
 
