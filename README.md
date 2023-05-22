@@ -6,7 +6,7 @@
 ## Usage:
 
 ```bash
-go get https://github.com/Chendemo12/fastapi-go
+go get https://github.com/Chendemo12/fastapi
 ```
 
 ### 查看在线文档
@@ -20,7 +20,7 @@ godoc -http=:6060
 go install golang.org/x/pkgsite/cmd/pkgsite@latest
 cd fastapi-go/
 pkgsite -http=:6060 -list=false
-# 浏览器打开：http://127.0.0.1:6060/github.com/Chendemo12/fastapi-go
+# 浏览器打开：http://127.0.0.1:6060/github.com/Chendemo12/fastapi
 ```
 
 ### `struct`内存对齐
