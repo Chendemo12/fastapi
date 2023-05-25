@@ -37,7 +37,11 @@ var (
 
 // HexBeautify 格式化显示十六进制
 func HexBeautify(src []byte) string {
-	length := len(src)*3 + 1
+	if len(src) == 0 {
+		return ""
+	}
+
+	length := len(src) * 3 // 一个byte用2个字符+1个空格表示
 	dst := make([]byte, length)
 
 	j := 0
@@ -48,11 +52,7 @@ func HexBeautify(src []byte) string {
 		j += 3
 	}
 	// 去除末尾的空格
-	if length >= 2 {
-		return string(dst[:length-2])
-	} else {
-		return string(dst[:length-1])
-	}
+	return B2S(dst)[:length-1]
 }
 
 // CombineStrings 合并字符串, 实现等同于strings.Join()，只是少了判断分隔符
