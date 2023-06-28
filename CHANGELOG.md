@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 0.1.2 - (2023-06-28)
+
+### Refactor
+
+- 移除并引入`fastapi-tool`;
+
 ## 0.1.1 - (2023-03-30)
 
 ### Refactor

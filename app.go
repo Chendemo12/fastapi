@@ -4,12 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/Chendemo12/fastapi/godantic"
-	"github.com/Chendemo12/fastapi/internal/core"
-	"github.com/Chendemo12/fastapi/logger"
-	tool "github.com/Chendemo12/fastapi/tool"
-	"github.com/go-playground/validator/v10"
-	"github.com/gofiber/fiber/v2"
+	"github.com/Chendemo12/fastapi-tool/helper"
+	jsoniter "github.com/json-iterator/go"
 	"log"
 	"net"
 	"net/http"
@@ -20,6 +16,13 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/Chendemo12/fastapi-tool/cronjob"
+	"github.com/Chendemo12/fastapi-tool/logger"
+	"github.com/Chendemo12/fastapi/godantic"
+	"github.com/Chendemo12/fastapi/internal/core"
+	"github.com/go-playground/validator/v10"
+	"github.com/gofiber/fiber/v2"
 )
 
 const (
@@ -167,7 +170,7 @@ func (f *FastApi) initialize() *FastApi {
 	}
 
 	// 挂载基础路由
-	if tool.Any(core.IsDebug(), !core.BaseRoutesDisabled) {
+	if core.IsDebug() || !core.BaseRoutesDisabled {
 		f.mountBaseRoutes()
 	}
 	// 挂载自定义路由
@@ -287,7 +290,7 @@ func (f *FastApi) Use(middleware ...any) *FastApi {
 
 // AddCronjob 添加定时任务(循环调度任务)
 // 此任务会在各种初始化及启动事件全部执行完成之后触发
-func (f *FastApi) AddCronjob(jobs ...CronJob) *FastApi {
+func (f *FastApi) AddCronjob(jobs ...cronjob.CronJob) *FastApi {
 	f.service.scheduler.Add(jobs...)
 	return f
 }
@@ -485,6 +488,7 @@ func (f *FastApi) Shutdown() {
 // 当 Interrupt 信号被触发时，首先会关闭 根Context，然后逐步执行“关机事件”，最后调用平滑关闭方法，关闭服务
 // 启动前通过 SetShutdownTimeout 设置"平滑关闭异常时"的最大超时时间
 func (f *FastApi) Run(host, port string) {
+	helper.SetJsonEngine(jsoniter.ConfigCompatibleWithStandardLibrary)
 	if !fiber.IsChild() {
 		f.host = host
 		f.port = port
@@ -534,7 +538,7 @@ func New(title, version string, debug bool, svc UserService) *FastApi {
 	once.Do(func() {
 		sc := &Service{userSVC: svc, validate: validator.New()}
 		sc.ctx, sc.cancel = context.WithCancel(context.Background())
-		sc.scheduler = NewScheduler(sc.ctx, nil)
+		sc.scheduler = cronjob.NewScheduler(sc.ctx, nil)
 
 		appEngine = &FastApi{
 			title:       title,

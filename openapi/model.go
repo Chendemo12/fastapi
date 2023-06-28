@@ -1,8 +1,8 @@
 package openapi
 
 import (
+	"github.com/Chendemo12/fastapi-tool/helper"
 	"github.com/Chendemo12/fastapi/godantic"
-	"github.com/Chendemo12/fastapi/tool"
 )
 
 // Contact 联系方式, 显示在 info 字段内部
@@ -41,7 +41,7 @@ func (r *Reference) MarshalJSON() ([]byte, error) {
 	m := make(map[string]any)
 	m[godantic.RefName] = godantic.RefPrefix + r.Name
 
-	return tool.Marshal(m)
+	return helper.JsonMarshal(m)
 }
 
 // ComponentScheme openapi 的模型文档部分
@@ -74,7 +74,7 @@ func (c *Components) MarshalJSON() ([]byte, error) {
 	m[validationErrorDefinition.SchemaName()] = validationErrorDefinition.Schema()
 	m[validationErrorResponseDefinition.SchemaName()] = validationErrorResponseDefinition.Schema()
 
-	return tool.Marshal(map[string]any{"schemas": m})
+	return helper.JsonMarshal(map[string]any{"schemas": m})
 }
 
 // AddModel 添加一个模型文档
@@ -147,7 +147,7 @@ func (p *PathModelContent) MarshalJSON() ([]byte, error) {
 		m[p.MIMEType] = map[string]any{"schema": p.Schema.Schema()}
 	}
 
-	return tool.Marshal(m)
+	return helper.JsonMarshal(m)
 }
 
 // Response 路由返回体，包含了返回状态码，状态码说明和返回值模型
@@ -193,7 +193,7 @@ func (o *Operation) MarshalJSON() ([]byte, error) {
 		orm.Responses[r.StatusCode] = r
 	}
 
-	return tool.Marshal(orm)
+	return helper.JsonMarshal(orm)
 }
 
 // PathItem 路由选项，由于同一个路由可以存在不同的操作方法，因此此选项可以存在多个 Operation
@@ -225,7 +225,7 @@ func (p *Paths) MarshalJSON() ([]byte, error) {
 		m[v.Path] = v
 	}
 
-	return tool.Marshal(m)
+	return helper.JsonMarshal(m)
 }
 
 // OpenApi 模型类, 移除 FastApi 中不常用的属性
@@ -269,7 +269,7 @@ func (o *OpenApi) QueryPathItem(path string) *PathItem {
 
 // RecreateDocs 重建Swagger 文档
 func (o *OpenApi) RecreateDocs() *OpenApi {
-	bs, err := tool.Marshal(o)
+	bs, err := helper.JsonMarshal(o)
 	if err == nil {
 		o.cache = bs
 	}

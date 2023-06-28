@@ -1,3 +1,5 @@
+github.com/Chendemo12/fastapi-tool v0.1.0 h1:p8GXH55aN/CjTthlhimDrA/hCQtKCKYPDlQN1I5z440=
+github.com/Chendemo12/fastapi-tool v0.1.0/go.mod h1:kSdfAFgGdinzN/9/DQzwN4FvAr3VZRrRZPX5W3EulSo=
 github.com/andybalholm/brotli v1.0.4 h1:V7DdXeJtZscaqfNuAdSRuRFzuiKlHSC/Zh3zl9qY3JY=
 github.com/andybalholm/brotli v1.0.4/go.mod h1:fO7iG3H7G2nSZ7m0zPUDn85XEX2GTukHGRSepvi9Eig=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

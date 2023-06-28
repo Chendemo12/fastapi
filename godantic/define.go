@@ -1,8 +1,9 @@
 package godantic
 
 import (
-	"github.com/Chendemo12/fastapi/tool"
 	"reflect"
+
+	"github.com/Chendemo12/fastapi-tool/helper"
 )
 
 // ValidationError 参数校验错误
@@ -44,7 +45,7 @@ func (v *ValidationError) SchemaName(exclude ...bool) string {
 }
 
 func (v *ValidationError) Error() string {
-	bytes, err := tool.Marshal(v)
+	bytes, err := helper.JsonMarshal(v)
 	if err != nil {
 		return v.SchemaDesc()
 	}

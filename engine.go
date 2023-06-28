@@ -2,12 +2,13 @@ package fastapi
 
 import (
 	"fmt"
+	"runtime"
+
+	"github.com/Chendemo12/fastapi-tool/helper"
 	"github.com/Chendemo12/fastapi/internal/core"
-	"github.com/Chendemo12/fastapi/tool"
 	"github.com/gofiber/fiber/v2"
 	echo "github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
-	"runtime"
 )
 
 // createFiberApp 创建 fiber.App 已做了基本的中间件配置
@@ -28,8 +29,8 @@ func createFiberApp(title, version string) *fiber.App {
 		ServerHeader:  title,                         // 服务器头
 		AppName:       title + " v" + version,        // 设置为 Response.Header.Server 属性
 		ColorScheme:   fiber.DefaultColors,           // 彩色输出
-		JSONEncoder:   tool.Marshal,                  // json序列化器
-		JSONDecoder:   tool.Unmarshal,                // json解码器
+		JSONEncoder:   helper.JsonMarshal,            // json序列化器
+		JSONDecoder:   helper.JsonUnmarshal,          // json解码器
 		ErrorHandler:  fiberErrorHandler,             // 设置自定义错误处理
 	})
 
@@ -65,7 +66,7 @@ func createFiberApp(title, version string) *fiber.App {
 func customRecoverHandler(c *fiber.Ctx, e any) {
 	buf := make([]byte, 1024)
 	buf = buf[:runtime.Stack(buf, true)]
-	msg := tool.CombineStrings(
+	msg := helper.CombineStrings(
 		"Request RelativePath: ", c.Path(), fmt.Sprintf(", Error: %v, \n", e), string(buf),
 	)
 	appEngine.Service().Logger().Error(msg)
@@ -73,7 +74,7 @@ func customRecoverHandler(c *fiber.Ctx, e any) {
 
 // customFiberErrorHandler 自定义fiber接口错误处理函数
 func customFiberErrorHandler(c *fiber.Ctx, e error) error {
-	//appEngine.logger.Warn(tool.CombineStrings(
+	//appEngine.logger.Warn(helper.CombineStrings(
 	//	"error happened during: '",
 	//	c.Method(), ": ", c.RelativePath(),
 	//	"', Msg: ", e.Error(),

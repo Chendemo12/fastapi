@@ -2,14 +2,16 @@ package fastapi
 
 import (
 	"context"
-	"github.com/Chendemo12/fastapi/godantic"
-	"github.com/Chendemo12/fastapi/logger"
-	"github.com/Chendemo12/fastapi/openapi"
-	"github.com/Chendemo12/fastapi/tool"
-	"github.com/go-playground/validator/v10"
-	"github.com/gofiber/fiber/v2"
 	"io"
 	"net/http"
+
+	"github.com/Chendemo12/fastapi-tool/cronjob"
+	"github.com/Chendemo12/fastapi-tool/helper"
+	"github.com/Chendemo12/fastapi-tool/logger"
+	"github.com/Chendemo12/fastapi/godantic"
+	"github.com/Chendemo12/fastapi/openapi"
+	"github.com/go-playground/validator/v10"
+	"github.com/gofiber/fiber/v2"
 )
 
 const ( // json序列化错误, 关键信息的序号
@@ -47,7 +49,7 @@ type Service struct {
 	validate  *validator.Validate `description:"请求体验证包"`
 	openApi   *openapi.OpenApi    `description:"模型文档"`
 	cancel    context.CancelFunc  `description:"取消函数"`
-	scheduler *Scheduler          `description:"定时任务"`
+	scheduler *cronjob.Scheduler  `description:"定时任务"`
 	addr      string              `description:"绑定地址"`
 	cache     []*RouteMeta        `description:"用于数据校验的路由信息"`
 }
@@ -127,7 +129,7 @@ func (s *Service) Logger() logger.Iface { return s.logger }
 func (s *Service) Done() <-chan struct{} { return s.ctx.Done() }
 
 // Scheduler 获取内部调度器
-func (s *Service) Scheduler() *Scheduler { return s.scheduler }
+func (s *Service) Scheduler() *cronjob.Scheduler { return s.scheduler }
 
 // Validate 结构体验证
 //
@@ -366,8 +368,8 @@ func (c *Context) AnyResponse(statusCode int, content any, contentType string) *
 // ================================ SHORTCUTS ================================
 
 // F 合并字符串
-func (c *Context) F(s ...string) string            { return tool.CombineStrings(s...) }
-func (c *Context) Marshal(obj any) ([]byte, error) { return tool.Marshal(obj) }
+func (c *Context) F(s ...string) string            { return helper.CombineStrings(s...) }
+func (c *Context) Marshal(obj any) ([]byte, error) { return helper.JsonMarshal(obj) }
 func (c *Context) Unmarshal(data []byte, v interface{}) error {
-	return tool.Unmarshal(data, v)
+	return helper.JsonUnmarshal(data, v)
 }

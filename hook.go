@@ -2,16 +2,17 @@ package fastapi
 
 import (
 	"bytes"
-	"github.com/Chendemo12/fastapi/godantic"
-	"github.com/Chendemo12/fastapi/internal/core"
-	"github.com/Chendemo12/fastapi/openapi"
-	"github.com/Chendemo12/fastapi/tool"
-	"github.com/gofiber/fiber/v2"
-	fiberu "github.com/gofiber/fiber/v2/utils"
 	"io"
 	"net/http"
 	"reflect"
 	"strings"
+
+	"github.com/Chendemo12/fastapi-tool/helper"
+	"github.com/Chendemo12/fastapi/godantic"
+	"github.com/Chendemo12/fastapi/internal/core"
+	"github.com/Chendemo12/fastapi/openapi"
+	"github.com/gofiber/fiber/v2"
+	fiberu "github.com/gofiber/fiber/v2/utils"
 )
 
 var recoverHandler StackTraceHandlerFunc = nil
@@ -90,7 +91,7 @@ func jsoniterUnmarshalErrorToValidationError(err error) *godantic.ValidationErro
 		}
 	}
 	if msgs := strings.Split(msg, jsoniterUnmarshalErrorSeparator); len(msgs) > 0 {
-		_ = tool.Unmarshal([]byte(msgs[jsonErrorFormIndex]), &ve.Ctx)
+		_ = helper.JsonUnmarshal([]byte(msgs[jsonErrorFormIndex]), &ve.Ctx)
 		ve.Msg = msgs[jsonErrorFieldMsgIndex][len(ve.Loc[1])+2:]
 		if s := strings.Split(ve.Msg, ":"); len(s) > 0 {
 			ve.Type = s[0]

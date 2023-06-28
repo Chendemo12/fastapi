@@ -4,8 +4,8 @@
 package fastapi
 
 import (
+	"github.com/Chendemo12/fastapi-tool/helper"
 	"github.com/Chendemo12/fastapi/godantic"
-	"github.com/Chendemo12/fastapi/tool"
 )
 
 //goland:noinspection GoUnusedGlobalVariable
@@ -70,5 +70,5 @@ var (
 
 //goland:noinspection GoUnusedGlobalVariable
 var (
-	F = tool.CombineStrings
+	F = helper.CombineStrings
 )

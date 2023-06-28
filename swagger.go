@@ -2,18 +2,18 @@ package fastapi
 
 import (
 	"bytes"
+	"net/http"
+
 	"github.com/Chendemo12/fastapi/internal/core"
 	"github.com/Chendemo12/fastapi/openapi"
-	"github.com/Chendemo12/fastapi/tool"
 	"github.com/gofiber/fiber/v2"
-	"net/http"
 )
 
 const staticPrefix = "internal/static/"
 
 func (f *FastApi) createOpenApiDoc() {
 	// 不允许创建swag文档
-	if tool.All(!core.IsDebug(), core.SwaggerDisabled) {
+	if !core.IsDebug() && core.SwaggerDisabled {
 		return
 	}
 

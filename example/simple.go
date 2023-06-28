@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/Chendemo12/fastapi"
-	"github.com/Chendemo12/fastapi/logger"
 	"time"
+
+	"github.com/Chendemo12/fastapi"
+	"github.com/Chendemo12/fastapi-tool/cronjob"
+	"github.com/Chendemo12/fastapi-tool/logger"
 )
 
 // Configuration 配置文件类
@@ -269,7 +271,7 @@ func makeRouter() *fastapi.Router {
 
 // Clock 定时任务
 type Clock struct {
-	fastapi.Job
+	cronjob.Job
 }
 
 func (c *Clock) String() string          { return "Clock" }
