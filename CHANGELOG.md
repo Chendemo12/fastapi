@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 0.1.3 - (2023-07-26)
+
+### Refactor
+
+- remove `types`, `example`
+
 ## 0.1.2 - (2023-06-28)
 
 ### Refactor

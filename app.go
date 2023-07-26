@@ -509,6 +509,7 @@ func (f *FastApi) Run(host, port string) {
 		close(f.isStarted)
 	}
 
+	// TODO:
 	go func() {
 		log.Fatal(f.engine.Listen(f.service.Addr()))
 	}()

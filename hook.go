@@ -19,7 +19,7 @@ var recoverHandler StackTraceHandlerFunc = nil
 var fiberErrorHandler fiber.ErrorHandler = nil // 设置fiber自定义错误处理函数
 
 // HandlerFunc 路由处理函数
-type HandlerFunc = func(s *Context) *Response
+type HandlerFunc = func(c *Context) *Response
 
 // StackTraceHandlerFunc 错误堆栈处理函数, 即 recover 方法
 type StackTraceHandlerFunc = func(c *fiber.Ctx, e any)
