@@ -32,7 +32,7 @@ func (c *ServiceContext) Config() any { return c.Conf }
 func NewCtx() *ServiceContext {
 	conf := &Configuration{}
 	conf.HTTP.Host = "0.0.0.0"
-	conf.HTTP.Port = "8088"
+	conf.HTTP.Port = "8099"
 	return &ServiceContext{Conf: conf, Logger: logger.NewDefaultLogger()}
 }
 
@@ -372,44 +372,45 @@ func TestFastApi_OnEvent(t *testing.T) {
 	app.Run(svc.Conf.HTTP.Host, svc.Conf.HTTP.Port) // 阻塞运行
 }
 
-func TestFastApi_Run(t *testing.T) {
+type IPModel struct {
+	BaseModel
+	IP     string `json:"ip" description:"IPv4地址"`
+	Detail struct {
+		IPv4     string `json:"IPv4" description:"IPv4地址"`
+		IPv4Full string `json:"IPv4_full" description:"带端口的IPv4地址"`
+		Ipv6     string `json:"IPv6" description:"IPv6地址"`
+	} `json:"detail" description:"详细信息"`
+}
 
-	type IPModel struct {
-		BaseModel
-		IP     string `json:"ip" description:"IPv4地址"`
-		Detail struct {
-			IPv4     string `json:"IPv4" description:"IPv4地址"`
-			IPv4Full string `json:"IPv4_full" description:"带端口的IPv4地址"`
-			Ipv6     string `json:"IPv6" description:"IPv6地址"`
-		} `json:"detail" description:"详细信息"`
+func (m IPModel) SchemaDesc() string { return "IP信息" }
+
+func getAddress(c *Context) *Response {
+	info := &IPModel{}
+	info.Detail.IPv4Full = c.EngineCtx().Context().RemoteAddr().String()
+
+	fiberIP := c.EngineCtx().IP()
+	headerIP := c.EngineCtx().Get("X-Forwarded-For")
+
+	if fiberIP == headerIP || headerIP == "" {
+		info.IP = fiberIP
+		info.Detail.IPv4 = fiberIP
+	} else {
+		info.IP = headerIP
+		info.Detail.IPv4 = headerIP
 	}
 
-	//func (m IPModel) SchemaDesc() string { return "IP信息" }
+	c.Logger().Debug("fiber think: ", fiberIP, " X-Forwarded-For: ", headerIP)
 
+	return c.OKResponse(info)
+}
+
+func TestFastApi_Run(t *testing.T) {
 	svc := NewCtx()
 	app := New("FastApi Example", "1.0.0", true, svc)
 
 	r := APIRouter("/example", []string{"Example"})
 	{
-		r.GET("", &IPModel{}, "返回当前请求的来源IP地址", func(c *Context) *Response {
-			info := &IPModel{}
-			info.Detail.IPv4Full = c.EngineCtx().Context().RemoteAddr().String()
-
-			fiberIP := c.EngineCtx().IP()
-			headerIP := c.EngineCtx().Get("X-Forwarded-For")
-
-			if fiberIP == headerIP || headerIP == "" {
-				info.IP = fiberIP
-				info.Detail.IPv4 = fiberIP
-			} else {
-				info.IP = headerIP
-				info.Detail.IPv4 = headerIP
-			}
-
-			c.Logger().Debug("fiber think: ", fiberIP, " X-Forwarded-For: ", headerIP)
-
-			return c.OKResponse(info)
-		})
+		r.GET("", &IPModel{}, "返回当前请求的来源IP地址", getAddress)
 	}
 	app.DisableMultipleProcess().
 		EnableDumpPID().

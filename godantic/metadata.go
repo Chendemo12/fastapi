@@ -261,7 +261,7 @@ func (m *ModelReflect) extractField(structField reflect.StructField, no int) {
 			fieldElemType = fieldElemType.Elem()
 		}
 
-		m.parseFieldWhichIsStruct(fieldElemType, fieldMeta, no)
+		m.parseFieldWhichIsStruct(fieldElemType, fieldMeta, no, structField)
 
 	case ArrayType: // 字段为数组
 		no += 1
@@ -369,13 +369,24 @@ func (m *ModelReflect) parseFieldWhichIsArray(elemType reflect.Type, fieldMeta *
 //	@param	elemType	reflect.Type	子元素类型
 //	@param	metadata	*Metadata		根模型元信息
 //	@param	metaField	*MetaField		字段元信息
-func (m *ModelReflect) parseFieldWhichIsStruct(elemType reflect.Type, fieldMeta *MetaField, no int) {
-	fieldMeta.ItemRef = elemType.String() // 关联模型
+func (m *ModelReflect) parseFieldWhichIsStruct(elemType reflect.Type, fieldMeta *MetaField, no int, field reflect.StructField) {
+	var pkg, name string
+
+	if elemType.Name() == "" { // 未命名的结构体类型，没有名称
+		// 分配包名和名称
+		name = field.Name + "Model"
+		pkg = fieldMeta.Field._pkg + "." + name
+	} else {
+		pkg = elemType.String() // 关联模型
+		name = elemType.Name()
+	}
+
+	fieldMeta.ItemRef = pkg
 
 	mf := &MetaField{
 		Field: Field{
-			_pkg:        elemType.String(),
-			Title:       elemType.Name(),
+			_pkg:        pkg,
+			Title:       name,
 			Tag:         "",
 			Description: "",
 			ItemRef:     "",
