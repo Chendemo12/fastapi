@@ -23,15 +23,15 @@ func createFiberApp(title, version string) *fiber.App {
 
 	// 创建App实例
 	app := fiber.New(fiber.Config{
-		Prefork:       !core.MultipleProcessDisabled, // 多进程模式
-		CaseSensitive: true,                          // 区分路由大小写
-		StrictRouting: true,                          // 严格路由
-		ServerHeader:  title,                         // 服务器头
-		AppName:       title + " v" + version,        // 设置为 Response.Header.Server 属性
-		ColorScheme:   fiber.DefaultColors,           // 彩色输出
-		JSONEncoder:   helper.JsonMarshal,            // json序列化器
-		JSONDecoder:   helper.JsonUnmarshal,          // json解码器
-		ErrorHandler:  fiberErrorHandler,             // 设置自定义错误处理
+		Prefork:       core.MultipleProcessEnabled, // 多进程模式
+		CaseSensitive: true,                        // 区分路由大小写
+		StrictRouting: true,                        // 严格路由
+		ServerHeader:  title,                       // 服务器头
+		AppName:       title + " v" + version,      // 设置为 Response.Header.Server 属性
+		ColorScheme:   fiber.DefaultColors,         // 彩色输出
+		JSONEncoder:   helper.JsonMarshal,          // json序列化器
+		JSONDecoder:   helper.JsonUnmarshal,        // json解码器
+		ErrorHandler:  fiberErrorHandler,           // 设置自定义错误处理
 	})
 
 	// 输出API访问日志

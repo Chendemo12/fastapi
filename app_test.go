@@ -29,7 +29,7 @@ type ServiceContext struct {
 
 func (c *ServiceContext) Config() any { return c.Conf }
 
-func NewCtx() *ServiceContext {
+func NEWCtx() *ServiceContext {
 	conf := &Configuration{}
 	conf.HTTP.Host = "0.0.0.0"
 	conf.HTTP.Port = "8099"
@@ -38,7 +38,7 @@ func NewCtx() *ServiceContext {
 
 func TestContext_UserSVC(t *testing.T) {
 	ctx := &Context{svc: &Service{}}
-	ctx.svc.setUserSVC(NewCtx())
+	ctx.svc.setUserSVC(NEWCtx())
 
 	conf, ok := ctx.UserSVC().Config().(*Configuration)
 	if ok {
@@ -49,11 +49,10 @@ func TestContext_UserSVC(t *testing.T) {
 	}
 }
 
-func TestNew(t *testing.T) {
-	svc := NewCtx()
-	app := New("FastApi Example", "1.0.0", true, svc)
-	app.DisableMultipleProcess().
-		SetDescription("一个简单的FastApi应用程序,在启动app之前首先需要创建并替换ServiceContext,最后调用Run来运行程序").
+func TestNEW(t *testing.T) {
+	svc := NEWCtx()
+	app := NEW("FastApi Example", "1.0.0", true, svc)
+	app.SetDescription("一个简单的FastApi应用程序,在启动app之前首先需要创建并替换ServiceContext,最后调用Run来运行程序").
 		SetShutdownTimeout(5)
 
 	t.Logf("FastApi app created.")
@@ -72,8 +71,8 @@ func (c *Clock) Do(_ context.Context) error {
 }
 
 func TestFastApi_AddCronjob(t *testing.T) {
-	svc := NewCtx()
-	app := New("FastApi Example", "1.0.0", true, svc)
+	svc := NEWCtx()
+	app := NEW("FastApi Example", "1.0.0", true, svc)
 	app.AddCronjob(&Clock{})
 
 	go func() {
@@ -85,9 +84,9 @@ func TestFastApi_AddCronjob(t *testing.T) {
 }
 
 func TestFastApi_DumpPID(t *testing.T) {
-	svc := NewCtx()
+	svc := NEWCtx()
 	svc.Conf.HTTP.Port = "8089"
-	app := New("FastApi Example", "1.0.0", true, svc)
+	app := NEW("FastApi Example", "1.0.0", true, svc)
 	app.EnableDumpPID()
 
 	go func() {
@@ -106,8 +105,8 @@ func TestFastApi_DumpPID(t *testing.T) {
 }
 
 func TestFastApi_Description(t *testing.T) {
-	svc := NewCtx()
-	app := New("FastApi Example", "1.0.0", true, svc)
+	svc := NEWCtx()
+	app := NEW("FastApi Example", "1.0.0", true, svc)
 	app.SetDescription("一个简单的FastApi应用程序,在启动app之前首先需要创建并替换ServiceContext,最后调用Run来运行程序")
 
 	s := app.Description()
@@ -230,8 +229,8 @@ type QueryFieldExample struct {
 }
 
 func TestFastApi_IncludeRouter(t *testing.T) {
-	svc := NewCtx()
-	app := New("FastApi Example", "1.0.0", true, svc)
+	svc := NEWCtx()
+	app := NEW("FastApi Example", "1.0.0", true, svc)
 
 	r := APIRouter("/example", []string{"Example"})
 	{ // 基本示例
@@ -256,8 +255,8 @@ func TestFastApi_IncludeRouter(t *testing.T) {
 }
 
 func TestFastApi_IncludeRouter_Validate(t *testing.T) {
-	svc := NewCtx()
-	app := New("FastApi Example", "1.0.0", true, svc)
+	svc := NEWCtx()
+	app := NEW("FastApi Example", "1.0.0", true, svc)
 
 	r := APIRouter("/example", []string{"Validator"})
 	{ // 校验示例
@@ -315,8 +314,8 @@ func intToInts(s *Context) *Response {
 }
 
 func TestFastApi_IncludeRouter_Array(t *testing.T) {
-	svc := NewCtx()
-	app := New("FastApi Example", "1.0.0", true, svc)
+	svc := NEWCtx()
+	app := NEW("FastApi Example", "1.0.0", true, svc)
 
 	r := APIRouter("/example", []string{"Array"})
 	{
@@ -348,8 +347,8 @@ func routeCtxCancel(s *Context) *Response {
 }
 
 func TestFastApi_IncludeRouter_Context(t *testing.T) {
-	svc := NewCtx()
-	app := New("FastApi Example", "1.0.0", true, svc)
+	svc := NEWCtx()
+	app := NEW("FastApi Example", "1.0.0", true, svc)
 
 	r := APIRouter("/text", []string{"Text"})
 	{
@@ -361,8 +360,8 @@ func TestFastApi_IncludeRouter_Context(t *testing.T) {
 }
 
 func TestFastApi_OnEvent(t *testing.T) {
-	svc := NewCtx()
-	app := New("FastApi Example", "1.0.0", true, svc)
+	svc := NEWCtx()
+	app := NEW("FastApi Example", "1.0.0", true, svc)
 
 	app.OnEvent("startup", func() { app.Service().Logger().Info("current pid: ", app.PID()) })
 	app.OnEvent("startup", func() { app.Service().Logger().Info("startup event: 1") })
@@ -405,15 +404,14 @@ func getAddress(c *Context) *Response {
 }
 
 func TestFastApi_Run(t *testing.T) {
-	svc := NewCtx()
-	app := New("FastApi Example", "1.0.0", true, svc)
+	svc := NEWCtx()
+	app := NEW("FastApi Example", "1.0.0", true, svc)
 
 	r := APIRouter("/example", []string{"Example"})
 	{
 		r.GET("", &IPModel{}, "返回当前请求的来源IP地址", getAddress)
 	}
-	app.DisableMultipleProcess().
-		EnableDumpPID().
+	app.EnableDumpPID().
 		DisableRequestValidate().
 		SetLogger(svc.Logger).
 		SetDescription("一个简单的FastApi应用程序,在启动app之前首先需要创建并替换ServiceContext,最后调用Run来运行程序").

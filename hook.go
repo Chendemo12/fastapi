@@ -20,6 +20,7 @@ var fiberErrorHandler fiber.ErrorHandler = nil // 设置fiber自定义错误处�
 
 // HandlerFunc 路由处理函数
 type HandlerFunc = func(c *Context) *Response
+type DependencyFunc = func(c *Context) error
 
 // StackTraceHandlerFunc 错误堆栈处理函数, 即 recover 方法
 type StackTraceHandlerFunc = func(c *fiber.Ctx, e any)
@@ -150,8 +151,7 @@ func (c *Context) queryParamsValidate() {
 
 func (c *Context) dependencyDone() {
 	for i := 0; i < len(c.route.Dependencies); i++ {
-		if resp := c.route.Dependencies[i](c); resp != nil {
-			c.response = resp
+		if err := c.route.Dependencies[i](c); err != nil {
 			break
 		}
 	}

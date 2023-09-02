@@ -13,7 +13,7 @@ var (
 	SwaggerDisabled          = false            // 禁用文档自动生成
 	RequestValidateDisabled  = true             // 禁用请求体自动验证
 	ResponseValidateDisabled = false            // 禁用返回体自动验证
-	MultipleProcessDisabled  = true             // 禁用多进程
+	MultipleProcessEnabled   = true             // 启用多进程
 	ShutdownWithTimeout      = 20 * time.Second // 关机前的最大等待时间
 	DumpPIDEnabled           = false            // 是否记录PID
 )

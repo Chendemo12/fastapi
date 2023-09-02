@@ -26,13 +26,15 @@ func APIRouter(prefix string, tags []string) *Router {
 }
 
 type Option struct {
-	Params       godantic.QueryParameter `json:"params" description:"查询参数,结构体"`
-	Description  string                  `json:"description" description:"路由描述"`
-	Summary      string                  `json:"summary" description:"摘要描述"`
-	Tags         []string                `json:"tags" description:"路由标签"`
-	Dependencies []fiber.Handler         `json:"-" description:"依赖"`
-	Handlers     []fiber.Handler         `json:"-" description:"处理函数"`
-	Deprecated   bool                    `json:"deprecated" description:"是否禁用"`
+	Summary       string                  `json:"summary" description:"摘要描述"`
+	ResponseModel godantic.SchemaIface    `json:"response_model" description:"响应体模型"`
+	RequestModel  godantic.SchemaIface    `json:"request_model" description:"请求体模型"`
+	Params        godantic.QueryParameter `json:"params" description:"查询参数,结构体"`
+	Description   string                  `json:"description" description:"路由描述"`
+	Tags          []string                `json:"tags" description:"路由标签"`
+	Dependencies  []DependencyFunc        `json:"-" description:"依赖"`
+	Handlers      []HandlerFunc           `json:"-" description:"处理函数"`
+	Deprecated    bool                    `json:"deprecated" description:"是否禁用"`
 }
 
 // Route 一个完整的路由对象，此对象会在程序启动时生成swagger文档
@@ -50,7 +52,7 @@ type Route struct {
 	Tags             []string                      `json:"tags" description:"路由标签"`
 	QueryFields      []*godantic.QModel            `json:"-" description:"查询参数"`
 	Handlers         []fiber.Handler               `json:"-" description:"处理函数"`
-	Dependencies     []HandlerFunc                 `json:"-" description:"依赖"`
+	Dependencies     []DependencyFunc              `json:"-" description:"依赖"`
 	PathFields       []*godantic.QModel            `json:"-" description:"路径参数"`
 	deprecated       bool                          `description:"是否禁用"`
 }
@@ -65,8 +67,8 @@ func (f *Route) Deprecate() *Route {
 
 // AddDependency 添加依赖项，用于在执行路由函数前执行一个自定义操作，此操作作用于参数校验通过之后
 //
-//	@param	fcs	HandlerFunc	依赖项
-func (f *Route) AddDependency(fcs ...HandlerFunc) *Route {
+//	@param	fcs	DependencyFunc	依赖项
+func (f *Route) AddDependency(fcs ...DependencyFunc) *Route {
 	if len(fcs) > 0 {
 		f.Dependencies = append(f.Dependencies, fcs...)
 	}
@@ -75,8 +77,8 @@ func (f *Route) AddDependency(fcs ...HandlerFunc) *Route {
 
 // AddD 添加依赖项，用于在执行路由函数前执行一个自定义操作，此操作作用于参数校验通过之后
 //
-//	@param	fcs	HandlerFunc	依赖项
-func (f *Route) AddD(fcs ...HandlerFunc) *Route { return f.AddDependency(fcs...) }
+//	@param	fcs	DependencyFunc	依赖项
+func (f *Route) AddD(fcs ...DependencyFunc) *Route { return f.AddDependency(fcs...) }
 
 // SetDescription 设置一个路由的详细描述信息
 //
@@ -195,7 +197,6 @@ func (f *Router) method(
 	requestModel godantic.SchemaIface, // 请求体, POST/PATCH/PUT
 	responseModel godantic.SchemaIface, // 响应体, All
 	handler HandlerFunc, // handler
-	opts ...*Option, // 附加参数
 ) *Route {
 	route := &Route{
 		Method:        method,
@@ -206,7 +207,7 @@ func (f *Router) method(
 		ResponseModel: nil,                         // 响应体
 		Summary:       summary,
 		Handlers:      nil,
-		Dependencies:  make([]HandlerFunc, 0),
+		Dependencies:  make([]DependencyFunc, 0),
 		Tags:          f.Tags,
 		Description:   method + " " + summary,
 		deprecated:    false,
@@ -249,16 +250,6 @@ func (f *Router) method(
 	if f.deprecated {   // 若路由组被禁用，则此路由必禁用
 		deprecated = true
 	}
-	if len(opts) > 0 {
-		opt := opts[0]
-		deprecated = opt.Deprecated
-		if opt.Description != "" {
-			route.Description = opt.Description
-		}
-		for _, h := range opt.Handlers {
-			handlers = append(handlers, h)
-		}
-	}
 
 	route.deprecated = deprecated
 	route.Handlers = handlers
@@ -298,6 +289,38 @@ func (f *Router) method(
 	return route
 }
 
+func (f *Router) methodWithOpt(
+	method string,
+	relativePath string,
+	handler HandlerFunc,
+	opt *Option,
+) *Route {
+	route := f.method(
+		method,
+		relativePath,
+		opt.Summary,
+		opt.Params,
+		opt.RequestModel,
+		opt.ResponseModel,
+		handler,
+	)
+
+	if opt.Description != "" {
+		route.SetDescription(opt.Description)
+	}
+	if opt.Deprecated {
+		route.Deprecate()
+	}
+	if len(opt.Dependencies) > 0 {
+		route.AddDependency(opt.Dependencies...)
+	}
+	for _, _handler := range opt.Handlers {
+		route.Handlers = append(route.Handlers, routeHandler(_handler))
+	}
+
+	return route
+}
+
 // GET http get method
 //
 //	@param	path			string					相对路径,必须以"/"开头
@@ -311,7 +334,6 @@ func (f *Router) GET(
 	responseModel godantic.SchemaIface,
 	summary string,
 	handler HandlerFunc,
-	opts ...*Option,
 ) *Route {
 	// 对于查询参数仅允许struct类型
 	return f.method(
@@ -322,7 +344,6 @@ func (f *Router) GET(
 		nil,
 		responseModel,
 		handler,
-		opts...,
 	)
 }
 
@@ -334,7 +355,7 @@ func (f *Router) GET(
 //	@param	handler			[]HandlerFunc			路由处理方法
 //	@param	addition		any						附加参数
 func (f *Router) DELETE(
-	path string, responseModel godantic.SchemaIface, summary string, handler HandlerFunc, opts ...*Option,
+	path string, responseModel godantic.SchemaIface, summary string, handler HandlerFunc,
 ) *Route {
 	// 对于查询参数仅允许struct类型
 	return f.method(
@@ -345,7 +366,6 @@ func (f *Router) DELETE(
 		nil,
 		responseModel,
 		handler,
-		opts...,
 	)
 }
 
@@ -362,7 +382,6 @@ func (f *Router) POST(
 	requestModel, responseModel godantic.SchemaIface,
 	summary string,
 	handler HandlerFunc,
-	opts ...*Option,
 ) *Route {
 	return f.method(
 		http.MethodPost,
@@ -372,7 +391,6 @@ func (f *Router) POST(
 		requestModel,
 		responseModel,
 		handler,
-		opts...,
 	)
 }
 
@@ -382,7 +400,6 @@ func (f *Router) PATCH(
 	requestModel, responseModel godantic.SchemaIface,
 	summary string,
 	handler HandlerFunc,
-	opts ...*Option,
 ) *Route {
 	return f.method(
 		http.MethodPatch,
@@ -392,7 +409,6 @@ func (f *Router) PATCH(
 		requestModel,
 		responseModel,
 		handler,
-		opts...,
 	)
 }
 
@@ -402,7 +418,6 @@ func (f *Router) PUT(
 	requestModel, responseModel godantic.SchemaIface,
 	summary string,
 	handler HandlerFunc,
-	opts ...*Option,
 ) *Route {
 	return f.method(
 		http.MethodPut,
@@ -412,8 +427,37 @@ func (f *Router) PUT(
 		requestModel,
 		responseModel,
 		handler,
-		opts...,
 	)
+}
+
+func (f *Router) Get(path string, handler HandlerFunc, opts ...Option) *Route {
+	opt := cleanOpts(opts...)
+
+	return f.methodWithOpt(http.MethodGet, path, handler, opt)
+}
+
+func (f *Router) Post(path string, handler HandlerFunc, opts ...Option) *Route {
+	opt := cleanOpts(opts...)
+
+	return f.methodWithOpt(http.MethodPost, path, handler, opt)
+}
+
+func (f *Router) Delete(path string, handler HandlerFunc, opts ...Option) *Route {
+	opt := cleanOpts(opts...)
+
+	return f.methodWithOpt(http.MethodDelete, path, handler, opt)
+}
+
+func (f *Router) Patch(path string, handler HandlerFunc, opts ...Option) *Route {
+	opt := cleanOpts(opts...)
+
+	return f.methodWithOpt(http.MethodPatch, path, handler, opt)
+}
+
+func (f *Router) Put(path string, handler HandlerFunc, opts ...Option) *Route {
+	opt := cleanOpts(opts...)
+
+	return f.methodWithOpt(http.MethodPut, path, handler, opt)
 }
 
 // Websocket 创建一个 websocket 服务
@@ -461,4 +505,38 @@ func DoesPathParamsFound(path string) (map[string]bool, bool) {
 		}
 	}
 	return pathParameters, len(pathParameters) > 0
+}
+
+func cleanOpts(opts ...Option) *Option {
+	opt := &Option{
+		Summary:       "",
+		Params:        nil,
+		RequestModel:  nil,
+		ResponseModel: nil,
+		Description:   "",
+		Tags:          make([]string, 0),
+		Dependencies:  make([]DependencyFunc, 0),
+		Handlers:      make([]HandlerFunc, 0),
+		Deprecated:    false,
+	}
+	if len(opts) > 0 {
+		opt.Summary = opts[0].Summary
+		opt.Params = opts[0].Params
+		opt.RequestModel = opts[0].RequestModel
+		opt.ResponseModel = opts[0].ResponseModel
+		opt.Description = opts[0].Description
+		opt.Deprecated = opts[0].Deprecated
+
+		if len(opts[0].Tags) > 0 {
+			opt.Tags = opts[0].Tags
+		}
+		if len(opts[0].Dependencies) > 0 {
+			opt.Dependencies = opts[0].Dependencies
+		}
+		if len(opts[0].Handlers) > 0 {
+			opt.Handlers = opts[0].Handlers
+		}
+	}
+
+	return opt
 }

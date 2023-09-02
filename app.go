@@ -395,7 +395,7 @@ func (f *FastApi) DeleteResponseHeader(key string) *FastApi {
 //
 //	@param	timeout	in	修改关机前最大等待时间,	单位秒
 func (f *FastApi) SetShutdownTimeout(timeout int) *FastApi {
-	core.ShutdownWithTimeout = time.Duration(timeout)
+	core.ShutdownWithTimeout = time.Duration(timeout) * time.Second
 	return f
 }
 
@@ -423,9 +423,9 @@ func (f *FastApi) DisableResponseValidate() *FastApi {
 	return f
 }
 
-// DisableMultipleProcess 禁用多进程
-func (f *FastApi) DisableMultipleProcess() *FastApi {
-	core.MultipleProcessDisabled = true
+// EnableMultipleProcess 开启多进程
+func (f *FastApi) EnableMultipleProcess() *FastApi {
+	core.MultipleProcessEnabled = true
 	return f
 }
 
@@ -526,14 +526,32 @@ func (f *FastApi) Run(host, port string) {
 	f.Shutdown()
 }
 
-// New 创建一个 FastApi 服务
+type Conf struct {
+	Title                   string                `json:"title,omitempty" description:"APP标题,也是日志文件名"`
+	Version                 string                `json:"version,omitempty" description:"APP版本号"`
+	Debug                   bool                  `json:"debug,omitempty" description:"调试模式"`
+	UserSvc                 UserService           `json:"-" description:"自定义服务依赖"`
+	Description             string                `json:"description,omitempty" description:"APP描述"`
+	Logger                  logger.Iface          `json:"-" description:"日志"`
+	ShutdownTimeout         int                   `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
+	DisableBaseRoutes       bool                  `json:"disable_base_routes,omitempty" description:"禁用基础路由"`
+	DisableSwagAutoCreate   bool                  `json:"disable_swag_auto_create,omitempty" description:"禁用自动文档"`
+	DisableRequestValidate  bool                  `json:"disable_request_validate,omitempty" description:"禁用请求体自动校验"`
+	DisableResponseValidate bool                  `json:"disable_response_validate,omitempty" description:"禁用响应体自动序列化"`
+	EnableMultipleProcess   bool                  `json:"enable_multiple_process,omitempty" description:"开启多进程"`
+	EnableDumpPID           bool                  `json:"enable_dump_pid,omitempty" description:"输出PID文件"`
+	ErrorHandler            fiber.ErrorHandler    `json:"-" description:"请求错误处理方法"`
+	RecoverHandler          StackTraceHandlerFunc `json:"-" description:"异常处理方法"`
+}
+
+// NEW 创建一个 FastApi 服务
 //
 //	@param	title	string		Application	name
 //	@param	version	string		Version
 //	@param	debug	bool		是否开启调试模式
 //	@param	service	UserService	custom	ServiceContext
 //	@return	*FastApi fastapi对象
-func New(title, version string, debug bool, svc UserService) *FastApi {
+func NEW(title, version string, debug bool, svc UserService) *FastApi {
 	core.SetMode(debug)
 
 	once.Do(func() {
@@ -554,6 +572,89 @@ func New(title, version string, debug bool, svc UserService) *FastApi {
 	})
 
 	return appEngine
+}
+
+// New 创建一个 FastApi 服务
+func New(confs ...Conf) *FastApi {
+	conf := Conf{
+		Title:                   "FastAPI",
+		Version:                 "1.0.0",
+		Debug:                   false,
+		UserSvc:                 nil,
+		Description:             "FastAPI Application",
+		Logger:                  nil,
+		ShutdownTimeout:         5,
+		DisableBaseRoutes:       false,
+		DisableSwagAutoCreate:   false,
+		DisableRequestValidate:  false,
+		DisableResponseValidate: false,
+		EnableMultipleProcess:   false,
+		EnableDumpPID:           false,
+	}
+	if len(confs) > 0 {
+		if confs[0].Title != "" {
+			conf.Title = confs[0].Title
+		}
+		if confs[0].Version != "" {
+			conf.Version = confs[0].Version
+		}
+		if confs[0].Description != "" {
+			conf.Description = confs[0].Description
+		}
+		conf.Debug = confs[0].Debug
+		conf.UserSvc = confs[0].UserSvc
+		conf.Logger = confs[0].Logger
+		conf.ShutdownTimeout = confs[0].ShutdownTimeout
+		conf.DisableBaseRoutes = confs[0].DisableBaseRoutes
+		conf.DisableSwagAutoCreate = confs[0].DisableSwagAutoCreate
+		conf.DisableRequestValidate = confs[0].DisableRequestValidate
+		conf.EnableMultipleProcess = confs[0].EnableMultipleProcess
+		conf.DisableResponseValidate = confs[0].DisableResponseValidate
+		conf.EnableDumpPID = confs[0].EnableDumpPID
+		conf.ErrorHandler = confs[0].ErrorHandler
+		conf.RecoverHandler = confs[0].RecoverHandler
+	}
+
+	app := NEW(conf.Title, conf.Version, conf.Debug, conf.UserSvc)
+	if conf.Description != "" {
+		app.SetDescription(conf.Description)
+	}
+	if conf.UserSvc != nil {
+		app.SetUserSVC(conf.UserSvc)
+	}
+	if conf.Logger != nil {
+		app.SetLogger(conf.Logger)
+	}
+	if conf.ErrorHandler != nil {
+		app.ReplaceErrorHandler(conf.ErrorHandler)
+	}
+	if conf.RecoverHandler != nil {
+		app.ReplaceRecover(conf.RecoverHandler)
+	}
+
+	if conf.ShutdownTimeout != 0 {
+		app.SetShutdownTimeout(conf.ShutdownTimeout)
+	}
+	if conf.DisableBaseRoutes {
+		app.DisableBaseRoutes()
+	}
+	if conf.DisableRequestValidate {
+		app.DisableRequestValidate()
+	}
+
+	if conf.DisableResponseValidate {
+		app.DisableResponseValidate()
+	}
+	if conf.DisableSwagAutoCreate {
+		app.DisableSwagAutoCreate()
+	}
+	if conf.EnableMultipleProcess {
+		//app.EnableMultipleProcess()
+	}
+	if conf.EnableDumpPID {
+		app.EnableDumpPID()
+	}
+	return app
 }
 
 // resetRunMode 重设运行时环境
