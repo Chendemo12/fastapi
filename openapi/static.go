@@ -16,8 +16,8 @@ const (
 	RedocJsName       = "redoc.standalone.js"
 	JsonUrl           = "openapi.json"
 	SwaggerFaviconUrl = "https://fastapi.tiangolo.com/img/" + FaviconName
-	SwaggerCssUrl     = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@4/" + SwaggerCssName
-	SwaggerJsUrl      = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@4/" + SwaggerJsName
+	SwaggerCssUrl     = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/" + SwaggerCssName
+	SwaggerJsUrl      = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/" + SwaggerJsName
 	RedocJsUrl        = "https://cdn.jsdelivr.net/npm/redoc@next/bundles/" + RedocJsName
 )
 

@@ -36,15 +36,16 @@ fieldalignment -fix ./...
 ```shell
 # 安装工具
 go get -u github.com/go-bindata/go-bindata/...
+go install github.com/go-bindata/go-bindata/...
 
 # 下载资源文件
 #https://fastapi.tiangolo.com/img/favicon.png
-#https://cdn.jsdelivr.net/npm/swagger-ui-dist@4/swagger-ui.css
-#https://cdn.jsdelivr.net/npm/swagger-ui-dist@4/swagger-ui-bundle.js
+#https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css
+#https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js
 #https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js
 
 # 打包资源文件到openapi包
-go-bindata -o internal/openapi/css.go --pkg openapi internal/static/...
+go-bindata -o openapi/css.go --pkg openapi internal/static/...
 
 ```
 

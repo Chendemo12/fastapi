@@ -405,18 +405,20 @@ func getAddress(c *Context) *Response {
 
 func TestFastApi_Run(t *testing.T) {
 	svc := NEWCtx()
-	app := NEW("FastApi Example", "1.0.0", true, svc)
+	app := New(Config{
+		Title:           "FastAPI Example",
+		Version:         "v1.2.0",
+		Debug:           true,
+		UserSvc:         svc,
+		Description:     "一个简单的FastApi应用程序,在启动app之前首先需要创建并替换ServiceContext,最后调用Run来运行程序",
+		Logger:          svc.Logger,
+		ShutdownTimeout: 5,
+	})
 
-	r := APIRouter("/example", []string{"Example"})
-	{
-		r.GET("", &IPModel{}, "返回当前请求的来源IP地址", getAddress)
-	}
-	app.EnableDumpPID().
-		DisableRequestValidate().
-		SetLogger(svc.Logger).
-		SetDescription("一个简单的FastApi应用程序,在启动app之前首先需要创建并替换ServiceContext,最后调用Run来运行程序").
-		SetShutdownTimeout(5).
-		IncludeRouter(r)
-
+	app.Get("/example/ip", getAddress, Option{
+		Summary:       "返回当前请求的来源IP地址",
+		ResponseModel: &IPModel{},
+	})
+	app.Get("/example", getAddress)
 	app.Run(svc.Conf.HTTP.Host, svc.Conf.HTTP.Port) // 阻塞运行
 }

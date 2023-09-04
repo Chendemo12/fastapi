@@ -459,6 +459,26 @@ func (f *FastApi) DumpPID() {
 	}
 }
 
+func (f *FastApi) Get(path string, handler HandlerFunc, opts ...Option) *Route {
+	return f.routers[0].Get(path, handler, opts...)
+}
+
+func (f *FastApi) Post(path string, handler HandlerFunc, opts ...Option) *Route {
+	return f.routers[0].Post(path, handler, opts...)
+}
+
+func (f *FastApi) Delete(path string, handler HandlerFunc, opts ...Option) *Route {
+	return f.routers[0].Delete(path, handler, opts...)
+}
+
+func (f *FastApi) Patch(path string, handler HandlerFunc, opts ...Option) *Route {
+	return f.routers[0].Patch(path, handler, opts...)
+}
+
+func (f *FastApi) Put(path string, handler HandlerFunc, opts ...Option) *Route {
+	return f.routers[0].Put(path, handler, opts...)
+}
+
 // Shutdown 平滑关闭
 func (f *FastApi) Shutdown() {
 	f.service.cancel() // 标记结束
@@ -526,7 +546,7 @@ func (f *FastApi) Run(host, port string) {
 	f.Shutdown()
 }
 
-type Conf struct {
+type Config struct {
 	Title                   string                `json:"title,omitempty" description:"APP标题,也是日志文件名"`
 	Version                 string                `json:"version,omitempty" description:"APP版本号"`
 	Debug                   bool                  `json:"debug,omitempty" description:"调试模式"`
@@ -564,19 +584,20 @@ func NEW(title, version string, debug bool, svc UserService) *FastApi {
 			version:     version,
 			description: title + " Micro Context",
 			service:     sc,
+			routers:     make([]*Router, 1),
 			isStarted:   make(chan struct{}, 1),
 			middlewares: make([]any, 0),
 			events:      make([]*Event, 0),
 		}
-
+		appEngine.routers[0] = APIRouter("", []string{"Main"})
 	})
 
 	return appEngine
 }
 
 // New 创建一个 FastApi 服务
-func New(confs ...Conf) *FastApi {
-	conf := Conf{
+func New(confs ...Config) *FastApi {
+	conf := Config{
 		Title:                   "FastAPI",
 		Version:                 "1.0.0",
 		Debug:                   false,

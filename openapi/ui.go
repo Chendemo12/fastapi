@@ -1,7 +1,10 @@
 package openapi
 
+import "fmt"
+
 var swaggerUiDefaultParameters = map[string]string{
 	"dom_id":               `"#swagger-ui"`,
+	"layout":               `"BaseLayout"`,
 	"deepLinking":          "true",
 	"showExtensions":       "true",
 	"showCommonExtensions": "true",
@@ -11,40 +14,46 @@ var swaggerUiHtml = ""
 var redocUiHtml = ""
 var oauthUiHtml = ""
 
+// ====
+
+var docsHeaderTemplate = `
+<!DOCTYPE html>
+<html>
+<head>
+	<link type="text/css" rel="stylesheet" href="%s">
+	<link rel="shortcut icon" href="%s">
+	<title>%s - Swagger UI</title>
+</head>
+<body>
+	<div id="swagger-ui"></div>
+	<script src="%s"></script>
+	<!-- "SwaggerUIBundle" is now available on the page -->
+	<script>
+	const ui = SwaggerUIBundle({
+		url: "%s",`
+
+var docsTailTemplate = `
+		oauth2RedirectUrl: window.location.origin + '/docs/oauth2-redirect',
+		presets: [
+			SwaggerUIBundle.presets.apis,
+			SwaggerUIBundle.SwaggerUIStandalonePreset
+		],
+	})
+	</script>
+</body>
+</html>
+`
+
+// ====
+
 func MakeSwaggerUiHtml(title, openapiUrl, jsUrl, cssUrl, faviconUrl string) string {
 	if len(swaggerUiHtml) < 1 {
-		indexPage := `
-	<!DOCTYPE html>
-	<html>
-	<head>
-		<link type="text/css" rel="stylesheet" href="` + cssUrl + `">
-		<link rel="shortcut icon" href="` + faviconUrl + `">
-		<title>` + title + ` - Swagger UI</title>
-	</head>
-	<body>
-		<div id="swagger-ui">
-		</div>
-		<script src="` + jsUrl + `"></script>
-		<script>
-		const ui = SwaggerUIBundle({
-		url: './` + openapiUrl + `',
-	`
+		headerHtml := fmt.Sprintf(docsHeaderTemplate, cssUrl, faviconUrl, title, jsUrl, openapiUrl)
 		for k, v := range swaggerUiDefaultParameters {
-			indexPage = indexPage + `"` + k + `": ` + v + ",\n"
+			headerHtml = headerHtml + fmt.Sprintf(`"%s":%s,`, k, v)
 		}
 
-		indexPage = indexPage + "oauth2RedirectUrl: window.location.origin + '/docs/oauth2-redirect',\n"
-
-		indexPage += ` presets: [
-        SwaggerUIBundle.presets.apis,
-        SwaggerUIBundle.SwaggerUIStandalonePreset
-        ],
-    })
-	</script>
-    </body>
-    </html>
-	`
-		swaggerUiHtml = indexPage
+		swaggerUiHtml = headerHtml + docsTailTemplate
 	}
 
 	return swaggerUiHtml
@@ -92,8 +101,7 @@ func MakeRedocUiHtml(title, openapiUrl, jsUrl, faviconUrl string) string {
 func MakeOauth2RedirectHtml() string {
 	// copied from https://github.com/swagger-api/swagger-ui/blob/v4.14.0/dist/oauth2-redirect.html
 	if len(oauthUiHtml) < 1 {
-		oauthUiHtml = `    
-    html = """
+		oauthUiHtml = `
     <!doctype html>
     <html lang="en-US">
     <head>
@@ -108,7 +116,7 @@ func MakeOauth2RedirectHtml() string {
             var redirectUrl = oauth2.redirectUrl;
             var isValid, qp, arr;
 
-            if (/code|token|error/.example(window.location.hash)) {
+            if (/code|token|error/.test(window.location.hash)) {
                 qp = window.location.hash.substring(1).replace('?', '&');
             } else {
                 qp = location.search.substring(1);

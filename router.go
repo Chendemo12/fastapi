@@ -6,6 +6,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"net/http"
 	"reflect"
+	"runtime"
 	"strings"
 )
 
@@ -211,6 +212,13 @@ func (f *Router) method(
 		Tags:          f.Tags,
 		Description:   method + " " + summary,
 		deprecated:    false,
+	}
+
+	if route.Summary == "" {
+		funcName := runtime.FuncForPC(reflect.ValueOf(handler).Pointer()).Name()
+		parts := strings.Split(funcName, ".")
+		funcName = parts[len(parts)-1]
+		route.Summary = funcName
 	}
 
 	if requestModel != nil {
