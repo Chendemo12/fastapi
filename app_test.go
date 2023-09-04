@@ -406,13 +406,14 @@ func getAddress(c *Context) *Response {
 func TestFastApi_Run(t *testing.T) {
 	svc := NEWCtx()
 	app := New(Config{
-		Title:           "FastAPI Example",
-		Version:         "v1.2.0",
-		Debug:           true,
-		UserSvc:         svc,
-		Description:     "一个简单的FastApi应用程序,在启动app之前首先需要创建并替换ServiceContext,最后调用Run来运行程序",
-		Logger:          svc.Logger,
-		ShutdownTimeout: 5,
+		Title:             "FastAPI Example",
+		Version:           "v1.2.0",
+		Debug:             true,
+		UserSvc:           svc,
+		Description:       "一个简单的FastApi应用程序,在启动app之前首先需要创建并替换ServiceContext,最后调用Run来运行程序",
+		Logger:            svc.Logger,
+		ShutdownTimeout:   5,
+		DisableBaseRoutes: true,
 	})
 
 	app.Get("/example/ip", getAddress, Option{

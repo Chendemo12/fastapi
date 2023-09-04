@@ -41,7 +41,6 @@ type Option struct {
 // Route 一个完整的路由对象，此对象会在程序启动时生成swagger文档
 // 其中相对路径Path不能重复，否则后者会覆盖前者
 type Route struct {
-	wsHandler        WSHandler                     `description:"websocket处理器"`
 	ResponseModel    *godantic.Metadata            `description:"响应体元数据"`
 	RequestModel     *godantic.Metadata            `description:"请求体元数据"`
 	requestValidate  RouteModelValidateHandlerFunc `description:"请求体校验函数"`
@@ -466,15 +465,6 @@ func (f *Router) Put(path string, handler HandlerFunc, opts ...Option) *Route {
 	opt := cleanOpts(opts...)
 
 	return f.methodWithOpt(http.MethodPut, path, handler, opt)
-}
-
-// Websocket 创建一个 websocket 服务
-func (f *Router) Websocket(path string, handler WSHandler) *Route {
-	return &Route{
-		RelativePath: path,
-		Method:       WebsocketMethod,
-		wsHandler:    handler,
-	}
 }
 
 // CombinePath 合并路由

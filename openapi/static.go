@@ -5,7 +5,7 @@ import (
 	"net/http"
 )
 
-const ApiVersion = "3.0.2"
+const ApiVersion = "3.1.0"
 
 // 用于swagger的一些静态文件，来自FastApi
 const (

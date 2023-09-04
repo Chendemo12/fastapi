@@ -20,8 +20,10 @@ var (
 
 var isDebug bool = false
 
-func IsDebug() bool   { return isDebug }
+func IsDebug() bool { return isDebug }
+
 func SetMode(md bool) { isDebug = md }
+
 func GetMode(short ...bool) string {
 	if len(short) > 0 {
 		if isDebug {

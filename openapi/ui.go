@@ -30,7 +30,7 @@ var docsHeaderTemplate = `
 	<!-- "SwaggerUIBundle" is now available on the page -->
 	<script>
 	const ui = SwaggerUIBundle({
-		url: "%s",`
+		url: "/%s",`
 
 var docsTailTemplate = `
 		oauth2RedirectUrl: window.location.origin + '/docs/oauth2-redirect',
@@ -50,7 +50,7 @@ func MakeSwaggerUiHtml(title, openapiUrl, jsUrl, cssUrl, faviconUrl string) stri
 	if len(swaggerUiHtml) < 1 {
 		headerHtml := fmt.Sprintf(docsHeaderTemplate, cssUrl, faviconUrl, title, jsUrl, openapiUrl)
 		for k, v := range swaggerUiDefaultParameters {
-			headerHtml = headerHtml + fmt.Sprintf(`"%s":%s,`, k, v)
+			headerHtml = headerHtml + fmt.Sprintf(`"%s":%s, `, k, v)
 		}
 
 		swaggerUiHtml = headerHtml + docsTailTemplate
@@ -64,29 +64,19 @@ func MakeRedocUiHtml(title, openapiUrl, jsUrl, faviconUrl string) string {
 		indexPage := `
 	<!DOCTYPE html>
 	<html>
-	<head>= 
+	<head>
 		<title>` + title + ` </title>
 		<!-- needed for adaptive design -->
-		<meta charset="utf-8"/>
-		<meta name="viewport" content="width=device-width, initial-scale=1">
+    	<meta charset="utf-8"/>
+    	<meta name="viewport" content="width=device-width, initial-scale=1">
 		<link href="https://fonts.googleapis.com/css?family=Montserrat:300,400,700|Roboto:300,400,700" rel="stylesheet">
 		<link rel="shortcut icon" href="` + faviconUrl + `">
-		<!--
-			ReDoc doesn't change outer page styles
-		-->
-		<style>
-			body {{
-				margin: 0;
-				padding: 0;
-			}}
-		</style>
-	</head>`
-
-		indexPage += `
-	<body>
-	<noscript>
-		ReDoc requires Javascript to function. Please enable it to browse the documentation.
-	</noscript>
+		
+    </head>
+    <body>
+    <noscript>
+        ReDoc requires Javascript to function. Please enable it to browse the documentation.
+    </noscript>
 	<redoc spec-url="` + openapiUrl + `"></redoc>
 	<script src="` + jsUrl + `"> </script>
 	</body>

@@ -4,29 +4,25 @@ import (
 	"bytes"
 	"net/http"
 
-	"github.com/Chendemo12/fastapi/internal/core"
 	"github.com/Chendemo12/fastapi/openapi"
 	"github.com/gofiber/fiber/v2"
 )
 
 const staticPrefix = "internal/static/"
 
-func (f *FastApi) createOpenApiDoc() {
-	// 不允许创建swag文档
-	if !core.IsDebug() && core.SwaggerDisabled {
-		return
-	}
-
+func (f *FastApi) createOpenApiDoc() *FastApi {
 	f.service.openApi = openapi.NewOpenApi(f.title, f.version, f.Description())
 
 	f.createDefines()
 	f.createPaths()
 	f.createSwaggerRoutes()
 	f.createStaticRoutes()
+
+	return f
 }
 
 // 注册 swagger 的文档路由
-func (f *FastApi) createSwaggerRoutes() {
+func (f *FastApi) createSwaggerRoutes() *FastApi {
 	// docs 在线调试页面
 	f.engine.Get("/docs", func(c *fiber.Ctx) error {
 		c.Set(openapi.HeaderContentType, openapi.MIMETextHTML)
@@ -55,10 +51,12 @@ func (f *FastApi) createSwaggerRoutes() {
 		c.Set(openapi.HeaderContentType, openapi.MIMEApplicationJSONCharsetUTF8)
 		return c.SendStream(bytes.NewReader(f.service.openApi.Schema()))
 	})
+
+	return f
 }
 
 // 生成模型定义
-func (f *FastApi) createDefines() {
+func (f *FastApi) createDefines() *FastApi {
 	for _, router := range f.APIRouters() {
 		for _, route := range router.Routes() {
 			if route.RequestModel != nil {
@@ -70,10 +68,12 @@ func (f *FastApi) createDefines() {
 			}
 		}
 	}
+
+	return f
 }
 
 // 生成路由定义
-func (f *FastApi) createPaths() {
+func (f *FastApi) createPaths() *FastApi {
 	for _, route := range f.service.cache {
 		if route.Get != nil {
 			routeToPathItem(route.Path, route.Get, f.service.openApi)
@@ -91,10 +91,12 @@ func (f *FastApi) createPaths() {
 			routeToPathItem(route.Path, route.Put, f.service.openApi)
 		}
 	}
+
+	return f
 }
 
 // 创建静态资源文件
-func (f *FastApi) createStaticRoutes() {
+func (f *FastApi) createStaticRoutes() *FastApi {
 	f.engine.Get(openapi.FaviconIcoName, querySwaggerFaviconIco)
 	f.engine.Get(openapi.FaviconName, querySwaggerFaviconPng)
 
@@ -102,6 +104,8 @@ func (f *FastApi) createStaticRoutes() {
 	f.engine.Get(openapi.SwaggerJsName, queryDocsUiJS)
 
 	f.engine.Get(openapi.RedocJsName, queryRedocUiJS)
+
+	return f
 }
 
 // 挂载 png 图标资源

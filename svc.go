@@ -368,8 +368,10 @@ func (c *Context) AnyResponse(statusCode int, content any, contentType string) *
 // ================================ SHORTCUTS ================================
 
 // F 合并字符串
-func (c *Context) F(s ...string) string            { return helper.CombineStrings(s...) }
+func (c *Context) F(s ...string) string { return helper.CombineStrings(s...) }
+
 func (c *Context) Marshal(obj any) ([]byte, error) { return helper.JsonMarshal(obj) }
+
 func (c *Context) Unmarshal(data []byte, v interface{}) error {
 	return helper.JsonUnmarshal(data, v)
 }

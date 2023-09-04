@@ -6,15 +6,14 @@ require (
 	github.com/Chendemo12/fastapi-tool v0.1.0
 	github.com/go-playground/validator/v10 v10.13.0
 	github.com/gofiber/fiber/v2 v2.42.0
+	github.com/json-iterator/go v1.1.12
 )
 
 require (
 	github.com/andybalholm/brotli v1.0.4 // indirect
-	github.com/go-bindata/go-bindata v1.0.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/google/uuid v1.3.0 // indirect
-	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.15.11 // indirect
 	github.com/leodido/go-urn v1.2.3 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect

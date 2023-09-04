@@ -22,8 +22,7 @@ func createFiberApp(title, version string) *fiber.App {
 
 	// 创建App实例
 	app := fiber.New(fiber.Config{
-		//Prefork:       core.MultipleProcessEnabled, // 多进程模式
-		Prefork:       false,                  // 多进程模式
+		Prefork:       false,                  // core.MultipleProcessEnabled, // 多进程模式
 		CaseSensitive: true,                   // 区分路由大小写
 		StrictRouting: true,                   // 严格路由
 		ServerHeader:  title,                  // 服务器头

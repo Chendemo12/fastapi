@@ -170,13 +170,16 @@ func (f *FastApi) initialize() *FastApi {
 	}
 
 	// 挂载基础路由
-	if core.IsDebug() || !core.BaseRoutesDisabled {
+	if !core.BaseRoutesDisabled {
 		f.mountBaseRoutes()
 	}
 	// 挂载自定义路由
 	f.mountUserRoutes()
+
 	// 创建 OpenApi Swagger 文档, 必须等上层注册完路由之后才能调用
-	f.createOpenApiDoc()
+	if !core.SwaggerDisabled || core.IsDebug() {
+		f.createOpenApiDoc()
+	}
 
 	return f
 }
@@ -459,22 +462,27 @@ func (f *FastApi) DumpPID() {
 	}
 }
 
+// Get 请求
 func (f *FastApi) Get(path string, handler HandlerFunc, opts ...Option) *Route {
 	return f.routers[0].Get(path, handler, opts...)
 }
 
+// Post 请求
 func (f *FastApi) Post(path string, handler HandlerFunc, opts ...Option) *Route {
 	return f.routers[0].Post(path, handler, opts...)
 }
 
+// Delete 请求
 func (f *FastApi) Delete(path string, handler HandlerFunc, opts ...Option) *Route {
 	return f.routers[0].Delete(path, handler, opts...)
 }
 
+// Patch 请求
 func (f *FastApi) Patch(path string, handler HandlerFunc, opts ...Option) *Route {
 	return f.routers[0].Patch(path, handler, opts...)
 }
 
+// Put 请求
 func (f *FastApi) Put(path string, handler HandlerFunc, opts ...Option) *Route {
 	return f.routers[0].Put(path, handler, opts...)
 }
@@ -547,21 +555,21 @@ func (f *FastApi) Run(host, port string) {
 }
 
 type Config struct {
-	Title                   string                `json:"title,omitempty" description:"APP标题,也是日志文件名"`
-	Version                 string                `json:"version,omitempty" description:"APP版本号"`
-	Debug                   bool                  `json:"debug,omitempty" description:"调试模式"`
 	UserSvc                 UserService           `json:"-" description:"自定义服务依赖"`
-	Description             string                `json:"description,omitempty" description:"APP描述"`
 	Logger                  logger.Iface          `json:"-" description:"日志"`
-	ShutdownTimeout         int                   `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
-	DisableBaseRoutes       bool                  `json:"disable_base_routes,omitempty" description:"禁用基础路由"`
-	DisableSwagAutoCreate   bool                  `json:"disable_swag_auto_create,omitempty" description:"禁用自动文档"`
-	DisableRequestValidate  bool                  `json:"disable_request_validate,omitempty" description:"禁用请求体自动校验"`
-	DisableResponseValidate bool                  `json:"disable_response_validate,omitempty" description:"禁用响应体自动序列化"`
-	EnableMultipleProcess   bool                  `json:"enable_multiple_process,omitempty" description:"开启多进程"`
-	EnableDumpPID           bool                  `json:"enable_dump_pid,omitempty" description:"输出PID文件"`
 	ErrorHandler            fiber.ErrorHandler    `json:"-" description:"请求错误处理方法"`
 	RecoverHandler          StackTraceHandlerFunc `json:"-" description:"异常处理方法"`
+	Version                 string                `json:"version,omitempty" description:"APP版本号"`
+	Description             string                `json:"description,omitempty" description:"APP描述"`
+	Title                   string                `json:"title,omitempty" description:"APP标题,也是日志文件名"`
+	ShutdownTimeout         int                   `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
+	DisableSwagAutoCreate   bool                  `json:"disable_swag_auto_create,omitempty" description:"禁用自动文档"`
+	EnableMultipleProcess   bool                  `json:"enable_multiple_process,omitempty" description:"开启多进程"`
+	EnableDumpPID           bool                  `json:"enable_dump_pid,omitempty" description:"输出PID文件"`
+	DisableResponseValidate bool                  `json:"disable_response_validate,omitempty" description:"禁用响应体自动序列化"`
+	DisableRequestValidate  bool                  `json:"disable_request_validate,omitempty" description:"禁用请求体自动校验"`
+	DisableBaseRoutes       bool                  `json:"disable_base_routes,omitempty" description:"禁用基础路由"`
+	Debug                   bool                  `json:"debug,omitempty" description:"调试模式"`
 }
 
 // NEW 创建一个 FastApi 服务
@@ -570,6 +578,7 @@ type Config struct {
 //	@param	version	string		Version
 //	@param	debug	bool		是否开启调试模式
 //	@param	service	UserService	custom	ServiceContext
+//
 //	@return	*FastApi fastapi对象
 func NEW(title, version string, debug bool, svc UserService) *FastApi {
 	core.SetMode(debug)
@@ -589,7 +598,7 @@ func NEW(title, version string, debug bool, svc UserService) *FastApi {
 			middlewares: make([]any, 0),
 			events:      make([]*Event, 0),
 		}
-		appEngine.routers[0] = APIRouter("", []string{"Main"})
+		appEngine.routers[0] = APIRouter("", []string{"Default"})
 	})
 
 	return appEngine

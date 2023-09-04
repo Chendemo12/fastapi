@@ -58,7 +58,7 @@ type Components struct {
 
 // MarshalJSON 重载序列化方法
 func (c *Components) MarshalJSON() ([]byte, error) {
-	m := make(map[string]map[string]any, 0)
+	m := make(map[string]map[string]any)
 	for _, v := range c.Scheme {
 		m[v.Name] = v.Model.Schema() // 记录根模型
 
