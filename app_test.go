@@ -403,6 +403,36 @@ func getAddress(c *Context) *Response {
 	return c.OKResponse(info)
 }
 
+type EnosDataItem struct {
+	Items struct {
+		AssetId   string  `json:"assetId"`
+		PointId   int     `json:"pointId"`
+		Timestamp float64 `json:"timestamp"`
+		Localtime string  `json:"localtime,omitempty"`
+		Quality   int     `json:"quality,omitempty"`
+	} `json:"items"`
+}
+
+type EnosData struct {
+	BaseModel
+	Kind   string        `json:"kind"`
+	Code   int           `json:"code"`
+	Msg    string        `json:"msg,omitempty"`
+	Submsg string        `json:"submsg,omitempty"`
+	Data   *EnosDataItem `json:"data"`
+}
+
+func pushEnOSData(c *Context) *Response {
+	data := &EnosData{}
+	err := c.ShouldBindJSON(data)
+	if err != nil {
+		return err
+	}
+	c.Logger().Info("receive enos data: ", data.Kind)
+
+	return c.OKResponse(data)
+}
+
 func TestFastApi_Run(t *testing.T) {
 	svc := NEWCtx()
 	app := New(Config{
@@ -416,10 +446,16 @@ func TestFastApi_Run(t *testing.T) {
 		DisableBaseRoutes: true,
 	})
 
-	app.Get("/example/ip", getAddress, Option{
+	app.Get("/example", getAddress)
+
+	app.Get("/example/ip", getAddress, Opt{
 		Summary:       "返回当前请求的来源IP地址",
 		ResponseModel: &IPModel{},
 	})
-	app.Get("/example", getAddress)
+
+	app.Post("/pusher", pushEnOSData, Opt{
+		ResponseModel: &EnosData{}, RequestModel: &EnosData{},
+	})
+
 	app.Run(svc.Conf.HTTP.Host, svc.Conf.HTTP.Port) // 阻塞运行
 }

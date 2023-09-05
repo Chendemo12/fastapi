@@ -58,9 +58,11 @@ type HTTPValidationError = godantic.HTTPValidationError
 type MetaField = godantic.MetaField
 type Metadata = godantic.Metadata
 
+type RO = Option
+type Opt = Option
+
 //goland:noinspection GoUnusedGlobalVariable
 var (
-	StructReflect     = godantic.StructReflect
 	QueryJsonName     = godantic.QueryJsonName
 	IsFieldRequired   = godantic.IsFieldRequired
 	ReflectObjectType = godantic.ReflectObjectType

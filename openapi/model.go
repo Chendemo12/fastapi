@@ -58,13 +58,14 @@ type Components struct {
 
 // MarshalJSON 重载序列化方法
 func (c *Components) MarshalJSON() ([]byte, error) {
-	m := make(map[string]map[string]any)
+	m := make(map[string]any)
 	for _, v := range c.Scheme {
 		m[v.Name] = v.Model.Schema() // 记录根模型
 
 		// 生成模型，处理嵌入类型
 		for _, innerF := range v.Model.InnerFields() {
-			if innerM := innerF.InnerModel(); innerM != nil { // 发现子模型
+			exist, innerM := innerF.IsBaseModel()
+			if exist { // 发现子模型
 				m[innerF.SchemaName()] = innerM.Schema() // 对于未命名结构体，给其指定一个结构体名称
 			}
 		}
