@@ -136,11 +136,11 @@ type dict map[string]any
 // 但此类型不再递归记录,仅记录一个关联模型为基本
 type Field struct {
 	_pkg        string            `description:"包名.结构体名"`
-	Title       string            `json:"title" description:"字段名称"`
+	Title       string            `json:"title,omitempty" description:"字段名称"`
 	Tag         reflect.StructTag `json:"tag" description:"字段标签"`
 	Description string            `json:"description,omitempty" description:"说明"`
 	ItemRef     string            `description:"子元素类型, 仅Type=array/object时有效"`
-	OType       OpenApiDataType   `json:"otype,omitempty" description:"openaapi 数据类型"`
+	OType       OpenApiDataType   `json:"otype,omitempty" description:"openapi 数据类型"`
 }
 
 // Schema 生成字段的详细描述信息

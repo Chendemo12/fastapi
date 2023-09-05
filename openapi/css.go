@@ -84,7 +84,7 @@ func internalStaticFaviconPng() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "internal/static/favicon.png", size: 412, mode: os.FileMode(438), modTime: time.Unix(1693797808, 0)}
+	info := bindataFileInfo{name: "internal/static/favicon.png", size: 412, mode: os.FileMode(438), modTime: time.Unix(1693881063, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -104,7 +104,7 @@ func internalStaticRedocStandaloneJs() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "internal/static/redoc.standalone.js", size: 1042008, mode: os.FileMode(438), modTime: time.Unix(1693798081, 0)}
+	info := bindataFileInfo{name: "internal/static/redoc.standalone.js", size: 1042008, mode: os.FileMode(438), modTime: time.Unix(1693880953, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }

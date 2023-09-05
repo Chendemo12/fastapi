@@ -25,10 +25,10 @@ type License struct {
 type Info struct {
 	Title          string  `json:"title" description:"显示在文档顶部的标题"`
 	Version        string  `json:"version" description:"显示在标题右上角的程序版本号"`
-	Description    string  `json:"description" description:"显示在标题下方的说明"`
-	Contact        Contact `json:"contact" description:"联系方式"`
-	License        License `json:"license" description:"许可证"`
-	TermsOfService string  `json:"termsOfService" description:"服务条款(不常用)"`
+	Description    string  `json:"description,omitempty" description:"显示在标题下方的说明"`
+	Contact        Contact `json:"contact,omitempty" description:"联系方式"`
+	License        License `json:"license,omitempty" description:"许可证"`
+	TermsOfService string  `json:"termsOfService,omitempty" description:"服务条款(不常用)"`
 }
 
 // Reference 引用模型,用于模型字段和路由之间互相引用
@@ -153,23 +153,23 @@ func (p *PathModelContent) MarshalJSON() ([]byte, error) {
 // Response 路由返回体，包含了返回状态码，状态码说明和返回值模型
 type Response struct {
 	Content     *PathModelContent `json:"content" description:"返回值模型"`
-	Description string            `json:"description" description:"说明"`
+	Description string            `json:"description,omitempty" description:"说明"`
 	StatusCode  int               `json:"-" description:"状态码"`
 }
 
 // Operation 路由HTTP方法: Get/Post/Patch/Delete 等操作方法
 type Operation struct {
-	Tags        []string `json:"tags" description:"路由标签"`
-	Summary     string   `json:"summary" description:"摘要描述"`
-	Description string   `json:"description" description:"说明"`
+	Tags        []string `json:"tags,omitempty" description:"路由标签"`
+	Summary     string   `json:"summary,omitempty" description:"摘要描述"`
+	Description string   `json:"description,omitempty" description:"说明"`
 	OperationId string   `json:"operationId,omitempty" description:"唯一ID"` // no use, keep
 	// 路径参数和查询参数, 对于路径相同，方法不同的路由来说，其查询参数可以不一样，但其路径参数都是一样的
 	Parameters []*Parameter `json:"parameters,omitempty" description:"路径参数和查询参数"`
 	// 请求体，通过 MakeOperationRequestBody 构建
 	RequestBody *RequestBody `json:"requestBody,omitempty" description:"请求体"`
 	// 响应文档，对于任一个路由，均包含2个响应实例：200 + 422， 通过函数 MakeOperationResponses 构建
-	Responses  []*Response `json:"responses" description:"响应体"`
-	Deprecated bool        `json:"deprecated" description:"是否禁用"`
+	Responses  []*Response `json:"responses,omitempty" description:"响应体"`
+	Deprecated bool        `json:"deprecated,omitempty" description:"是否禁用"`
 }
 
 // MarshalJSON 重写序列化方法，修改 Responses 和 RequestBody 字段

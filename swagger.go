@@ -13,44 +13,8 @@ const staticPrefix = "internal/static/"
 func (f *FastApi) createOpenApiDoc() *FastApi {
 	f.service.openApi = openapi.NewOpenApi(f.title, f.version, f.Description())
 
-	f.createDefines()
-	f.createPaths()
+	f.createDefines().createPaths()
 	f.createSwaggerRoutes()
-	f.createStaticRoutes()
-
-	return f
-}
-
-// 注册 swagger 的文档路由
-func (f *FastApi) createSwaggerRoutes() *FastApi {
-	// docs 在线调试页面
-	f.engine.Get("/docs", func(c *fiber.Ctx) error {
-		c.Set(openapi.HeaderContentType, openapi.MIMETextHTML)
-		return c.SendString(openapi.MakeSwaggerUiHtml(
-			f.title,
-			openapi.JsonUrl,
-			openapi.SwaggerJsName,
-			openapi.SwaggerCssName,
-			openapi.FaviconName,
-		))
-	})
-
-	// redoc 纯文档页面
-	f.engine.Get("/redoc", func(c *fiber.Ctx) error {
-		c.Set(openapi.HeaderContentType, openapi.MIMETextHTML)
-		return c.SendString(openapi.MakeRedocUiHtml(
-			f.title,
-			openapi.JsonUrl,
-			openapi.RedocJsName,
-			openapi.FaviconName,
-		))
-	})
-
-	// openapi 获取路由定义
-	f.engine.Get("/openapi.json", func(c *fiber.Ctx) error {
-		c.Set(openapi.HeaderContentType, openapi.MIMEApplicationJSONCharsetUTF8)
-		return c.SendStream(bytes.NewReader(f.service.openApi.Schema()))
-	})
 
 	return f
 }
@@ -95,8 +59,38 @@ func (f *FastApi) createPaths() *FastApi {
 	return f
 }
 
-// 创建静态资源文件
-func (f *FastApi) createStaticRoutes() *FastApi {
+// 注册 swagger 的文档路由
+func (f *FastApi) createSwaggerRoutes() *FastApi {
+	// openapi 获取路由定义
+	f.engine.Get("/openapi.json", func(c *fiber.Ctx) error {
+		c.Set(openapi.HeaderContentType, openapi.MIMEApplicationJSONCharsetUTF8)
+		return c.SendStream(bytes.NewReader(f.service.openApi.Schema()))
+	})
+
+	// docs 在线调试页面
+	f.engine.Get("/docs", func(c *fiber.Ctx) error {
+		c.Set(openapi.HeaderContentType, openapi.MIMETextHTML)
+		return c.SendString(openapi.MakeSwaggerUiHtml(
+			f.title,
+			openapi.JsonUrl,
+			openapi.SwaggerJsName,
+			openapi.SwaggerCssName,
+			openapi.FaviconName,
+		))
+	})
+
+	// redoc 纯文档页面
+	f.engine.Get("/redoc", func(c *fiber.Ctx) error {
+		c.Set(openapi.HeaderContentType, openapi.MIMETextHTML)
+		return c.SendString(openapi.MakeRedocUiHtml(
+			f.title,
+			openapi.JsonUrl,
+			openapi.RedocJsName,
+			openapi.FaviconName,
+		))
+	})
+
+	// 创建静态资源文件
 	f.engine.Get(openapi.FaviconIcoName, querySwaggerFaviconIco)
 	f.engine.Get(openapi.FaviconName, querySwaggerFaviconPng)
 
@@ -114,6 +108,7 @@ func querySwaggerFaviconPng(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Redirect(openapi.SwaggerFaviconUrl) // 加载错误，重定向
 	}
+
 	// use asset data
 	return c.SendStream(bytes.NewReader(b))
 }
@@ -124,6 +119,7 @@ func querySwaggerFaviconIco(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Redirect(openapi.SwaggerFaviconUrl)
 	}
+
 	return c.SendStream(bytes.NewReader(b))
 }
 
@@ -133,6 +129,7 @@ func queryDocsUiCSS(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Redirect(openapi.SwaggerCssUrl)
 	}
+
 	c.Status(200).Set(openapi.HeaderContentType, openapi.MIMETextCSSCharsetUTF8)
 	return c.SendStream(bytes.NewReader(b))
 }
@@ -143,6 +140,7 @@ func queryDocsUiJS(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Redirect(openapi.SwaggerJsUrl)
 	}
+
 	c.Status(200).Set(openapi.HeaderContentType, openapi.MIMETextJavaScriptCharsetUTF8)
 	return c.SendStream(bytes.NewReader(b))
 }
@@ -153,6 +151,7 @@ func queryRedocUiJS(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Redirect(openapi.RedocJsUrl)
 	}
+
 	c.Status(200).Set(openapi.HeaderContentType, openapi.MIMETextJavaScriptCharsetUTF8)
 	return c.SendStream(bytes.NewReader(b))
 }
