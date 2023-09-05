@@ -47,12 +47,10 @@ type Dict = map[string]any // python.Dict
 type Ctx = Context
 
 type SchemaIface = godantic.SchemaIface
-type DictIface = godantic.DictIface
 type QueryParameter = godantic.QueryParameter
 type QueryModel = godantic.QueryModel
 type Field = godantic.Field
 type BaseModel = godantic.BaseModel
-type BaseModelIface = godantic.Iface
 type ValidationError = godantic.ValidationError
 type HTTPValidationError = godantic.HTTPValidationError
 type MetaField = godantic.MetaField

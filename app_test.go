@@ -420,6 +420,13 @@ type EnosData struct {
 	Msg    string        `json:"msg,omitempty"`
 	Submsg string        `json:"submsg,omitempty"`
 	Data   *EnosDataItem `json:"data"`
+	IPs    struct {
+		Items []*IPModel `json:"items"`
+	} `json:"ips"`
+	Addrs []struct {
+		Host string `json:"host"`
+		Port string `json:"port"`
+	}
 }
 
 func pushEnOSData(c *Context) *Response {

@@ -64,7 +64,7 @@ func (c *Components) MarshalJSON() ([]byte, error) {
 
 		// 生成模型，处理嵌入类型
 		for _, innerF := range v.Model.InnerFields() {
-			exist, innerM := innerF.IsBaseModel()
+			exist, innerM := innerF.ToMetadata()
 			if exist { // 发现子模型
 				m[innerF.SchemaName()] = innerM.Schema() // 对于未命名结构体，给其指定一个结构体名称
 			}

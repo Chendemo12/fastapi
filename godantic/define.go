@@ -116,7 +116,6 @@ func List(model SchemaIface) *Metadata {
 					ItemRef:     "",
 					OType:       ObjectType,
 				},
-				Index:     0,
 				Exported:  true,
 				Anonymous: false,
 			},
@@ -146,7 +145,6 @@ func makeMetadata(title, desc, tag string, otype OpenApiDataType) *Metadata {
 			{
 				RType:     nil,
 				Field:     field,
-				Index:     0,
 				Exported:  true,
 				Anonymous: false,
 			},

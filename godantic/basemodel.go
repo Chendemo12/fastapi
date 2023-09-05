@@ -323,8 +323,11 @@ func (f *Field) SetId(id string) { f._pkg = id }
 // BaseModel 基本数据模型, 对于上层的 app.Route 其请求和相应体都应为继承此结构体的结构体
 // 在 OpenApi 文档模型中,此模型的类型始终为 "object";
 // 对于 BaseModel 其字段仍然可能会 BaseModel
-type BaseModel struct {
-	_pkg string `description:"包名.结构体名"`
+type BaseModel struct{}
+
+func (b *BaseModel) ID() string {
+	rt := reflect.TypeOf(b).Elem()
+	return rt.String()
 }
 
 // Schema 输出为OpenAPI文档模型,字典格式
@@ -360,7 +363,7 @@ func (b *BaseModel) Schema() (m map[string]any) {
 		"description": b.SchemaDesc(),
 	}
 
-	meta := GetMetadata(b._pkg)
+	meta := GetMetadata(b.ID())
 	required := make([]string, 0, len(meta.fields))
 	properties := make(map[string]any, len(meta.fields))
 
@@ -384,7 +387,7 @@ func (b *BaseModel) Schema() (m map[string]any) {
 //
 //	@param	exclude	[]bool	是否排除包名LL
 func (b *BaseModel) SchemaName(exclude ...bool) string {
-	meta := GetMetadata(b._pkg)
+	meta := GetMetadata(b.ID())
 	if len(exclude) > 0 { // 排除包名
 		return meta.names[0]
 	} else {
@@ -407,130 +410,15 @@ func (b *BaseModel) SchemaType() OpenApiDataType { return ObjectType }
 
 func (b *BaseModel) IsRequired() bool { return true }
 
-// Map 将结构体转换为字典视图
-func (b *BaseModel) Map() (m map[string]any) {
-	//m = structfuncs.GetFieldsValue(b)
-	m = map[string]any{}
-	return
-}
-
-// Dict 将结构体转换为字典视图，并允许过滤一些字段或添加一些键值对到字典中
-func (b *BaseModel) Dict(exclude []string, include map[string]any) (m map[string]any) {
-
-	excludeMap := make(map[string]string, len(exclude))
-	for i := 0; i < len(exclude); i++ {
-		excludeMap[exclude[i]] = exclude[i]
-	}
-
-	// 实时反射取值
-	v := reflect.Indirect(reflect.ValueOf(b))
-	meta := GetMetadata(b._pkg)
-
-	for i := 0; i < len(meta.Fields()); i++ {
-		if !meta.fields[i].Exported || meta.fields[i].Anonymous { // 非导出字段
-			continue
-		}
-
-		if _, ok := excludeMap[meta.fields[i].Title]; ok { // 此字段被排除
-			continue
-		}
-
-		switch meta.fields[i].RType.Kind() { // 获取字段定义的类型
-
-		case reflect.Array, reflect.Slice:
-			m[meta.fields[i].Title] = v.Field(meta.fields[i].Index).Bytes()
-
-		case reflect.Uint8:
-			m[meta.fields[i].Title] = byte(v.Field(meta.fields[i].Index).Uint())
-		case reflect.Uint16:
-			m[meta.fields[i].Title] = uint16(v.Field(meta.fields[i].Index).Uint())
-		case reflect.Uint32:
-			m[meta.fields[i].Title] = uint32(v.Field(meta.fields[i].Index).Uint())
-		case reflect.Uint64, reflect.Uint:
-			m[meta.fields[i].Title] = v.Field(meta.fields[i].Index).Uint()
-
-		case reflect.Int8:
-			m[meta.fields[i].Title] = int8(v.Field(meta.fields[i].Index).Int())
-		case reflect.Int16:
-			m[meta.fields[i].Title] = int16(v.Field(meta.fields[i].Index).Int())
-		case reflect.Int32:
-			m[meta.fields[i].Title] = int32(v.Field(meta.fields[i].Index).Int())
-		case reflect.Int64, reflect.Int:
-			m[meta.fields[i].Title] = v.Field(meta.fields[i].Index).Int()
-
-		case reflect.Float32:
-			m[meta.fields[i].Title] = float32(v.Field(meta.fields[i].Index).Float())
-		case reflect.Float64:
-			m[meta.fields[i].Title] = v.Field(meta.fields[i].Index).Float()
-
-		case reflect.Struct, reflect.Interface, reflect.Map:
-			m[meta.fields[i].Title] = v.Field(meta.fields[i].Index).Interface()
-
-		case reflect.String:
-			m[meta.fields[i].Title] = v.Field(meta.fields[i].Index).String()
-
-		case reflect.Pointer:
-			m[meta.fields[i].Title] = v.Field(meta.fields[i].Index).Pointer()
-		case reflect.Bool:
-			m[meta.fields[i].Title] = v.Field(meta.fields[i].Index).Bool()
-		}
-
-	}
-
-	if include != nil {
-		for k := range include {
-			m[k] = include[k]
-		}
-	}
-
-	return
-}
-
-// Exclude 将结构体转换为字典视图，并过滤一些字段
-func (b *BaseModel) Exclude(exclude ...string) (m map[string]any) {
-	return b.Dict(exclude, nil)
-}
-
-// Include 将结构体转换为字典视图，并允许添加一些键值对到字典中
-func (b *BaseModel) Include(include map[string]any) (m map[string]any) {
-	return b.Dict([]string{}, include)
-}
-
-// Validate 检验实例是否符合tag要求
-func (b *BaseModel) Validate(stc any) []*ValidationError {
-	// TODO: NotImplemented
-	return nil
-}
-
-// ParseRaw 从原始字节流中解析结构体对象
-func (b *BaseModel) ParseRaw(stc []byte) []*ValidationError {
-	// TODO: NotImplemented
-	return nil
-}
-
-// Copy 拷贝一个新的空实例对象
-func (b *BaseModel) Copy() any {
-	// TODO: NotImplemented
-	return nil
-}
-
 // Metadata 获取反射后的字段元信息, 此字段应慎重使用
 func (b *BaseModel) Metadata() (*Metadata, error) {
-	if b._pkg == "" {
-		rt := reflect.TypeOf(b).Elem()
-		b._pkg = rt.String()
-	}
-
-	meta := GetMetadata(b._pkg)
+	meta := GetMetadata(b.ID())
 	if meta != nil {
 		return meta, nil
 	}
 
 	return nil, errors.New("struct is not a BaseModel")
 }
-
-// SetId 设置结构体的唯一标识
-func (b *BaseModel) SetId(id string) { b._pkg = id }
 
 // StringsToInts 将字符串数组转换成int数组, 简单实现
 //
