@@ -281,7 +281,7 @@ func (f *Router) method(
 				Title:  name,
 				Name:   name,
 				Tag:    reflect.StructTag(`json:"` + name + `,omitempty"`),
-				OType:  godantic.StringType,
+				Type:   godantic.StringType,
 				InPath: true,
 			}
 			if required {

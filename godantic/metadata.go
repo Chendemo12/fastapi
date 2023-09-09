@@ -29,17 +29,17 @@ func BaseModelToMetadata(model SchemaIface) *Metadata {
 
 // MetaField 模型的字段元数据,可以与 Metadata 互相转换
 type MetaField struct {
-	RType reflect.Type `description:"反射字段类型"`
 	Field
-	Exported  bool `json:"exported" description:"是否是导出字段"`
-	Anonymous bool `json:"anonymous" description:"是否是嵌入字段"`
+	rType     reflect.Type `description:"反射字段类型"`
+	Exported  bool         `description:"是否是导出字段"`
+	Anonymous bool         `description:"是否是嵌入字段"`
 }
 
 // ToMetadata 是否仍然是个基本模型
 func (m *MetaField) ToMetadata() (bool, *Metadata) {
-	if m.RType != nil && (m.RType.Kind() == reflect.Struct || m.RType.Kind() == reflect.Ptr) {
+	if m.rType != nil && (m.rType.Kind() == reflect.Struct || m.rType.Kind() == reflect.Ptr) {
 		meta := &Metadata{}
-		meta.FromReflectType(m.RType)
+		meta.FromReflectType(m.rType)
 		metaCache.Set(meta)
 
 		return true, meta
@@ -101,7 +101,7 @@ func (m *Metadata) SchemaType() OpenApiDataType {
 	case ObjectType, ArrayType:
 		return m.oType
 	default: // 预定义类型,基本数据类型
-		return m.innerFields[0].OType
+		return m.innerFields[0].Type
 	}
 }
 
@@ -237,15 +237,17 @@ func (m *Metadata) extractStructField(fatherType reflect.Type, field reflect.Str
 	fieldMeta := &MetaField{
 		Exported:  true,
 		Anonymous: field.Anonymous,
-		RType:     field.Type,
+		rType:     field.Type,
 	}
 	fieldMeta.Title = field.Name
 	fieldMeta.Tag = field.Tag
 	fieldMeta.Description = QueryFieldTag(field.Tag, "description", field.Name)
-	fieldMeta.OType = ReflectKindToOType(field.Type.Kind())
+	fieldMeta.Type = ReflectKindToOType(field.Type.Kind())
 
 	if isAnonymousStruct(field.Type) {
 		// 遇到匿名结构体，分配一个名称
+		println(fatherType.String())
+		// TODO: 如果父节点是匿名结构体？？？
 		fieldMeta._pkg = fatherType.String() + AnonymousModelNameConnector + field.Name
 	} else {
 		fieldMeta._pkg = field.Type.String()
@@ -304,11 +306,11 @@ func (m *Metadata) parseFieldWhichIsArray(fieldMeta *MetaField, elemType reflect
 				Tag:         "",
 				Description: fieldMeta.Description,
 				ItemRef:     "",
-				OType:       ArrayType,
+				Type:        ArrayType,
 			},
 			Exported:  true,
 			Anonymous: false,
-			RType:     elemType,
+			rType:     elemType,
 		}
 
 		m.AddField(mf, depth)
@@ -341,10 +343,10 @@ func (m *Metadata) parseFieldWhichIsStruct(fieldMeta *MetaField, fieldType refle
 	fieldMeta.ItemRef = pkg
 
 	// 首先记录一下结构体自身
-	mf := &MetaField{Exported: true, Anonymous: false, RType: fieldType}
+	mf := &MetaField{Exported: true, Anonymous: false, rType: fieldType}
 	mf.Title = name
 	mf.Description = fieldMeta.Description
-	mf.OType = ObjectType // 标记此为一个模型，后面会继续生成其文档
+	mf.Type = ObjectType // 标记此为一个模型，后面会继续生成其文档
 	mf._pkg = pkg
 	m.AddField(mf, depth)
 

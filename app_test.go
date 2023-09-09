@@ -404,29 +404,34 @@ func getAddress(c *Context) *Response {
 }
 
 type EnosDataItem struct {
-	Items struct {
+	Items []struct {
 		AssetId   string  `json:"assetId"`
+		Localtime string  `json:"localtime,omitempty"`
 		PointId   int     `json:"pointId"`
 		Timestamp float64 `json:"timestamp"`
-		Localtime string  `json:"localtime,omitempty"`
 		Quality   int     `json:"quality,omitempty"`
 	} `json:"items"`
 }
 
 type EnosData struct {
 	BaseModel
+	Data   *EnosDataItem `json:"data"`
 	Kind   string        `json:"kind"`
-	Code   int           `json:"code"`
 	Msg    string        `json:"msg,omitempty"`
 	Submsg string        `json:"submsg,omitempty"`
-	Data   *EnosDataItem `json:"data"`
-	IPs    struct {
-		Items []*IPModel `json:"items"`
-	} `json:"ips"`
-	Addrs []struct {
+	Code   int           `json:"code"`
+}
+
+type DomainRecord struct {
+	BaseModel
+	Timestamp int64 `json:"timestamp" description:"时间戳"`
+	IP        struct {
+		Record *IPModel `json:"record" description:"解析记录"`
+	} `json:"ip"`
+	Addresses []struct {
 		Host string `json:"host"`
 		Port string `json:"port"`
-	}
+	} `json:"addresses" description:"主机地址"`
 }
 
 func pushEnOSData(c *Context) *Response {
@@ -438,6 +443,38 @@ func pushEnOSData(c *Context) *Response {
 	c.Logger().Info("receive enos data: ", data.Kind)
 
 	return c.OKResponse(data)
+}
+
+func getDomainRecord(c *Context) *Response {
+	r := &DomainRecord{
+		Timestamp: 0,
+		Addresses: []struct {
+			Host string `json:"host"`
+			Port string `json:"port"`
+		}{
+			{
+				"127.0.0.1",
+				"8090",
+			},
+		},
+	}
+	r.IP.Record = &IPModel{
+		IP: "",
+		Detail: struct {
+			IPv4     string `json:"IPv4" description:"IPv4地址"`
+			IPv4Full string `json:"IPv4_full" description:"带端口的IPv4地址"`
+			Ipv6     string `json:"IPv6" description:"IPv6地址"`
+		}(struct {
+			IPv4     string
+			IPv4Full string
+			Ipv6     string
+		}{
+			"10.64.73.25",
+			"10.64.73.25:8000",
+			"0:0:0:0:0",
+		}),
+	}
+	return c.OKResponse(r)
 }
 
 func TestFastApi_Run(t *testing.T) {
@@ -460,8 +497,13 @@ func TestFastApi_Run(t *testing.T) {
 		ResponseModel: &IPModel{},
 	})
 
-	app.Post("/pusher", pushEnOSData, Opt{
-		ResponseModel: &EnosData{}, RequestModel: &EnosData{},
+	app.Get("/example/domain", getDomainRecord, Opt{
+		Summary:       "获取地址解析记录",
+		ResponseModel: &DomainRecord{},
+	})
+
+	app.Post("/example/pusher", pushEnOSData, Opt{
+		RequestModel: &EnosData{}, ResponseModel: List(&EnosData{}),
 	})
 
 	app.Run(svc.Conf.HTTP.Host, svc.Conf.HTTP.Port) // 阻塞运行

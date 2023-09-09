@@ -11,7 +11,7 @@ type ValidationError struct {
 	BaseModel
 	Ctx  map[string]any `json:"service" description:"Service"`
 	Msg  string         `json:"msg" description:"Message" binding:"required"`
-	Type string         `json:"type" description:"Error RType" binding:"required"`
+	Type string         `json:"type" description:"Error Type" binding:"required"`
 	Loc  []string       `json:"loc" description:"Location" binding:"required"`
 }
 
@@ -107,14 +107,14 @@ func List(model SchemaIface) *Metadata {
 
 		meta.innerFields = []*MetaField{
 			{
-				RType: rt,
+				rType: rt,
 				Field: Field{
 					_pkg:        rt.String(),
 					Title:       rt.Name(),
 					Tag:         "",
 					Description: model.SchemaDesc(),
 					ItemRef:     "",
-					OType:       ObjectType,
+					Type:        ObjectType,
 				},
 				Exported:  true,
 				Anonymous: false,
@@ -132,7 +132,7 @@ func makeMetadata(title, desc, tag string, otype OpenApiDataType) *Metadata {
 		Tag:         reflect.StructTag(tag + ` description:"` + desc + `"`),
 		Description: desc,
 		ItemRef:     "",
-		OType:       otype,
+		Type:        otype,
 	}
 
 	return &Metadata{
@@ -143,7 +143,7 @@ func makeMetadata(title, desc, tag string, otype OpenApiDataType) *Metadata {
 		model:       nil,
 		innerFields: []*MetaField{
 			{
-				RType:     nil,
+				rType:     nil,
 				Field:     field,
 				Exported:  true,
 				Anonymous: false,

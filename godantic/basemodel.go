@@ -137,10 +137,10 @@ type dict map[string]any
 type Field struct {
 	_pkg        string            `description:"包名.结构体名"`
 	Title       string            `json:"title,omitempty" description:"字段名称"`
+	Type        OpenApiDataType   `json:"type,omitempty" description:"openapi 数据类型"`
 	Tag         reflect.StructTag `json:"tag" description:"字段标签"`
 	Description string            `json:"description,omitempty" description:"说明"`
 	ItemRef     string            `description:"子元素类型, 仅Type=array/object时有效"`
-	OType       OpenApiDataType   `json:"otype,omitempty" description:"openapi 数据类型"`
 }
 
 // Schema 生成字段的详细描述信息
@@ -183,7 +183,7 @@ func (f *Field) Schema() (m map[string]any) {
 	m = dict{
 		"name":        f.SchemaName(true),
 		"title":       f.Title,
-		"type":        f.OType,
+		"type":        f.Type,
 		"required":    f.IsRequired(),
 		"description": f.SchemaDesc(),
 	}
@@ -212,7 +212,7 @@ func (f *Field) Schema() (m map[string]any) {
 	}
 
 	// 为不同的字段类型生成相应的描述
-	switch f.OType {
+	switch f.Type {
 	case IntegerType: // 生成数字类型的最大最小值
 		for _, label := range numberTypeValidatorLabels {
 			if v, ok := validatorLabelsMap[label]; ok {
@@ -290,13 +290,13 @@ func (f *Field) SchemaName(exclude ...bool) string {
 func (f *Field) SchemaDesc() string { return f.Description }
 
 // SchemaType 模型类型
-func (f *Field) SchemaType() OpenApiDataType { return f.OType }
+func (f *Field) SchemaType() OpenApiDataType { return f.Type }
 
 // IsRequired 字段是否必须
 func (f *Field) IsRequired() bool { return IsFieldRequired(f.Tag) }
 
 // IsArray 字段是否是数组类型
-func (f *Field) IsArray() bool { return f.OType == ArrayType }
+func (f *Field) IsArray() bool { return f.Type == ArrayType }
 
 // InnerSchema 内部字段模型文档, 全名:文档
 func (f *Field) InnerSchema() (m map[string]map[string]any) {
