@@ -2,7 +2,7 @@ package fastapi
 
 import (
 	"fmt"
-	"github.com/Chendemo12/fastapi/godantic"
+	"github.com/Chendemo12/fastapi/openapi"
 	"net/http"
 )
 
@@ -51,19 +51,19 @@ type Response struct {
 }
 
 // validationErrorResponse 参数校验错误返回值
-func validationErrorResponse(ves ...*godantic.ValidationError) *Response {
+func validationErrorResponse(ves ...*openapi.ValidationError) *Response {
 	return &Response{
 		StatusCode: http.StatusUnprocessableEntity,
-		Content:    &godantic.HTTPValidationError{Detail: ves},
+		Content:    &openapi.HTTPValidationError{Detail: ves},
 		Type:       ErrResponseType,
 	}
 }
 
 func modelCannotBeStringResponse(name ...string) *Response {
-	vv := &godantic.ValidationError{
+	vv := &openapi.ValidationError{
 		Ctx:  map[string]any{"where error": "server", "msg": ModelCannotString},
 		Msg:  ModelNotMatch,
-		Type: string(godantic.StringType),
+		Type: string(openapi.StringType),
 		Loc:  emptyLocList,
 	}
 
@@ -75,15 +75,15 @@ func modelCannotBeStringResponse(name ...string) *Response {
 
 	return &Response{
 		StatusCode: http.StatusUnprocessableEntity,
-		Content:    &godantic.HTTPValidationError{Detail: []*godantic.ValidationError{vv}},
+		Content:    &openapi.HTTPValidationError{Detail: []*openapi.ValidationError{vv}},
 	}
 }
 
 func modelCannotBeNumberResponse(name ...string) *Response {
-	vv := &godantic.ValidationError{
+	vv := &openapi.ValidationError{
 		Ctx:  map[string]any{"where error": "server", "msg": ModelCannotNumber},
 		Msg:  ModelNotMatch,
-		Type: string(godantic.NumberType),
+		Type: string(openapi.NumberType),
 		Loc:  emptyLocList,
 	}
 	if len(name) > 0 {
@@ -94,15 +94,15 @@ func modelCannotBeNumberResponse(name ...string) *Response {
 
 	return &Response{
 		StatusCode: http.StatusUnprocessableEntity,
-		Content:    &godantic.HTTPValidationError{Detail: []*godantic.ValidationError{vv}},
+		Content:    &openapi.HTTPValidationError{Detail: []*openapi.ValidationError{vv}},
 	}
 }
 
 func modelCannotBeBoolResponse(name ...string) *Response {
-	vv := &godantic.ValidationError{
+	vv := &openapi.ValidationError{
 		Ctx:  map[string]any{"where error": "server", "msg": ModelCannotBool},
 		Msg:  ModelNotMatch,
-		Type: string(godantic.BoolType),
+		Type: string(openapi.BoolType),
 		Loc:  emptyLocList,
 	}
 	if len(name) > 0 {
@@ -112,15 +112,15 @@ func modelCannotBeBoolResponse(name ...string) *Response {
 	}
 	return &Response{
 		StatusCode: http.StatusUnprocessableEntity,
-		Content:    &godantic.HTTPValidationError{Detail: []*godantic.ValidationError{vv}},
+		Content:    &openapi.HTTPValidationError{Detail: []*openapi.ValidationError{vv}},
 	}
 }
 
 func modelCannotBeIntegerResponse(name ...string) *Response {
-	vv := &godantic.ValidationError{
+	vv := &openapi.ValidationError{
 		Ctx:  map[string]any{"where error": "server", "msg": ModelCannotInteger},
 		Msg:  ModelNotMatch,
-		Type: string(godantic.IntegerType),
+		Type: string(openapi.IntegerType),
 		Loc:  emptyLocList,
 	}
 	if len(name) > 0 {
@@ -130,15 +130,15 @@ func modelCannotBeIntegerResponse(name ...string) *Response {
 	}
 	return &Response{
 		StatusCode: http.StatusUnprocessableEntity,
-		Content:    &godantic.HTTPValidationError{Detail: []*godantic.ValidationError{vv}},
+		Content:    &openapi.HTTPValidationError{Detail: []*openapi.ValidationError{vv}},
 	}
 }
 
 func modelCannotBeArrayResponse(name ...string) *Response {
-	vv := &godantic.ValidationError{
+	vv := &openapi.ValidationError{
 		Ctx:  map[string]any{"where error": "server", "msg": ModelCannotArray},
 		Msg:  ModelNotMatch,
-		Type: string(godantic.ArrayType),
+		Type: string(openapi.ArrayType),
 		Loc:  emptyLocList,
 	}
 	if len(name) > 0 {
@@ -149,7 +149,7 @@ func modelCannotBeArrayResponse(name ...string) *Response {
 
 	return &Response{
 		StatusCode: http.StatusUnprocessableEntity,
-		Content:    &godantic.HTTPValidationError{Detail: []*godantic.ValidationError{vv}},
+		Content:    &openapi.HTTPValidationError{Detail: []*openapi.ValidationError{vv}},
 	}
 }
 
@@ -157,7 +157,7 @@ func modelCannotBeArrayResponse(name ...string) *Response {
 //
 //	@param	name	...string	注册的返回体,实际的返回体
 func objectModelNotMatchResponse(name ...string) *Response {
-	vv := &godantic.ValidationError{
+	vv := &openapi.ValidationError{
 		Ctx: map[string]any{
 			"where error": "server",
 			"msg": fmt.Sprintf(
@@ -165,7 +165,7 @@ func objectModelNotMatchResponse(name ...string) *Response {
 			),
 		},
 		Msg:  ModelNotMatch,
-		Type: string(godantic.ObjectType),
+		Type: string(openapi.ObjectType),
 		Loc:  []string{"response", name[0]},
 	}
 	if len(name) > 0 {
@@ -176,6 +176,6 @@ func objectModelNotMatchResponse(name ...string) *Response {
 
 	return &Response{
 		StatusCode: http.StatusUnprocessableEntity,
-		Content:    &godantic.HTTPValidationError{Detail: []*godantic.ValidationError{vv}},
+		Content:    &openapi.HTTPValidationError{Detail: []*openapi.ValidationError{vv}},
 	}
 }

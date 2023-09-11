@@ -1,4 +1,4 @@
-package godantic
+package openapi
 
 type SchemaIface interface {
 	// Schema 输出为OpenAPI文档模型,字典格式
@@ -8,7 +8,7 @@ type SchemaIface interface {
 	// SchemaDesc 结构体文档注释
 	SchemaDesc() string
 	// SchemaType 模型类型
-	SchemaType() OpenApiDataType
+	SchemaType() DataType
 	// IsRequired 字段是否必须
 	IsRequired() bool
 	// Metadata 获取反射后的字段元信息, 允许上层处理

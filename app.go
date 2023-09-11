@@ -19,7 +19,6 @@ import (
 
 	"github.com/Chendemo12/fastapi-tool/cronjob"
 	"github.com/Chendemo12/fastapi-tool/logger"
-	"github.com/Chendemo12/fastapi/godantic"
 	"github.com/Chendemo12/fastapi/internal/core"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
@@ -86,19 +85,19 @@ func (f *FastApi) mountBaseRoutes() {
 	// 注册最基础的路由
 	router := APIRouter("/api/base", []string{"Base"})
 	{
-		router.GET("/title", godantic.String, "获取软件名", func(c *Context) *Response {
+		router.GET("/title", String, "获取软件名", func(c *Context) *Response {
 			return c.StringResponse(appEngine.title)
 		})
-		router.GET("/description", godantic.String, "获取软件描述信息", func(c *Context) *Response {
+		router.GET("/description", String, "获取软件描述信息", func(c *Context) *Response {
 			return c.StringResponse(appEngine.Description())
 		})
-		router.GET("/version", godantic.String, "获取软件版本号", func(c *Context) *Response {
+		router.GET("/version", String, "获取软件版本号", func(c *Context) *Response {
 			return c.StringResponse(appEngine.version)
 		})
-		router.GET("/heartbeat", godantic.String, "心跳检测", func(c *Context) *Response {
+		router.GET("/heartbeat", String, "心跳检测", func(c *Context) *Response {
 			return c.StringResponse("pong")
 		})
-		router.GET("/debug", godantic.Bool, "获取调试开关", func(c *Context) *Response {
+		router.GET("/debug", Bool, "获取调试开关", func(c *Context) *Response {
 			return c.OKResponse(core.IsDebug())
 		})
 	}

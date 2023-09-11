@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/Chendemo12/fastapi-tool/helper"
-	"github.com/Chendemo12/fastapi/godantic"
 	"github.com/Chendemo12/fastapi/internal/core"
 	"github.com/Chendemo12/fastapi/openapi"
 	"github.com/gofiber/fiber/v2"
@@ -28,9 +27,9 @@ type StackTraceHandlerFunc = func(c *fiber.Ctx, e any)
 // RouteModelValidateHandlerFunc 返回值校验方法
 //
 //	@param	resp	any					响应体
-//	@param	meta	*godantic.Metadata	模型元数据
+//	@param	meta	*openapi.Metadata	模型元数据
 //	@return	*Response 响应体
-type RouteModelValidateHandlerFunc func(resp any, meta *godantic.Metadata) *Response
+type RouteModelValidateHandlerFunc func(resp any, meta *openapi.Metadata) *Response
 
 // routeHandler 路由处理方法(装饰器实现)，用于请求体校验和返回体序列化，同时注入全局服务依赖,
 // 此方法接收一个业务层面的路由钩子方法 HandlerFunc，
@@ -67,7 +66,7 @@ func routeHandler(handler HandlerFunc) fiber.Handler {
 }
 
 // 将jsoniter 的反序列化错误转换成 接口错误类型
-func jsoniterUnmarshalErrorToValidationError(err error) *godantic.ValidationError {
+func jsoniterUnmarshalErrorToValidationError(err error) *openapi.ValidationError {
 	// jsoniter 的反序列化错误格式：
 	//
 	// jsoniter.iter.ReportError():224
@@ -84,7 +83,7 @@ func jsoniterUnmarshalErrorToValidationError(err error) *godantic.ValidationErro
 	//		"sex": "F"
 	// 	}|...
 	msg := err.Error()
-	ve := &godantic.ValidationError{Loc: []string{"body"}, Ctx: whereClientError}
+	ve := &openapi.ValidationError{Loc: []string{"body"}, Ctx: whereClientError}
 	for i := 0; i < len(msg); i++ {
 		if msg[i:i+1] == ":" {
 			ve.Loc = append(ve.Loc, msg[:i])
@@ -118,7 +117,7 @@ func (c *Context) pathParamsValidate() {
 		value := c.ec.Params(p.SchemaName())
 		if p.IsRequired() && value == "" {
 			// 不存在此路径参数, 但是此路径参数设置为必选
-			c.response = validationErrorResponse(&godantic.ValidationError{
+			c.response = validationErrorResponse(&openapi.ValidationError{
 				Loc:  []string{"path", p.SchemaName()},
 				Msg:  PathPsIsEmpty,
 				Type: "string",
@@ -138,7 +137,7 @@ func (c *Context) queryParamsValidate() {
 		value := c.ec.Query(q.SchemaName())
 		if q.IsRequired() && value == "" {
 			// 但是此查询参数设置为必选
-			c.response = validationErrorResponse(&godantic.ValidationError{
+			c.response = validationErrorResponse(&openapi.ValidationError{
 				Loc:  []string{"query", q.SchemaName()},
 				Msg:  QueryPsIsEmpty,
 				Type: "string",
@@ -291,12 +290,12 @@ func (c *Context) write() error {
 }
 
 // 未定义返回值或关闭了返回值校验
-func routeModelDoNothing(content any, meta *godantic.Metadata) *Response {
+func routeModelDoNothing(content any, meta *openapi.Metadata) *Response {
 	return nil
 }
 
-func boolResponseValidation(content any, meta *godantic.Metadata) *Response {
-	rt := godantic.ReflectObjectType(content)
+func boolResponseValidation(content any, meta *openapi.Metadata) *Response {
+	rt := openapi.ReflectObjectType(content)
 	if rt.Kind() != reflect.Bool {
 		// 校验不通过, 修改 Response.StatusCode 和 Response.Content
 		return modelCannotBeBoolResponse(meta.Name())
@@ -305,36 +304,36 @@ func boolResponseValidation(content any, meta *godantic.Metadata) *Response {
 	return nil
 }
 
-func stringResponseValidation(content any, meta *godantic.Metadata) *Response {
+func stringResponseValidation(content any, meta *openapi.Metadata) *Response {
 	// TODO: 对于字符串类型，减少内存复制
-	if meta.SchemaType() != godantic.StringType {
+	if meta.SchemaType() != openapi.StringType {
 		return modelCannotBeStringResponse(meta.Name())
 	}
 
 	return nil
 }
 
-func integerResponseValidation(content any, meta *godantic.Metadata) *Response {
-	rt := godantic.ReflectObjectType(content)
-	if godantic.ReflectKindToOType(rt.Kind()) != godantic.IntegerType {
+func integerResponseValidation(content any, meta *openapi.Metadata) *Response {
+	rt := openapi.ReflectObjectType(content)
+	if openapi.ReflectKindToOType(rt.Kind()) != openapi.IntegerType {
 		return modelCannotBeIntegerResponse(meta.Name())
 	}
 
 	return nil
 }
 
-func numberResponseValidation(content any, meta *godantic.Metadata) *Response {
-	rt := godantic.ReflectObjectType(content)
-	if godantic.ReflectKindToOType(rt.Kind()) != godantic.NumberType {
+func numberResponseValidation(content any, meta *openapi.Metadata) *Response {
+	rt := openapi.ReflectObjectType(content)
+	if openapi.ReflectKindToOType(rt.Kind()) != openapi.NumberType {
 		return modelCannotBeNumberResponse(meta.Name())
 	}
 
 	return nil
 }
 
-func arrayResponseValidation(content any, meta *godantic.Metadata) *Response {
-	rt := godantic.ReflectObjectType(content)
-	if godantic.ReflectKindToOType(rt.Kind()) != godantic.ArrayType {
+func arrayResponseValidation(content any, meta *openapi.Metadata) *Response {
+	rt := openapi.ReflectObjectType(content)
+	if openapi.ReflectKindToOType(rt.Kind()) != openapi.ArrayType {
 		// TODO: notImplemented 暂不校验子元素
 		return modelCannotBeArrayResponse("Array")
 	} else {
@@ -351,8 +350,8 @@ func arrayResponseValidation(content any, meta *godantic.Metadata) *Response {
 	return nil
 }
 
-func structResponseValidation(content any, meta *godantic.Metadata) *Response {
-	rt := godantic.ReflectObjectType(content)
+func structResponseValidation(content any, meta *openapi.Metadata) *Response {
+	rt := openapi.ReflectObjectType(content)
 	// 类型校验
 	if rt.Kind() != reflect.Struct && meta.String() != rt.String() {
 		return objectModelNotMatchResponse(meta.String(), rt.String())

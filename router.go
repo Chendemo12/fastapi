@@ -1,8 +1,8 @@
 package fastapi
 
 import (
-	"github.com/Chendemo12/fastapi/godantic"
 	"github.com/Chendemo12/fastapi/internal/constant"
+	"github.com/Chendemo12/fastapi/openapi"
 	"github.com/gofiber/fiber/v2"
 	"net/http"
 	"reflect"
@@ -27,22 +27,22 @@ func APIRouter(prefix string, tags []string) *Router {
 }
 
 type Option struct {
-	Summary       string                  `json:"summary" description:"摘要描述"`
-	ResponseModel godantic.SchemaIface    `json:"response_model" description:"响应体模型"`
-	RequestModel  godantic.SchemaIface    `json:"request_model" description:"请求体模型"`
-	Params        godantic.QueryParameter `json:"params" description:"查询参数,结构体"`
-	Description   string                  `json:"description" description:"路由描述"`
-	Tags          []string                `json:"tags" description:"路由标签"`
-	Dependencies  []DependencyFunc        `json:"-" description:"依赖"`
-	Handlers      []HandlerFunc           `json:"-" description:"处理函数"`
-	Deprecated    bool                    `json:"deprecated" description:"是否禁用"`
+	Summary       string                 `json:"summary" description:"摘要描述"`
+	ResponseModel openapi.SchemaIface    `json:"response_model" description:"响应体模型"`
+	RequestModel  openapi.SchemaIface    `json:"request_model" description:"请求体模型"`
+	Params        openapi.QueryParameter `json:"params" description:"查询参数,结构体"`
+	Description   string                 `json:"description" description:"路由描述"`
+	Tags          []string               `json:"tags" description:"路由标签"`
+	Dependencies  []DependencyFunc       `json:"-" description:"依赖"`
+	Handlers      []HandlerFunc          `json:"-" description:"处理函数"`
+	Deprecated    bool                   `json:"deprecated" description:"是否禁用"`
 }
 
 // Route 一个完整的路由对象，此对象会在程序启动时生成swagger文档
 // 其中相对路径Path不能重复，否则后者会覆盖前者
 type Route struct {
-	ResponseModel    *godantic.Metadata            `description:"响应体元数据"`
-	RequestModel     *godantic.Metadata            `description:"请求体元数据"`
+	ResponseModel    *openapi.Metadata             `description:"响应体元数据"`
+	RequestModel     *openapi.Metadata             `description:"请求体元数据"`
 	requestValidate  RouteModelValidateHandlerFunc `description:"请求体校验函数"`
 	responseValidate RouteModelValidateHandlerFunc `description:"返回值校验函数"`
 	Description      string                        `json:"description" description:"详细描述"`
@@ -50,10 +50,10 @@ type Route struct {
 	Method           string                        `json:"method" description:"请求方法"`
 	RelativePath     string                        `json:"relative_path" description:"相对路由"`
 	Tags             []string                      `json:"tags" description:"路由标签"`
-	QueryFields      []*godantic.QModel            `json:"-" description:"查询参数"`
+	QueryFields      []*openapi.QModel             `json:"-" description:"查询参数"`
 	Handlers         []fiber.Handler               `json:"-" description:"处理函数"`
 	Dependencies     []DependencyFunc              `json:"-" description:"依赖"`
-	PathFields       []*godantic.QModel            `json:"-" description:"路径参数"`
+	PathFields       []*openapi.QModel             `json:"-" description:"路径参数"`
 	deprecated       bool                          `description:"是否禁用"`
 }
 
@@ -96,10 +96,10 @@ func (f *Route) SetD(description string) *Route { return f.SetDescription(descri
 // SetQueryParams 设置查询参数,此空struct的每一个字段都将作为一个单独的查询参数
 // 且此结构体的任意字段有且仅支持 string 类型
 //
-//	@param	m	godantic.QueryParameter	查询参数对象,
-func (f *Route) SetQueryParams(m godantic.QueryParameter) *Route {
+//	@param	m	openapi.QueryParameter	查询参数对象,
+func (f *Route) SetQueryParams(m openapi.QueryParameter) *Route {
 	if m != nil {
-		f.QueryFields = godantic.ParseToQueryModels(m) // 转换为内部模型
+		f.QueryFields = openapi.ParseToQueryModels(m) // 转换为内部模型
 	}
 	return f
 }
@@ -107,15 +107,15 @@ func (f *Route) SetQueryParams(m godantic.QueryParameter) *Route {
 // SetQ 设置查询参数,此空struct的每一个字段都将作为一个单独的查询参数
 // 且此结构体的任意字段有且仅支持 string 类型
 //
-//	@param	m	godantic.QueryParameter	查询参数对象,
-func (f *Route) SetQ(m godantic.QueryParameter) *Route { return f.SetQueryParams(m) }
+//	@param	m	openapi.QueryParameter	查询参数对象,
+func (f *Route) SetQ(m openapi.QueryParameter) *Route { return f.SetQueryParams(m) }
 
 // SetRequestModel 设置请求体对象,此model应为一个空struct实例,而非指针类型,且仅"GET",http.MethodDelete有效
 //
 //	@param	m	any	请求体对象
-func (f *Route) SetRequestModel(m godantic.SchemaIface) *Route {
+func (f *Route) SetRequestModel(m openapi.SchemaIface) *Route {
 	if f.Method != http.MethodGet && f.Method != http.MethodDelete {
-		f.RequestModel = godantic.BaseModelToMetadata(m)
+		f.RequestModel = openapi.BaseModelToMetadata(m)
 	}
 	return f
 }
@@ -123,7 +123,7 @@ func (f *Route) SetRequestModel(m godantic.SchemaIface) *Route {
 // SetReq 设置请求体对象
 //
 //	@param	m	any	请求体对象
-func (f *Route) SetReq(m godantic.SchemaIface) *Route { return f.SetRequestModel(m) }
+func (f *Route) SetReq(m openapi.SchemaIface) *Route { return f.SetRequestModel(m) }
 
 // Path 合并路由
 //
@@ -137,15 +137,15 @@ func (f *Route) NewRequestModel() any {
 	}
 
 	switch f.RequestModel.SchemaType() {
-	case godantic.StringType:
+	case openapi.StringType:
 		return ""
-	case godantic.BoolType:
+	case openapi.BoolType:
 		return false
-	case godantic.IntegerType:
+	case openapi.IntegerType:
 		return 0
-	case godantic.NumberType:
+	case openapi.NumberType:
 		return 0.0
-	case godantic.ArrayType:
+	case openapi.ArrayType:
 		// TODO: support array types
 		return make([]string, 0)
 	default:
@@ -193,18 +193,18 @@ func (f *Router) method(
 	method string, // 路由方法
 	relativePath string, // 相对路由
 	summary string, // 路由摘要
-	queryModel godantic.QueryParameter, // 查询参数, POST/PATCH/PUT
-	requestModel godantic.SchemaIface, // 请求体, POST/PATCH/PUT
-	responseModel godantic.SchemaIface, // 响应体, All
+	queryModel openapi.QueryParameter, // 查询参数, POST/PATCH/PUT
+	requestModel openapi.SchemaIface, // 请求体, POST/PATCH/PUT
+	responseModel openapi.SchemaIface, // 响应体, All
 	handler HandlerFunc, // handler
 ) *Route {
 	route := &Route{
 		Method:        method,
 		RelativePath:  relativePath,
-		PathFields:    make([]*godantic.QModel, 0), // 路径参数
-		QueryFields:   make([]*godantic.QModel, 0), // 查询参数
-		RequestModel:  nil,                         // 请求体
-		ResponseModel: nil,                         // 响应体
+		PathFields:    make([]*openapi.QModel, 0), // 路径参数
+		QueryFields:   make([]*openapi.QModel, 0), // 查询参数
+		RequestModel:  nil,                        // 请求体
+		ResponseModel: nil,                        // 响应体
 		Summary:       summary,
 		Handlers:      nil,
 		Dependencies:  make([]DependencyFunc, 0),
@@ -221,7 +221,7 @@ func (f *Router) method(
 	}
 
 	if requestModel != nil {
-		route.RequestModel = godantic.BaseModelToMetadata(requestModel)
+		route.RequestModel = openapi.BaseModelToMetadata(requestModel)
 		// TODO: 请求体校验方法
 	} else {
 		// 缺省以屏蔽请求体校验
@@ -229,21 +229,21 @@ func (f *Router) method(
 	}
 
 	if responseModel != nil {
-		route.ResponseModel = godantic.BaseModelToMetadata(responseModel)
+		route.ResponseModel = openapi.BaseModelToMetadata(responseModel)
 
 		switch route.ResponseModel.SchemaType() {
 
-		case godantic.StringType:
+		case openapi.StringType:
 			route.responseValidate = stringResponseValidation
-		case godantic.BoolType:
+		case openapi.BoolType:
 			route.responseValidate = boolResponseValidation
-		case godantic.NumberType:
+		case openapi.NumberType:
 			route.responseValidate = numberResponseValidation
-		case godantic.IntegerType:
+		case openapi.IntegerType:
 			route.responseValidate = integerResponseValidation
-		case godantic.ArrayType:
+		case openapi.ArrayType:
 			route.responseValidate = arrayResponseValidation
-		case godantic.ObjectType:
+		case openapi.ObjectType:
 			route.responseValidate = structResponseValidation
 		}
 	} else {
@@ -267,7 +267,7 @@ func (f *Router) method(
 	}
 
 	if queryModel != nil {
-		route.QueryFields = append(route.QueryFields, godantic.ParseToQueryModels(queryModel)...)
+		route.QueryFields = append(route.QueryFields, openapi.ParseToQueryModels(queryModel)...)
 	}
 	// 若缺省返回值则在接口处追加描述
 	if responseModel == nil {
@@ -277,11 +277,11 @@ func (f *Router) method(
 	// 生成路径参数
 	if pp, found := DoesPathParamsFound(route.RelativePath); found {
 		for name, required := range pp {
-			qm := &godantic.QModel{
+			qm := &openapi.QModel{
 				Title:  name,
 				Name:   name,
 				Tag:    reflect.StructTag(`json:"` + name + `,omitempty"`),
-				Type:   godantic.StringType,
+				Type:   openapi.StringType,
 				InPath: true,
 			}
 			if required {
@@ -332,13 +332,13 @@ func (f *Router) methodWithOpt(
 //
 //	@param	path			string					相对路径,必须以"/"开头
 //	@param	summary			string					路由摘要信息
-//	@param	queryModel		godantic.QueryParameter	查询参数，仅支持struct类型
-//	@param	responseModel	godantic.SchemaIface	响应体对象,	此model应为一个空struct实例,而非指针类型
+//	@param	queryModel		openapi.QueryParameter	查询参数，仅支持struct类型
+//	@param	responseModel	openapi.SchemaIface	响应体对象,	此model应为一个空struct实例,而非指针类型
 //	@param	handler			[]HandlerFunc			路由处理方法
 //	@param	addition		any						附加参数，如："deprecated"用于禁用此路由
 func (f *Router) GET(
 	path string,
-	responseModel godantic.SchemaIface,
+	responseModel openapi.SchemaIface,
 	summary string,
 	handler HandlerFunc,
 ) *Route {
@@ -358,11 +358,11 @@ func (f *Router) GET(
 //
 //	@param	path			string					相对路径,必须以"/"开头
 //	@param	summary			string					路由摘要信息
-//	@param	responseModel	godantic.SchemaIface	响应体对象,	此model应为一个空struct实例,而非指针类型
+//	@param	responseModel	openapi.SchemaIface	响应体对象,	此model应为一个空struct实例,而非指针类型
 //	@param	handler			[]HandlerFunc			路由处理方法
 //	@param	addition		any						附加参数
 func (f *Router) DELETE(
-	path string, responseModel godantic.SchemaIface, summary string, handler HandlerFunc,
+	path string, responseModel openapi.SchemaIface, summary string, handler HandlerFunc,
 ) *Route {
 	// 对于查询参数仅允许struct类型
 	return f.method(
@@ -380,13 +380,13 @@ func (f *Router) DELETE(
 //
 //	@param	path			string					相对路径,必须以"/"开头
 //	@param	summary			string					路由摘要信息
-//	@param	requestModel	godantic.SchemaIface	请求体对象,	此model应为一个空struct实例,而非指针类型
-//	@param	responseModel	godantic.SchemaIface	响应体对象,	此model应为一个空struct实例,而非指针类型
+//	@param	requestModel	openapi.SchemaIface	请求体对象,	此model应为一个空struct实例,而非指针类型
+//	@param	responseModel	openapi.SchemaIface	响应体对象,	此model应为一个空struct实例,而非指针类型
 //	@param	handler			[]HandlerFunc			路由处理方法
 //	@param	addition		any						附加参数，如："deprecated"用于禁用此路由
 func (f *Router) POST(
 	path string,
-	requestModel, responseModel godantic.SchemaIface,
+	requestModel, responseModel openapi.SchemaIface,
 	summary string,
 	handler HandlerFunc,
 ) *Route {
@@ -404,7 +404,7 @@ func (f *Router) POST(
 // PATCH http patch method
 func (f *Router) PATCH(
 	path string,
-	requestModel, responseModel godantic.SchemaIface,
+	requestModel, responseModel openapi.SchemaIface,
 	summary string,
 	handler HandlerFunc,
 ) *Route {
@@ -422,7 +422,7 @@ func (f *Router) PATCH(
 // PUT http put method
 func (f *Router) PUT(
 	path string,
-	requestModel, responseModel godantic.SchemaIface,
+	requestModel, responseModel openapi.SchemaIface,
 	summary string,
 	handler HandlerFunc,
 ) *Route {

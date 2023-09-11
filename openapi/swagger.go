@@ -2,7 +2,6 @@ package openapi
 
 import (
 	"github.com/Chendemo12/fastapi-tool/helper"
-	"github.com/Chendemo12/fastapi/godantic"
 )
 
 // Contact 联系方式, 显示在 info 字段内部
@@ -33,21 +32,21 @@ type Info struct {
 
 // Reference 引用模型,用于模型字段和路由之间互相引用
 type Reference struct {
-	// 关联模型, 取值为 godantic.RefPrefix + modelName
+	// 关联模型, 取值为 openapi.RefPrefix + modelName
 	Name string `json:"-" description:"关联模型"`
 }
 
 func (r *Reference) MarshalJSON() ([]byte, error) {
 	m := make(map[string]any)
-	m[godantic.RefName] = godantic.RefPrefix + r.Name
+	m[RefName] = RefPrefix + r.Name
 
 	return helper.JsonMarshal(m)
 }
 
 // ComponentScheme openapi 的模型文档部分
 type ComponentScheme struct {
-	Model *godantic.Metadata `json:"model" description:"模型定义"`
-	Name  string             `json:"name" description:"模型名称，包含包名"`
+	Model *Metadata `json:"model" description:"模型定义"`
+	Name  string    `json:"name" description:"模型名称，包含包名"`
 }
 
 // Components openapi 的模型部分
@@ -72,14 +71,14 @@ func (c *Components) MarshalJSON() ([]byte, error) {
 	}
 
 	// 记录内置错误类型文档
-	m[validationErrorDefinition.SchemaName()] = validationErrorDefinition.Schema()
-	m[validationErrorResponseDefinition.SchemaName()] = validationErrorResponseDefinition.Schema()
+	m[ValidationErrorDefinition.SchemaName()] = ValidationErrorDefinition.Schema()
+	m[ValidationErrorResponseDefinition.SchemaName()] = ValidationErrorResponseDefinition.Schema()
 
 	return helper.JsonMarshal(map[string]any{"schemas": m})
 }
 
 // AddModel 添加一个模型文档
-func (c *Components) AddModel(m *godantic.Metadata) {
+func (c *Components) AddModel(m *Metadata) {
 	c.Scheme = append(c.Scheme, &ComponentScheme{
 		Name:  m.SchemaName(),
 		Model: m,
@@ -105,8 +104,8 @@ type ParameterBase struct {
 }
 
 type ParameterSchema struct {
-	Type  godantic.OpenApiDataType `json:"type" description:"数据类型"`
-	Title string                   `json:"title"`
+	Type  DataType `json:"type" description:"数据类型"`
+	Title string   `json:"title"`
 }
 
 // Parameter 路径参数或者查询参数
@@ -117,7 +116,7 @@ type Parameter struct {
 }
 
 type ModelContentSchema interface {
-	SchemaType() godantic.OpenApiDataType
+	SchemaType() DataType
 	Schema() map[string]any
 	SchemaName(exclude ...bool) string
 }
@@ -138,10 +137,10 @@ type PathModelContent struct {
 func (p *PathModelContent) MarshalJSON() ([]byte, error) {
 	m := make(map[string]any)
 	switch p.Schema.SchemaType() {
-	case godantic.ObjectType:
+	case ObjectType:
 		m[p.MIMEType] = map[string]any{
 			"schema": map[string]string{
-				godantic.RefName: godantic.RefPrefix + p.Schema.SchemaName(),
+				RefName: RefPrefix + p.Schema.SchemaName(),
 			},
 		}
 	default:
@@ -240,7 +239,7 @@ type OpenApi struct {
 }
 
 // AddDefinition 添加一个模型文档
-func (o *OpenApi) AddDefinition(meta *godantic.Metadata) *OpenApi {
+func (o *OpenApi) AddDefinition(meta *Metadata) *OpenApi {
 	o.Components.AddModel(meta)
 	return o
 }

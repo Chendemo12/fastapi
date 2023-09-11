@@ -1,4 +1,4 @@
-package godantic
+package openapi
 
 import (
 	"errors"
@@ -11,7 +11,7 @@ type QModel struct {
 	Title  string            `json:"title,omitempty" description:"字段标题"`
 	Name   string            `json:"name,omitempty" description:"字段名称"`
 	Tag    reflect.StructTag `json:"tag,omitempty" description:"TAG"`
-	Type   OpenApiDataType   `json:"otype,omitempty" description:"openapi 数据类型"`
+	Type   DataType          `json:"otype,omitempty" description:"openapi 数据类型"`
 	InPath bool              `json:"in_path,omitempty" description:"是否是路径参数"`
 }
 
@@ -46,7 +46,7 @@ func (q *QModel) SchemaName(exclude ...bool) string { return q.Name }
 func (q *QModel) SchemaDesc() string { return QueryFieldTag(q.Tag, "description", q.Title) }
 
 // SchemaType 模型类型
-func (q *QModel) SchemaType() OpenApiDataType { return q.Type }
+func (q *QModel) SchemaType() DataType { return q.Type }
 
 // InnerSchema 内部字段模型文档, 全名:文档
 func (q *QModel) InnerSchema() (m map[string]map[string]any) {

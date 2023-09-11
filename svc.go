@@ -8,7 +8,6 @@ import (
 	"github.com/Chendemo12/fastapi-tool/cronjob"
 	"github.com/Chendemo12/fastapi-tool/helper"
 	"github.com/Chendemo12/fastapi-tool/logger"
-	"github.com/Chendemo12/fastapi/godantic"
 	"github.com/Chendemo12/fastapi/openapi"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
@@ -144,9 +143,9 @@ func (s *Service) Validate(stc any, ctx ...map[string]any) *Response {
 		if nums := len(err); nums == 0 {
 			return validationErrorResponse()
 		} else {
-			ves := make([]*godantic.ValidationError, nums) // 自定义的错误信息
+			ves := make([]*openapi.ValidationError, nums) // 自定义的错误信息
 			for i := 0; i < nums; i++ {
-				ves[i] = &godantic.ValidationError{
+				ves[i] = &openapi.ValidationError{
 					Loc:  []string{"body", err[i].Field()},
 					Msg:  err[i].Error(),
 					Type: err[i].Type().String(),

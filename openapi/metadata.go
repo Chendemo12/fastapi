@@ -1,31 +1,9 @@
-package godantic
+package openapi
 
 import (
 	"reflect"
 	"unicode"
 )
-
-// AnonymousModelNameConnector 为匿名结构体生成一个名称, 连接符
-const AnonymousModelNameConnector = "_"
-
-// BaseModelToMetadata 提取基本数据模型的元信息
-//
-//	@param	model	SchemaIface	基本数据模型
-//	@return	*Metadata 基本数据模型的元信息
-func BaseModelToMetadata(model SchemaIface) *Metadata {
-	if model == nil { // 冗余校验
-		return nil
-	}
-	if md, ok := model.(*Metadata); ok { // 接口处定义了基本数据类型和List
-		return md
-	}
-
-	meta := &Metadata{}
-	meta.FromModel(model)
-
-	metaCache.Set(meta)
-	return meta
-}
 
 // MetaField 模型的字段元数据,可以与 Metadata 互相转换
 type MetaField struct {
@@ -49,13 +27,13 @@ func (m *MetaField) ToMetadata() (bool, *Metadata) {
 
 // Metadata 数据模型 BaseModel 的元信息
 type Metadata struct {
-	model       SchemaIface     `description:"数据模型,对于预定义类型,此字段无意义"`
-	rType       reflect.Type    `description:"结构体元数据"`
-	description string          `description:"模型描述"`
-	oType       OpenApiDataType `description:"OpenApi 数据类型"`
-	names       []string        `description:"结构体名称,包名.结构体名称"`
-	fields      []*MetaField    `description:"结构体字段"`
-	innerFields []*MetaField    `description:"内部字段"`
+	model       SchemaIface  `description:"数据模型,对于预定义类型,此字段无意义"`
+	rType       reflect.Type `description:"结构体元数据"`
+	description string       `description:"模型描述"`
+	oType       DataType     `description:"OpenApi 数据类型"`
+	names       []string     `description:"结构体名称,包名.结构体名称"`
+	fields      []*MetaField `description:"结构体字段"`
+	innerFields []*MetaField `description:"内部字段"`
 }
 
 func (m *Metadata) ReflectType() reflect.Type { return m.rType }
@@ -96,7 +74,7 @@ func (m *Metadata) SchemaDesc() string {
 }
 
 // SchemaType 模型类型
-func (m *Metadata) SchemaType() OpenApiDataType {
+func (m *Metadata) SchemaType() DataType {
 	switch m.oType {
 	case ObjectType, ArrayType:
 		return m.oType
@@ -217,12 +195,18 @@ func (m *Metadata) FromReflectType(rt reflect.Type) {
 
 	for i := 0; i < rt.NumField(); i++ {
 		field := rt.Field(i)
-		m.extractStructField(rt, field, 0) // 0 根起点
+		argsType := &ArgsType{
+			fatherType: rt,
+			field:      field,
+			depth:      0,
+		}
+		m.extractStructField(argsType, 0) // field0 根起点
 	}
 }
 
 // 提取结构体字段信息并添加到元信息中
-func (m *Metadata) extractStructField(fatherType reflect.Type, field reflect.StructField, depth int) {
+func (m *Metadata) extractStructField(argsType *ArgsType, depth int) {
+	field := argsType.field
 	// 过滤模型基类
 	if field.Anonymous && (field.Name == "BaseModel" || field.Name == "Field") {
 		return
@@ -244,13 +228,11 @@ func (m *Metadata) extractStructField(fatherType reflect.Type, field reflect.Str
 	fieldMeta.Description = QueryFieldTag(field.Tag, "description", field.Name)
 	fieldMeta.Type = ReflectKindToOType(field.Type.Kind())
 
-	if isAnonymousStruct(field.Type) {
+	if argsType.IsAnonymousStruct() {
 		// 遇到匿名结构体，分配一个名称
-		println(fatherType.String())
-		// TODO: 如果父节点是匿名结构体？？？
-		fieldMeta._pkg = fatherType.String() + AnonymousModelNameConnector + field.Name
+		fieldMeta._pkg = argsType.String() + AnonymousModelNameConnector + field.Name
 	} else {
-		fieldMeta._pkg = field.Type.String()
+		fieldMeta._pkg = argsType.FieldType().String()
 	}
 
 	m.AddField(fieldMeta, depth)
@@ -351,74 +333,36 @@ func (m *Metadata) parseFieldWhichIsStruct(fieldMeta *MetaField, fieldType refle
 	m.AddField(mf, depth)
 
 	for i := 0; i < fieldType.NumField(); i++ {
-		m.extractStructField(fieldType, fieldType.Field(i), depth+1)
-	}
-}
-
-// ----------------------------------------------------------------------------
-
-// 缓存全部的结构体元信息，以减少上层反射次数, 仅用于通过 BaseModel 获取 Metadata
-var metaCache = &MetaCache{data: make([]*Metadata, 0)}
-
-// GetMetadata 获取结构体的元信息
-func GetMetadata(pkg string) *Metadata { return metaCache.Get(pkg) }
-
-// MetaCache Metadata 缓存
-type MetaCache struct {
-	data []*Metadata
-}
-
-func (m *MetaCache) Get(pkg string) *Metadata {
-	for i := 0; i < len(m.data); i++ {
-		if m.data[i].String() == pkg {
-			return m.data[i]
+		field := fieldType.Field(i)
+		argsType := &ArgsType{
+			fatherType: fieldType,
+			field:      field,
+			depth:      depth,
 		}
+		m.extractStructField(argsType, depth+1)
 	}
-	return nil
 }
 
-// Set 保存一个元信息，存在则更新
-func (m *MetaCache) Set(meta *Metadata) {
-	for i := 0; i < len(m.data); i++ {
-		if m.data[i].String() == meta.String() {
-			m.data[i] = meta
-			return
-		}
-	}
-	m.data = append(m.data, meta)
+type ArgsType struct {
+	field      reflect.StructField `description:"字段信息"`
+	fatherType reflect.Type        `description:"父结构体类型"`
+	depth      int                 `description:"层级数"`
 }
 
-// ----------------------------------------------------------------------------
-
-// 是否是匿名(未声明)的结构体
-func isAnonymousStruct(fieldType reflect.Type) bool {
-	return fieldType.Name() == ""
+func (m ArgsType) String() string {
+	if m.IsAnonymousStruct() {
+		return m.fatherType.String()
+	}
+	return m.fatherType.String()
 }
 
-func getReflectType(rt reflect.Type) reflect.Type {
-	var fieldType reflect.Type
-
-	switch rt.Kind() {
-	case reflect.Ptr, reflect.Slice, reflect.Array:
-		fieldType = rt.Elem()
-	default:
-		fieldType = rt
+func (m ArgsType) FieldType() reflect.Type {
+	if m.field.Type.Kind() == reflect.Ptr {
+		return m.field.Type.Elem()
 	}
-
-	return fieldType
+	return m.field.Type
 }
 
-func getModelNames(fieldMeta *MetaField, fieldType reflect.Type) (string, string) {
-	var pkg, name string
-	if isAnonymousStruct(fieldType) {
-		// 未命名的结构体类型, 没有名称, 分配包名和名称
-		name = fieldMeta.Title + "Model"
-		//pkg = fieldMeta._pkg + AnonymousModelNameConnector + name
-		pkg = fieldMeta._pkg
-	} else {
-		pkg = fieldType.String() // 关联模型
-		name = fieldType.Name()
-	}
-
-	return pkg, name
+func (m ArgsType) IsAnonymousStruct() bool {
+	return isAnonymousStruct(m.field.Type)
 }
