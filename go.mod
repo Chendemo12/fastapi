@@ -3,7 +3,7 @@ module github.com/Chendemo12/fastapi
 go 1.19
 
 require (
-	github.com/Chendemo12/fastapi-tool v0.1.0
+	github.com/Chendemo12/fastapi-tool v0.1.1
 	github.com/go-playground/validator/v10 v10.13.0
 	github.com/gofiber/fiber/v2 v2.42.0
 	github.com/json-iterator/go v1.1.12
