@@ -257,35 +257,35 @@ var (
 	// ------------------------------------- int ---------------------------------------
 
 	Int8 = makeMetadata(
-		"Int8",
+		"int8",
 		"8位有符号的数字类型",
 		`json:"int8" gte:"-128" lte:"127"`,
 		IntegerType,
 	)
 
 	Int16 = makeMetadata(
-		"Int16",
+		"int16",
 		"16位有符号的数字类型",
 		`json:"int16" gte:"-32768" lte:"32767"`,
 		IntegerType,
 	)
 
 	Int32 = makeMetadata(
-		"Int32",
+		"int32",
 		"32位有符号的数字类型",
 		`json:"int32" gte:"-2147483648" lte:"2147483647"`,
 		IntegerType,
 	)
 
 	Int64 = makeMetadata(
-		"Int64",
+		"int64",
 		"64位有符号的数字类型",
 		`json:"int64" gte:"-9223372036854775808" lte:"9223372036854775807"`,
 		IntegerType,
 	)
 
 	Int = makeMetadata(
-		"Int",
+		"int",
 		"有符号的数字类型",
 		`json:"int" gte:"-9223372036854775808" lte:"9223372036854775807"`,
 		IntegerType,
@@ -294,28 +294,28 @@ var (
 	// ------------------------------------- uint ---------------------------------------
 
 	Uint8 = makeMetadata(
-		"Uint8",
+		"uint8",
 		"8位无符号的数字类型",
 		`json:"uint8" gte:"0" lte:"255"`,
 		IntegerType,
 	)
 
 	Uint16 = makeMetadata(
-		"Uint16",
+		"uint16",
 		"16位无符号的数字类型",
 		`json:"uint16" gte:"0" lte:"65535"`,
 		IntegerType,
 	)
 
 	Uint32 = makeMetadata(
-		"Uint32",
+		"uint32",
 		"32位无符号的数字类型",
 		`json:"uint32" gte:"0" lte:"4294967295"`,
 		IntegerType,
 	)
 
 	Uint64 = makeMetadata(
-		"Uint64",
+		"uint64",
 		"64位无符号的数字类型",
 		`json:"uint64" gte:"0" lte:"18446744073709551615"`,
 		IntegerType,
@@ -324,21 +324,21 @@ var (
 	// ------------------------------------- Float ---------------------------------------
 
 	Float32 = makeMetadata(
-		"Float32",
+		"float32",
 		"32位的浮点类型",
 		`json:"float32"`,
 		NumberType,
 	)
 
 	Float64 = makeMetadata(
-		"Float64",
+		"float64",
 		"64位的浮点类型",
 		`json:"float64"`,
 		NumberType,
 	)
 
 	Float = makeMetadata(
-		"Float",
+		"float",
 		"64位的浮点类型",
 		`json:"float"`,
 		NumberType,
@@ -347,14 +347,14 @@ var (
 	// ------------------------------------- other ---------------------------------------
 
 	String = makeMetadata(
-		"String",
+		"string",
 		"字符串类型",
 		`json:"string" min:"0" max:"255"`,
 		StringType,
 	)
 
 	Bool = makeMetadata(
-		"Bool",
+		"bool",
 		"布尔类型",
 		`json:"boolean" oneof:"true false"`,
 		BoolType,

@@ -10,7 +10,7 @@ import (
 // StringsToInts 将字符串数组转换成int数组, 简单实现
 //
 //	@param	strs	[]string	输入字符串数组
-//	@return	[]int 输出int数组
+//	@return	[]int 	输出int数组
 func StringsToInts(strs []string) []int {
 	ints := make([]int, 0)
 
@@ -27,8 +27,8 @@ func StringsToInts(strs []string) []int {
 
 // StringsToFloats 将字符串数组转换成float64数组, 简单实现
 //
-//	@param	strs	[]string	输入字符串数组
-//	@return	[]float64 输出float64数组
+//	@param	strs		[]string	输入字符串数组
+//	@return	[]float64 	输出float64数组
 func StringsToFloats(strs []string) []float64 {
 	floats := make([]float64, len(strs))
 

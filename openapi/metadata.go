@@ -273,10 +273,10 @@ func (m *Metadata) parseFieldWhichIsArray(fieldMeta *MetaField, elemType reflect
 	kind := elemType.Kind()
 	switch kind {
 	case reflect.String:
-		fieldMeta.ItemRef = String.SchemaName(true)
+		fieldMeta.ItemRef = string(StringType)
 
 	case reflect.Bool:
-		fieldMeta.ItemRef = Bool.SchemaName(true)
+		fieldMeta.ItemRef = string(BoolType)
 
 	case reflect.Array, reflect.Slice, reflect.Chan: // [][]*Student
 		// TODO: maybe not work
@@ -305,10 +305,10 @@ func (m *Metadata) parseFieldWhichIsArray(fieldMeta *MetaField, elemType reflect
 
 	default:
 		if reflect.Bool < kind && kind <= reflect.Uint64 {
-			fieldMeta.ItemRef = Int.SchemaName(true)
+			fieldMeta.ItemRef = string(IntegerType)
 		}
 		if reflect.Float32 <= kind && kind <= reflect.Complex128 {
-			fieldMeta.ItemRef = Float.SchemaName(true)
+			fieldMeta.ItemRef = string(NumberType)
 		}
 	}
 }
