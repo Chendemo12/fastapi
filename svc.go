@@ -354,11 +354,18 @@ func (c *Context) AdvancedResponse(statusCode int, content fiber.Handler) *Respo
 //
 //	@param	statusCode	int		响应状态码
 //	@param	content		any		响应体
-//	@param	contentType	string	响应头MIME
+//	@param	contentType	[]string	响应头MIME, 默认值为“application/json; charset=utf-8”
 //	@return	resp *Response response返回体
-func (c *Context) AnyResponse(statusCode int, content any, contentType string) *Response {
+func (c *Context) AnyResponse(statusCode int, content any, contentType ...string) *Response {
+	var ct string
+	if len(contentType) > 0 {
+		ct = contentType[0]
+	} else {
+		ct = openapi.MIMEApplicationJSONCharsetUTF8
+	}
+
 	c.response = &Response{
-		StatusCode: statusCode, Content: content, ContentType: contentType,
+		StatusCode: statusCode, Content: content, ContentType: ct,
 		Type: CustomResponseType,
 	}
 	return c.response

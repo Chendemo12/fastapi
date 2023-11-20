@@ -1,6 +1,6 @@
 module github.com/Chendemo12/fastapi
 
-go 1.19
+go 1.21
 
 require (
 	github.com/Chendemo12/fastapi-tool v0.1.1
