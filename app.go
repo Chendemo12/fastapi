@@ -85,22 +85,35 @@ func (f *FastApi) mountBaseRoutes() {
 	// 注册最基础的路由
 	router := APIRouter("/api/base", []string{"Base"})
 	{
-		router.GET("/title", String, "获取软件名", func(c *Context) *Response {
-			return c.StringResponse(appEngine.title)
-		})
-		router.GET("/description", String, "获取软件描述信息", func(c *Context) *Response {
-			return c.StringResponse(appEngine.Description())
-		})
-		router.GET("/version", String, "获取软件版本号", func(c *Context) *Response {
-			return c.StringResponse(appEngine.version)
-		})
-		router.GET("/heartbeat", String, "心跳检测", func(c *Context) *Response {
-			return c.StringResponse("pong")
-		})
-		router.GET("/debug", Bool, "获取调试开关", func(c *Context) *Response {
-			return c.OKResponse(core.IsDebug())
-		})
+		router.Get(
+			"/title",
+			func(c *Context) *Response { return c.StringResponse(appEngine.title) },
+			Option{Summary: "获取软件名", ResponseModel: String},
+		)
+
+		router.Get("/description",
+			func(c *Context) *Response { return c.StringResponse(appEngine.Description()) },
+			Option{Summary: "获取软件描述信息", ResponseModel: String},
+		)
+
+		router.Get("/version",
+			func(c *Context) *Response { return c.StringResponse(appEngine.version) },
+			Option{Summary: "获取软件版本号", ResponseModel: String},
+		)
+
+		router.Get(
+			"/heartbeat",
+			func(c *Context) *Response { return c.StringResponse("pong") },
+			Option{Summary: "心跳检测", ResponseModel: String},
+		)
+
+		router.Get(
+			"/debug",
+			func(c *Context) *Response { return c.OKResponse(core.IsDebug()) },
+			Option{Summary: "获取调试开关", ResponseModel: Bool},
+		)
 	}
+
 	f.routers = append(f.routers, router)
 }
 
@@ -571,38 +584,6 @@ type Config struct {
 	Debug                   bool                  `json:"debug,omitempty" description:"调试模式"`
 }
 
-// NEW 创建一个 FastApi 服务
-//
-//	@param	title	string		Application	name
-//	@param	version	string		Version
-//	@param	debug	bool		是否开启调试模式
-//	@param	service	UserService	custom	ServiceContext
-//
-//	@return	*FastApi fastapi对象
-func NEW(title, version string, debug bool, svc UserService) *FastApi {
-	core.SetMode(debug)
-
-	once.Do(func() {
-		sc := &Service{userSVC: svc, validate: validator.New()}
-		sc.ctx, sc.cancel = context.WithCancel(context.Background())
-		sc.scheduler = cronjob.NewScheduler(sc.ctx, nil)
-
-		appEngine = &FastApi{
-			title:       title,
-			version:     version,
-			description: title + " Micro Context",
-			service:     sc,
-			routers:     make([]*Router, 1),
-			isStarted:   make(chan struct{}, 1),
-			middlewares: make([]any, 0),
-			events:      make([]*Event, 0),
-		}
-		appEngine.routers[0] = APIRouter("", []string{"Default"})
-	})
-
-	return appEngine
-}
-
 // New 创建一个 FastApi 服务
 func New(confs ...Config) *FastApi {
 	conf := Config{
@@ -643,8 +624,26 @@ func New(confs ...Config) *FastApi {
 		conf.ErrorHandler = confs[0].ErrorHandler
 		conf.RecoverHandler = confs[0].RecoverHandler
 	}
+	core.SetMode(conf.Debug)
+	once.Do(func() {
+		sc := &Service{userSVC: conf.UserSvc, validate: validator.New()}
+		sc.ctx, sc.cancel = context.WithCancel(context.Background())
+		sc.scheduler = cronjob.NewScheduler(sc.ctx, nil)
 
-	app := NEW(conf.Title, conf.Version, conf.Debug, conf.UserSvc)
+		appEngine = &FastApi{
+			title:       conf.Title,
+			version:     conf.Version,
+			description: conf.Title + " Micro Context",
+			service:     sc,
+			routers:     make([]*Router, 1),
+			isStarted:   make(chan struct{}, 1),
+			middlewares: make([]any, 0),
+			events:      make([]*Event, 0),
+		}
+		appEngine.routers[0] = APIRouter("", []string{"Default"})
+	})
+
+	app := appEngine
 	if conf.Description != "" {
 		app.SetDescription(conf.Description)
 	}

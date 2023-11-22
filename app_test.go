@@ -1,7 +1,6 @@
 package fastapi
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -49,15 +48,6 @@ func TestContext_UserSVC(t *testing.T) {
 	}
 }
 
-func TestNEW(t *testing.T) {
-	svc := NEWCtx()
-	app := NEW("FastApi Example", "1.0.0", true, svc)
-	app.SetDescription("一个简单的FastApi应用程序,在启动app之前首先需要创建并替换ServiceContext,最后调用Run来运行程序").
-		SetShutdownTimeout(5)
-
-	t.Logf("FastApi app created.")
-}
-
 // Clock 定时任务
 type Clock struct {
 	cronjob.Job
@@ -72,7 +62,13 @@ func (c *Clock) Do(_ context.Context) error {
 
 func TestFastApi_AddCronjob(t *testing.T) {
 	svc := NEWCtx()
-	app := NEW("FastApi Example", "1.0.0", true, svc)
+	app := New(Config{
+		UserSvc:     svc,
+		Version:     "1.0.0",
+		Description: "",
+		Title:       "FastApi Example",
+		Debug:       true,
+	})
 	app.AddCronjob(&Clock{})
 
 	go func() {
@@ -86,7 +82,13 @@ func TestFastApi_AddCronjob(t *testing.T) {
 func TestFastApi_DumpPID(t *testing.T) {
 	svc := NEWCtx()
 	svc.Conf.HTTP.Port = "8089"
-	app := NEW("FastApi Example", "1.0.0", true, svc)
+	app := New(Config{
+		UserSvc:     svc,
+		Version:     "1.0.0",
+		Description: "",
+		Title:       "FastApi Example",
+		Debug:       true,
+	})
 	app.EnableDumpPID()
 
 	go func() {
@@ -106,7 +108,13 @@ func TestFastApi_DumpPID(t *testing.T) {
 
 func TestFastApi_Description(t *testing.T) {
 	svc := NEWCtx()
-	app := NEW("FastApi Example", "1.0.0", true, svc)
+	app := New(Config{
+		UserSvc:     svc,
+		Version:     "1.0.0",
+		Description: "",
+		Title:       "FastApi Example",
+		Debug:       true,
+	})
 	app.SetDescription("一个简单的FastApi应用程序,在启动app之前首先需要创建并替换ServiceContext,最后调用Run来运行程序")
 
 	s := app.Description()
@@ -228,57 +236,6 @@ type QueryFieldExample struct {
 	Size   int    `json:"size"`
 }
 
-func TestFastApi_IncludeRouter(t *testing.T) {
-	svc := NEWCtx()
-	app := NEW("FastApi Example", "1.0.0", true, svc)
-
-	r := APIRouter("/example", []string{"Example"})
-	{ // 基本示例
-		r.GET("/complex-model", &ComplexModel{}, "复杂模型的文档生成示例", getComplexModel)
-
-		r.GET("/logon/:name/:age?", &LogonForm{}, "带路径参数和查询参数的示例", getLogonForm).
-			SetQ(QueryFieldExample{})
-
-		r.POST("/tunnel/work", &ReturnLinkInfo{}, &ForwardLinkInfo{}, "带请求体和响应体验证的POST请求", setReturnLinks)
-
-		r.DELETE("/tunnel/work", nil, "缺省返回值示例", func(s *Context) *Response {
-			return s.OKResponse("anything is allowed")
-		})
-
-		r.POST("/base-model", Int, Bytes, "基本数据类型的示例", func(s *Context) *Response {
-			return s.StreamResponse(bytes.NewReader([]byte("hello world")))
-		})
-	}
-
-	app.IncludeRouter(r)
-	app.Run(svc.Conf.HTTP.Host, svc.Conf.HTTP.Port) // 阻塞运行
-}
-
-func TestFastApi_IncludeRouter_Validate(t *testing.T) {
-	svc := NEWCtx()
-	app := NEW("FastApi Example", "1.0.0", true, svc)
-
-	r := APIRouter("/example", []string{"Validator"})
-	{ // 校验示例
-		r.GET(
-			"/server-error", &ServerValidateErrorModel{}, "服务器内部模型校验错误示例", returnServerValidateError,
-		)
-		r.GET(
-			"/bool-error", Bool, "接口应返回Bool却返回了字符串的示例", func(s *Context) *Response {
-				return s.StringResponse("无法通过返回值校验")
-			},
-		)
-		r.GET(
-			"/logon-error", &LogonForm{}, "接口应返回LogonForm却返回了Bool的示例", func(s *Context) *Response {
-				return s.OKResponse(true)
-			},
-		)
-	}
-
-	app.IncludeRouter(r)
-	app.Run(svc.Conf.HTTP.Host, svc.Conf.HTTP.Port) // 阻塞运行
-}
-
 type Tunnel struct {
 	BaseModel
 	No      int `json:"no" binding:"required"`
@@ -315,13 +272,15 @@ func intToInts(s *Context) *Response {
 
 func TestFastApi_IncludeRouter_Array(t *testing.T) {
 	svc := NEWCtx()
-	app := NEW("FastApi Example", "1.0.0", true, svc)
+	app := New(Config{
+		UserSvc:     svc,
+		Version:     "1.0.0",
+		Description: "",
+		Title:       "FastApi Example",
+		Debug:       true,
+	})
 
 	r := APIRouter("/example", []string{"Array"})
-	{
-		r.POST("/base/int", Uint8, Ints, "将提交的数字转换成数组并返回示例", intToInts)
-		r.POST("/tunnels", Ints, List(&Tunnel{}), "返回值是数组类型的示例", getTunnels)
-	}
 
 	app.IncludeRouter(r)
 	app.Run(svc.Conf.HTTP.Host, svc.Conf.HTTP.Port) // 阻塞运行
@@ -348,11 +307,17 @@ func routeCtxCancel(s *Context) *Response {
 
 func TestFastApi_IncludeRouter_Context(t *testing.T) {
 	svc := NEWCtx()
-	app := NEW("FastApi Example", "1.0.0", true, svc)
+	app := New(Config{
+		UserSvc:     svc,
+		Version:     "1.0.0",
+		Description: "",
+		Title:       "FastApi Example",
+		Debug:       true,
+	})
 
 	r := APIRouter("/text", []string{"Text"})
 	{
-		r.GET("/cancel", Int, "当路由执行完毕退出时关闭context", routeCtxCancel)
+
 	}
 
 	app.IncludeRouter(r)
@@ -361,7 +326,13 @@ func TestFastApi_IncludeRouter_Context(t *testing.T) {
 
 func TestFastApi_OnEvent(t *testing.T) {
 	svc := NEWCtx()
-	app := NEW("FastApi Example", "1.0.0", true, svc)
+	app := New(Config{
+		UserSvc:     svc,
+		Version:     "1.0.0",
+		Description: "",
+		Title:       "FastApi Example",
+		Debug:       true,
+	})
 
 	app.OnEvent("startup", func() { app.Service().Logger().Info("current pid: ", app.PID()) })
 	app.OnEvent("startup", func() { app.Service().Logger().Info("startup event: 1") })

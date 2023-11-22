@@ -38,8 +38,9 @@ type Option struct {
 	Deprecated    bool                   `json:"deprecated" description:"是否禁用"`
 }
 
-// Route 一个完整的路由对象，此对象会在程序启动时生成swagger文档
+// Deprecated: Route 一个完整的路由对象，此对象会在程序启动时生成swagger文档
 // 其中相对路径Path不能重复，否则后者会覆盖前者
+// TODO: 重写为泛型实现
 type Route struct {
 	ResponseModel    *openapi.Metadata             `description:"响应体元数据"`
 	RequestModel     *openapi.Metadata             `description:"请求体元数据"`
@@ -55,6 +56,8 @@ type Route struct {
 	Dependencies     []DependencyFunc              `json:"-" description:"依赖"`
 	PathFields       []*openapi.QModel             `json:"-" description:"路径参数"`
 	deprecated       bool                          `description:"是否禁用"`
+	handleInNum      int
+	handleOutNum     int
 }
 
 func (f *Route) LowerMethod() string { return strings.ToLower(f.Method) }
@@ -75,7 +78,7 @@ func (f *Route) AddDependency(fcs ...DependencyFunc) *Route {
 	return f
 }
 
-// AddD 添加依赖项，用于在执行路由函数前执行一个自定义操作，此操作作用于参数校验通过之后
+// Deprecated: AddD 添加依赖项，用于在执行路由函数前执行一个自定义操作，此操作作用于参数校验通过之后
 //
 //	@param	fcs	DependencyFunc	依赖项
 func (f *Route) AddD(fcs ...DependencyFunc) *Route { return f.AddDependency(fcs...) }
@@ -88,7 +91,7 @@ func (f *Route) SetDescription(description string) *Route {
 	return f
 }
 
-// SetD 设置一个路由的详细描述信息
+// Deprecated: SetD 设置一个路由的详细描述信息
 //
 //	@param	Description	string	详细描述信息
 func (f *Route) SetD(description string) *Route { return f.SetDescription(description) }
@@ -104,7 +107,7 @@ func (f *Route) SetQueryParams(m openapi.QueryParameter) *Route {
 	return f
 }
 
-// SetQ 设置查询参数,此空struct的每一个字段都将作为一个单独的查询参数
+// Deprecated: SetQ 设置查询参数,此空struct的每一个字段都将作为一个单独的查询参数
 // 且此结构体的任意字段有且仅支持 string 类型
 //
 //	@param	m	openapi.QueryParameter	查询参数对象,
@@ -120,12 +123,12 @@ func (f *Route) SetRequestModel(m openapi.SchemaIface) *Route {
 	return f
 }
 
-// SetReq 设置请求体对象
+// Deprecated:SetReq 设置请求体对象
 //
 //	@param	m	any	请求体对象
 func (f *Route) SetReq(m openapi.SchemaIface) *Route { return f.SetRequestModel(m) }
 
-// Path 合并路由
+// Path 获得路由
 //
 //	@param	prefix	string	路由组前缀
 func (f *Route) Path(prefix string) string { return CombinePath(prefix, f.RelativePath) }
@@ -153,7 +156,8 @@ func (f *Route) NewRequestModel() any {
 	}
 }
 
-// Router 一个独立的路由组，Prefix路由组前缀，其内部的子路由均包含此前缀
+// Deprecated:Router 一个独立的路由组，Prefix路由组前缀，其内部的子路由均包含此前缀
+// TODO: 内部区分泛型接口和组有组接口 形如 Container
 type Router struct {
 	routes     map[string]*Route
 	Prefix     string
