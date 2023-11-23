@@ -53,7 +53,9 @@ type FastApi struct {
 	version     string        `description:"程序版本号"`
 	routers     []*Router     `description:"FastApi 路由组 Router"`
 	events      []*Event      `description:"启动和关闭事件"`
-	middlewares []any         `description:"自定义中间件"`
+	// TODO: 路由前后中间件
+	previousDeps []any ``
+	afterDeps    []any `description:"自定义中间件"`
 }
 
 func (f *FastApi) isFieldsOk() *FastApi {
@@ -177,7 +179,7 @@ func (f *FastApi) initialize() *FastApi {
 	// 创建 fiber.App
 	f.engine = createFiberApp(f.title, f.version)
 	// 注册中间件
-	for _, middleware := range f.middlewares {
+	for _, middleware := range f.afterDeps {
 		f.engine.Use(middleware)
 	}
 
@@ -299,7 +301,7 @@ func (f *FastApi) IncludeRouter(router *Router) *FastApi {
 
 // Use 添加中间件
 func (f *FastApi) Use(middleware ...any) *FastApi {
-	f.middlewares = append(f.middlewares, middleware...)
+	f.afterDeps = append(f.afterDeps, middleware...)
 	return f
 }
 
@@ -474,31 +476,6 @@ func (f *FastApi) DumpPID() {
 	}
 }
 
-// Get 请求
-func (f *FastApi) Get(path string, handler HandlerFunc, opts ...Option) *Route {
-	return f.routers[0].Get(path, handler, opts...)
-}
-
-// Post 请求
-func (f *FastApi) Post(path string, handler HandlerFunc, opts ...Option) *Route {
-	return f.routers[0].Post(path, handler, opts...)
-}
-
-// Delete 请求
-func (f *FastApi) Delete(path string, handler HandlerFunc, opts ...Option) *Route {
-	return f.routers[0].Delete(path, handler, opts...)
-}
-
-// Patch 请求
-func (f *FastApi) Patch(path string, handler HandlerFunc, opts ...Option) *Route {
-	return f.routers[0].Patch(path, handler, opts...)
-}
-
-// Put 请求
-func (f *FastApi) Put(path string, handler HandlerFunc, opts ...Option) *Route {
-	return f.routers[0].Put(path, handler, opts...)
-}
-
 // Shutdown 平滑关闭
 func (f *FastApi) Shutdown() {
 	f.service.cancel() // 标记结束
@@ -637,7 +614,7 @@ func New(confs ...Config) *FastApi {
 			service:     sc,
 			routers:     make([]*Router, 1),
 			isStarted:   make(chan struct{}, 1),
-			middlewares: make([]any, 0),
+			afterDeps:   make([]any, 0),
 			events:      make([]*Event, 0),
 		}
 		appEngine.routers[0] = APIRouter("", []string{"Default"})

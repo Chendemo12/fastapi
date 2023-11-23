@@ -27,7 +27,8 @@ func (m *MetaField) ToMetadata() (bool, *Metadata) {
 
 // Metadata 数据模型 BaseModel 的元信息
 type Metadata struct {
-	model       SchemaIface  `description:"数据模型,对于预定义类型,此字段无意义"`
+	model SchemaIface `description:"数据模型,对于预定义类型,此字段无意义"`
+	// Deprecated:
 	rType       reflect.Type `description:"结构体元数据"`
 	description string       `description:"模型描述"`
 	oType       DataType     `description:"OpenApi 数据类型"`

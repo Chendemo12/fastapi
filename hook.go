@@ -24,7 +24,7 @@ type DependencyFunc = func(c *Context) error
 // StackTraceHandlerFunc 错误堆栈处理函数, 即 recover 方法
 type StackTraceHandlerFunc = func(c *fiber.Ctx, e any)
 
-// RouteModelValidateHandlerFunc 返回值校验方法
+// Deprecated:RouteModelValidateHandlerFunc 返回值校验方法
 //
 //	@param	resp	any					响应体
 //	@param	meta	*openapi.Metadata	模型元数据

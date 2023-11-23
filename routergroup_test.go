@@ -13,6 +13,11 @@ func (g *ExampleGroup) GetClipboard(c *Context, day string) (*Clipboard, error) 
 	return &Clipboard{}, nil
 }
 
-func TestIncludeRouter(t *testing.T) {
-	IncludeRouter(&ExampleGroup{})
+func TestScanRouterMethod(t *testing.T) {
+	meta := ScanGroupRouter(&ExampleGroup{})
+	println(len(meta.routes))
+	println(meta.routes[0].route.swagger.Url)
+	println(meta.routes[0].route.swagger.Method)
+	println(meta.routes[0].route.swagger.Tags[0])
+	ScanGroupRoute(meta)
 }

@@ -447,35 +447,3 @@ func getDomainRecord(c *Context) *Response {
 	}
 	return c.OKResponse(r)
 }
-
-func TestFastApi_Run(t *testing.T) {
-	svc := NEWCtx()
-	app := New(Config{
-		Title:             "FastAPI Example",
-		Version:           "v1.2.0",
-		Debug:             true,
-		UserSvc:           svc,
-		Description:       "一个简单的FastApi应用程序,在启动app之前首先需要创建并替换ServiceContext,最后调用Run来运行程序",
-		Logger:            svc.Logger,
-		ShutdownTimeout:   5,
-		DisableBaseRoutes: true,
-	})
-
-	app.Get("/example", getAddress)
-
-	app.Get("/example/ip", getAddress, Opt{
-		Summary:       "返回当前请求的来源IP地址",
-		ResponseModel: &IPModel{},
-	})
-
-	app.Get("/example/domain", getDomainRecord, Opt{
-		Summary:       "获取地址解析记录",
-		ResponseModel: &DomainRecord{},
-	})
-
-	app.Post("/example/pusher", pushEnOSData, Opt{
-		RequestModel: &EnosData{}, ResponseModel: List(&EnosData{}),
-	})
-
-	app.Run(svc.Conf.HTTP.Host, svc.Conf.HTTP.Port) // 阻塞运行
-}

@@ -256,6 +256,7 @@ func makeMetadata(title, desc, tag string, otype DataType) *Metadata {
 var (
 	// ------------------------------------- int ---------------------------------------
 
+	// Deprecated:
 	Int8 = makeMetadata(
 		"int8",
 		"8位有符号的数字类型",

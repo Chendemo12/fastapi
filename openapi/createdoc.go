@@ -5,7 +5,7 @@ import "reflect"
 // AnonymousModelNameConnector 为匿名结构体生成一个名称, 连接符
 const AnonymousModelNameConnector = "_"
 
-// BaseModelToMetadata 提取基本数据模型的元信息
+// Deprecated: BaseModelToMetadata 提取基本数据模型的元信息
 //
 //	@param	model	SchemaIface	基本数据模型
 //	@return	*Metadata 基本数据模型的元信息

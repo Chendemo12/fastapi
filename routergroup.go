@@ -8,6 +8,20 @@ import (
 	"unicode"
 )
 
+const WebsocketMethod = "WS"
+const HttpMethodMinimumLength = len(http.MethodGet)
+const (
+	FirstInParamOffset  = 1 // 第一个有效参数的索引位置，由于结构体接收器处于第一位置
+	FirstOutParamOffset = 0
+	LastOutParamOffset  = 1 // 最后一个返回值参数的索引位置
+	OutParamNum         = 2
+)
+
+const (
+	FirstInParamName = "Context" // 第一个入参名称
+	LastOutParamName = "error"   // 最后一个出参名称
+)
+
 var HttpMethods = []string{
 	http.MethodGet,
 	http.MethodPost,
@@ -17,10 +31,13 @@ var HttpMethods = []string{
 	http.MethodOptions,
 }
 
-const HttpMethodMinimumLength = len(http.MethodGet)
-const FirstInParamOffset = 1 // 第一个有效参数的索引位置，由于结构体接收器处于第一位置
-const FirstOutParamOffset = 0
-const LastOutParamOffset = 1 // 最后一个返回值参数的索引位置
+var IllegalResponseType = []reflect.Kind{
+	reflect.Interface,
+	reflect.Func,
+	reflect.Ptr,
+	reflect.Chan,
+	reflect.UnsafePointer,
+}
 
 // RouterGroup 结构体路由组定义
 // 用法：首先实现此接口，然后通过调用 FastApi.IncludeRoute 方法进行注册绑定
@@ -66,93 +83,167 @@ type BaseRouter struct {
 
 func (g *BaseRouter) Prefix() string { return "" }
 
-func (g *BaseRouter) Tags() []string { return []string{"DEFAULT"} }
+func (g *BaseRouter) Tags() []string { return []string{} }
 
 func (g *BaseRouter) PathSchema() RoutePathSchema { return UnixDash{} }
 
-func IsRouteMethod(method reflect.Method) (bool, *Route) {
-	if !unicode.IsUpper([]rune(method.Name)[0]) {
-		// 非导出方法
-		return false, nil
-	}
+type GroupRouteMeta struct {
+	method reflect.Method
+	route  *GroupRoute
+}
 
+// GroupRouterMeta 反射构建路由组的元信息
+type GroupRouterMeta struct {
+	router RouterGroup
+	pkg    string // 包名.结构体名
+	routes []*GroupRouteMeta
+}
+
+// ============================================================================
+
+func IsRouteMethod(method reflect.Method) (*RouteSwagger, bool) {
 	if len(method.Name) <= HttpMethodMinimumLength {
 		// 长度不够
-		return false, nil
+		return nil, false
 	}
 
-	route := &Route{}
+	if unicode.IsLower([]rune(method.Name)[0]) {
+		// 非导出方法
+		return nil, false
+	}
+
+	swagger := &RouteSwagger{}
 	methodNameLength := len(method.Name)
 
 	// 依次判断是哪一种方法
 	for _, hm := range HttpMethods {
 		offset := len(hm)
-		if strings.ToUpper(method.Name[:offset]) == hm || strings.ToUpper(method.Name[methodNameLength-offset:]) == hm {
-			route.Method = hm
+		if methodNameLength <= offset {
+			continue // 长度不匹配
+		}
+		if strings.ToUpper(method.Name[:offset]) == hm {
+			// 记录方法和路由
+			swagger.Method = hm
+			swagger.RelativePath = method.Name[offset:] // 方法在前，截取后半部分为路由
+			break
+		}
+
+		if strings.ToUpper(method.Name[methodNameLength-offset:]) == hm {
+			swagger.Method = hm
+			swagger.RelativePath = method.Name[:offset]
 			break
 		}
 	}
-	if route.Method == "" {
+	if swagger.Method == "" {
 		// 方法名称不符合
-		return false, nil
+		return nil, false
 	}
 
 	// 判断方法参数是否符合要求
-	paramNum := method.Type.NumIn()
-	respNum := method.Type.NumOut()
+	inParamNum := method.Type.NumIn()
+	outParamNum := method.Type.NumOut()
 
-	if paramNum < 1 || respNum != 2 {
+	if inParamNum < FirstInParamOffset || outParamNum != OutParamNum {
 		// 方法参数数量不对
-		return false, nil
+		return nil, false
 	}
 
 	// 获取请求参数
-	if method.Type.In(FirstInParamOffset).Elem().Name() != "Context" || method.Type.Out(LastOutParamOffset).Name() != "error" {
+	if method.Type.In(FirstInParamOffset).Elem().Name() != FirstInParamName || method.Type.Out(LastOutParamOffset).Name() != LastOutParamName {
 		// 方法参数类型不符合
-		return false, nil
+		return nil, false
 	}
 
-	// 获取返回值参数
-	viType := []reflect.Kind{
-		reflect.Interface,
-		reflect.Func,
-		reflect.Ptr,
-		reflect.Chan,
-		reflect.UnsafePointer,
+	// 判断第一个返回值参数类型是否符合要求
+	firstOutParam := method.Type.Out(FirstOutParamOffset)
+	if firstOutParam.Kind() == reflect.Pointer {
+		// 通常情况下会返回指针，此时获取实际的类型
+		firstOutParam = firstOutParam.Elem()
 	}
-
-	for _, k := range viType {
-		elemType := method.Type.Out(FirstOutParamOffset)
-		if elemType.Kind() == reflect.Pointer {
-			elemType = elemType.Elem()
-		}
-
-		if elemType.Kind() == k {
+	firstOutParamKind := firstOutParam.Kind()
+	for _, k := range IllegalResponseType {
+		if firstOutParamKind == k {
 			// 返回值的第一个参数不符合要求
-			return false, nil
+			return nil, false
 		}
 	}
 
-	route.handleInNum = paramNum
-	route.handleOutNum = respNum
-	return true, route
+	// 全部符合要求
+	return swagger, true
 }
 
-func IncludeRouter(router RouterGroup) {
-	// TODO: 反射方法生成 [] Route
+// TODO: 考虑是否要修改为 GroupRouteMeta 的方法
+
+// ScanGroupRouterTags 扫描tags, 由于接口方法允许留空，此处需处理默认值
+func ScanGroupRouterTags(obj reflect.Type, router RouterGroup) []string {
+	if obj.Kind() == reflect.Pointer {
+		obj = obj.Elem()
+	}
+	tags := router.Tags()
+	if len(tags) == 0 {
+		tags = append(tags, obj.Name())
+	}
+	return tags
+}
+
+func ScanGroupRouter(router RouterGroup) *GroupRouterMeta {
 	obj := reflect.TypeOf(router)
 
 	// 路由组必须是结构体实现
-	if obj.Kind() != reflect.Struct && obj.Kind() != reflect.Ptr {
+	if obj.Kind() != reflect.Struct && obj.Kind() != reflect.Pointer {
 		panic("router not a struct, " + obj.String())
 	}
-	// 反射其方法
+
+	groupMeta := &GroupRouterMeta{
+		router: router,
+		pkg:    obj.String(),
+		routes: make([]*GroupRouteMeta, 0),
+	}
+	// 扫描tags
+	tags := ScanGroupRouterTags(obj, router)
+	// 扫描方法路由
+	ScanGroupRouterMethod(obj, groupMeta, tags)
+
+	return groupMeta
+}
+
+// ScanGroupRouterMethod 反射方法，由于必须是指针接收器，因此obj应为指针类型
+func ScanGroupRouterMethod(obj reflect.Type, groupMeta *GroupRouterMeta, tags []string) {
 	for i := 0; i < obj.NumMethod(); i++ {
-		isRoute, route := IsRouteMethod(obj.Method(i))
+		method := obj.Method(i)
+		swagger, isRoute := IsRouteMethod(method)
 		if !isRoute {
 			continue
 		}
-		url := router.PathSchema().Format(router.Prefix(), obj.Method(i).Name)
-		fmt.Println(route.Method, url)
+		// 匹配到路由方法
+		swagger.Url = groupMeta.router.PathSchema().Format(groupMeta.router.Prefix(), swagger.RelativePath)
+		swagger.Summary = fmt.Sprintf("%s %s", swagger.Method, swagger.RelativePath)
+		swagger.Tags = tags
+		route := &GroupRoute{swagger: swagger, outParams: method.Type.Out(FirstOutParamOffset)}
+		route.handlerInNum = method.Type.NumIn() - FirstInParamOffset // 排除接收器
+		route.handlerOutNum = OutParamNum                             // 返回值数量始终为2
+
+		for n := FirstInParamOffset; n <= route.handlerInNum; n++ {
+			route.inParams = append(route.inParams, method.Type.In(n))
+		}
+
+		groupMeta.routes = append(groupMeta.routes, &GroupRouteMeta{
+			method: method,
+			route:  route,
+		})
+	}
+}
+
+func ScanGroupRoute(groupMeta *GroupRouterMeta) {
+	for _, routeMeta := range groupMeta.routes {
+		for _, model := range routeMeta.route.inParams {
+			if model != nil {
+				//routeMeta.route.swagger.RequestModel = openapi.BaseModelToMetadata(model)
+			}
+			println(model.String())
+		}
+		if routeMeta.route.outParams != nil {
+			println(routeMeta.route.outParams.String())
+		}
 	}
 }
