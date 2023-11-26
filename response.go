@@ -38,8 +38,8 @@ var whereClientError = map[string]any{"where error": "client"}
 
 // ResponseHeader 自定义响应头
 type ResponseHeader struct {
-	Key   string `json:"key" Description:"Key" binding:"required"`
-	Value string `json:"value" Description:"Value" binding:"required"`
+	Key   string `json:"key" description:"Key" binding:"required"`
+	Value string `json:"value" description:"Value" binding:"required"`
 }
 
 // Response 路由返回值

@@ -21,17 +21,17 @@ func (f *FastApi) createOpenApiDoc() *FastApi {
 
 // 生成模型定义
 func (f *FastApi) createDefines() *FastApi {
-	for _, router := range f.APIRouters() {
-		for _, route := range router.Routes() {
-			if route.RequestModel != nil {
-				// 内部会处理嵌入类型
-				f.service.openApi.AddDefinition(route.RequestModel)
-			}
-			if route.ResponseModel != nil {
-				f.service.openApi.AddDefinition(route.ResponseModel)
-			}
-		}
-	}
+	//for _, router := range f.APIRouters() {
+	//	for _, route := range router.Routes() {
+	//		if route.RequestModel != nil {
+	//			// 内部会处理嵌入类型
+	//			f.service.openApi.AddDefinition(route.RequestModel)
+	//		}
+	//		if route.ResponseModel != nil {
+	//			f.service.openApi.AddDefinition(route.ResponseModel)
+	//		}
+	//	}
+	//}
 
 	return f
 }
@@ -40,19 +40,19 @@ func (f *FastApi) createDefines() *FastApi {
 func (f *FastApi) createPaths() *FastApi {
 	for _, route := range f.service.cache {
 		if route.Get != nil {
-			routeToPathItem(route.Path, route.Get, f.service.openApi)
+			//routeToPathItem(route.Path, route.Get, f.service.openApi)
 		}
 		if route.Post != nil {
-			routeToPathItem(route.Path, route.Post, f.service.openApi)
+			//routeToPathItem(route.Path, route.Post, f.service.openApi)
 		}
 		if route.Patch != nil {
-			routeToPathItem(route.Path, route.Patch, f.service.openApi)
+			//routeToPathItem(route.Path, route.Patch, f.service.openApi)
 		}
 		if route.Delete != nil {
-			routeToPathItem(route.Path, route.Delete, f.service.openApi)
+			//routeToPathItem(route.Path, route.Delete, f.service.openApi)
 		}
 		if route.Put != nil {
-			routeToPathItem(route.Path, route.Put, f.service.openApi)
+			//routeToPathItem(route.Path, route.Put, f.service.openApi)
 		}
 	}
 
@@ -156,40 +156,40 @@ func queryRedocUiJS(c *fiber.Ctx) error {
 	return c.SendStream(bytes.NewReader(b))
 }
 
-func routeToPathItem(path string, route *Route, api *openapi.OpenApi) {
+func routeToPathItem(path string, route RouteIface, api *openapi.OpenApi) {
 	// 存在相同路径，不同方法的路由选项
 	item := api.QueryPathItem(path)
 
 	// 构造路径参数
-	pathParams := make([]*openapi.Parameter, len(route.PathFields))
-	for no, q := range route.PathFields {
+	pathParams := make([]*openapi.Parameter, len(route.Swagger().PathFields))
+	for no, q := range route.Swagger().PathFields {
 		p := openapi.QModelToParameter(q)
-		p.Deprecated = route.deprecated
+		p.Deprecated = route.Swagger().Deprecated
 
 		pathParams[no] = p
 	}
 
 	// 构造查询参数
-	queryParams := make([]*openapi.Parameter, len(route.QueryFields))
-	for no, q := range route.QueryFields {
+	queryParams := make([]*openapi.Parameter, len(route.Swagger().QueryFields))
+	for no, q := range route.Swagger().QueryFields {
 		p := openapi.QModelToParameter(q)
-		p.Deprecated = route.deprecated
+		p.Deprecated = route.Swagger().Deprecated
 		queryParams[no] = p
 	}
 
 	// 构造操作符
 	operation := &openapi.Operation{
-		Summary:     route.Summary,
-		Description: route.Description,
-		Tags:        route.Tags,
+		Summary:     route.Swagger().Summary,
+		Description: route.Swagger().Description,
+		Tags:        route.Swagger().Tags,
 		Parameters:  append(pathParams, queryParams...),
-		RequestBody: openapi.MakeOperationRequestBody(route.RequestModel),
-		Responses:   openapi.MakeOperationResponses(route.ResponseModel),
-		Deprecated:  route.deprecated,
+		RequestBody: openapi.MakeOperationRequestBody(route.Swagger().RequestModel),
+		Responses:   openapi.MakeOperationResponses(route.Swagger().ResponseModel),
+		Deprecated:  route.Swagger().Deprecated,
 	}
 
 	// 绑定到操作方法
-	switch route.Method {
+	switch route.Swagger().Method {
 
 	case http.MethodPost:
 		item.Post = operation

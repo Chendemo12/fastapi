@@ -25,7 +25,7 @@ type Context struct {
 	RequestBody any                `json:"request_body,omitempty"` // 请求体，初始值为1
 	svc         *Service           `description:"flask-go service"`
 	ec          *fiber.Ctx         `description:"engine context"`
-	route       *Route             `description:"用于请求体和响应体校验"`
+	route       RouteIface         `description:"用于请求体和响应体校验"`
 	routeCtx    context.Context    `description:"获取针对此次请求的唯一context"`
 	routeCancel context.CancelFunc `description:"获取针对此次请求的唯一取消函数"`
 	response    *Response          `description:"返回值,以减少函数间复制的开销"`

@@ -8,7 +8,6 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"log"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
@@ -42,20 +41,22 @@ type Event struct {
 }
 
 type FastApi struct {
-	service     *Service      `description:"全局服务依赖"`
-	engine      *fiber.App    `description:"fiber.App"`
-	pool        *sync.Pool    `description:"FastApi.Context资源池"`
-	isStarted   chan struct{} `description:"标记程序是否完成启动"`
-	host        string        `description:"运行地址"`
-	description string        `description:"程序描述"`
-	title       string        `description:"程序名,同时作为日志文件名"`
-	port        string        `description:"运行端口"`
-	version     string        `description:"程序版本号"`
-	routers     []*Router     `description:"FastApi 路由组 Router"`
-	events      []*Event      `description:"启动和关闭事件"`
-	// TODO: 路由前后中间件
-	previousDeps []any ``
-	afterDeps    []any `description:"自定义中间件"`
+	service       *Service           `description:"全局服务依赖"`
+	engine        *fiber.App         `description:"fiber.App"`
+	pool          *sync.Pool         `description:"FastApi.Context资源池"`
+	isStarted     chan struct{}      `description:"标记程序是否完成启动"`
+	host          string             `description:"运行地址"`
+	description   string             `description:"程序描述"`
+	title         string             `description:"程序名,同时作为日志文件名"`
+	port          string             `description:"运行端口"`
+	version       string             `description:"程序版本号"`
+	groupRouters  []*GroupRouterMeta `description:"路由组"`
+	genericRoutes []RouteIface       `description:"泛型路由对象"`
+	groupRouter   []*GroupRouterMeta `description:"路由组对象"`
+	events        []*Event           `description:"启动和关闭事件"`
+	finder        Finder             `description:"路由对象查找器"`
+	previousDeps  []any              `description:"在接口参数校验前执行的中间件"` // TODO Future: 路由前后中间件
+	afterDeps     []any              `description:"在接口参数校验成功后执行的中间件"`
 }
 
 func (f *FastApi) isFieldsOk() *FastApi {
@@ -84,85 +85,12 @@ func (f *FastApi) isFieldsOk() *FastApi {
 
 // mountBaseRoutes 创建基础路由
 func (f *FastApi) mountBaseRoutes() {
-	// 注册最基础的路由
-	router := APIRouter("/api/base", []string{"Base"})
-	{
-		router.Get(
-			"/title",
-			func(c *Context) *Response { return c.StringResponse(appEngine.title) },
-			Option{Summary: "获取软件名", ResponseModel: String},
-		)
 
-		router.Get("/description",
-			func(c *Context) *Response { return c.StringResponse(appEngine.Description()) },
-			Option{Summary: "获取软件描述信息", ResponseModel: String},
-		)
-
-		router.Get("/version",
-			func(c *Context) *Response { return c.StringResponse(appEngine.version) },
-			Option{Summary: "获取软件版本号", ResponseModel: String},
-		)
-
-		router.Get(
-			"/heartbeat",
-			func(c *Context) *Response { return c.StringResponse("pong") },
-			Option{Summary: "心跳检测", ResponseModel: String},
-		)
-
-		router.Get(
-			"/debug",
-			func(c *Context) *Response { return c.OKResponse(core.IsDebug()) },
-			Option{Summary: "获取调试开关", ResponseModel: Bool},
-		)
-	}
-
-	f.routers = append(f.routers, router)
 }
 
 // mountUserRoutes 挂载并记录自定义路由
 func (f *FastApi) mountUserRoutes() {
-	for _, router := range f.routers {
-		rtr := f.engine.Group(router.Prefix)
-		for _, route := range router.Routes() {
-			// 全局禁用返回值校验
-			if core.ResponseValidateDisabled {
-				route.responseValidate = routeModelDoNothing
-			}
-			// 全局禁用请求体校验
-			if core.RequestValidateDisabled {
-				route.requestValidate = routeModelDoNothing
-			}
 
-			meta := f.service.queryRouteMeta(CombinePath(router.Prefix, route.RelativePath))
-
-			switch route.Method {
-			case http.MethodGet:
-				rtr.Get(route.RelativePath, route.Handlers...)
-				// 记录自定义路由
-				meta.Get = route
-
-			case http.MethodPost:
-				rtr.Post(route.RelativePath, route.Handlers...)
-				meta.Post = route
-
-			case http.MethodDelete:
-				rtr.Delete(route.RelativePath, route.Handlers...)
-				meta.Delete = route
-
-			case http.MethodPatch:
-				rtr.Patch(route.RelativePath, route.Handlers...)
-				meta.Patch = route
-
-			case http.MethodPut:
-				rtr.Put(route.RelativePath, route.Handlers...)
-				meta.Put = route
-
-			case "ANY", "ALL":
-				rtr.All(route.RelativePath, route.Handlers...)
-				meta.Any = route
-			}
-		}
-	}
 }
 
 // 初始化FastApi,并完成服务依赖的建立
@@ -212,11 +140,6 @@ func (f *FastApi) Description() string { return f.description }
 // Service 获取FastApi全局服务依赖
 func (f *FastApi) Service() *Service { return f.service }
 
-// APIRouters 获取全部注册的路由组
-//
-//	@return	[]*Router 路由组
-func (f *FastApi) APIRouters() []*Router { return f.routers }
-
 // Engine 获取fiber引擎
 //
 //	@return	*fiber.App fiber引擎
@@ -224,7 +147,7 @@ func (f *FastApi) Engine() *fiber.App { return f.engine }
 
 // OnEvent 添加事件
 //
-//	@param	kind	事件类型，取值需为	"startup"	/	"shutdown"
+//	@param	Type	事件类型，取值需为	"startup"	/	"shutdown"
 //	@param	fs		func()		事件
 func (f *FastApi) OnEvent(kind EventKind, fc func()) *FastApi {
 	switch kind {
@@ -294,8 +217,7 @@ func (f *FastApi) SetDescription(description string) *FastApi {
 // IncludeRouter 注册一个路由组
 //
 //	@param	router	*Router	路由组
-func (f *FastApi) IncludeRouter(router *Router) *FastApi {
-	f.routers = append(f.routers, router)
+func (f *FastApi) IncludeRouter(router GroupRouter) *FastApi {
 	return f
 }
 
@@ -428,18 +350,6 @@ func (f *FastApi) DisableSwagAutoCreate() *FastApi {
 	return f
 }
 
-// DisableRequestValidate 禁用请求体自动验证
-func (f *FastApi) DisableRequestValidate() *FastApi {
-	core.RequestValidateDisabled = true
-	return f
-}
-
-// DisableResponseValidate 禁用返回体自动验证
-func (f *FastApi) DisableResponseValidate() *FastApi {
-	core.ResponseValidateDisabled = true
-	return f
-}
-
 // EnableMultipleProcess 开启多进程
 func (f *FastApi) EnableMultipleProcess() *FastApi {
 	core.MultipleProcessEnabled = true
@@ -459,7 +369,7 @@ func (f *FastApi) EnableDumpPID() *FastApi {
 
 // DumpPID 存储PID, 文件权限为0775
 // 对于 Windows 其文件为当前运行目录下的pid.txt;
-// 对于 类unix系统，其文件为/run/{Title}.pid, 若无读写权限则改为当前运行目录下的pid.txt;
+// 对于 类unix系统，其文件为/run/{Name}.pid, 若无读写权限则改为当前运行目录下的pid.txt;
 func (f *FastApi) DumpPID() {
 	var path string
 	switch runtime.GOOS {
@@ -544,39 +454,35 @@ func (f *FastApi) Run(host, port string) {
 }
 
 type Config struct {
-	UserSvc                 UserService           `json:"-" description:"自定义服务依赖"`
-	Logger                  logger.Iface          `json:"-" description:"日志"`
-	ErrorHandler            fiber.ErrorHandler    `json:"-" description:"请求错误处理方法"`
-	RecoverHandler          StackTraceHandlerFunc `json:"-" description:"异常处理方法"`
-	Version                 string                `json:"version,omitempty" description:"APP版本号"`
-	Description             string                `json:"description,omitempty" description:"APP描述"`
-	Title                   string                `json:"title,omitempty" description:"APP标题,也是日志文件名"`
-	ShutdownTimeout         int                   `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
-	DisableSwagAutoCreate   bool                  `json:"disable_swag_auto_create,omitempty" description:"禁用自动文档"`
-	EnableMultipleProcess   bool                  `json:"enable_multiple_process,omitempty" description:"开启多进程"`
-	EnableDumpPID           bool                  `json:"enable_dump_pid,omitempty" description:"输出PID文件"`
-	DisableResponseValidate bool                  `json:"disable_response_validate,omitempty" description:"禁用响应体自动序列化"`
-	DisableRequestValidate  bool                  `json:"disable_request_validate,omitempty" description:"禁用请求体自动校验"`
-	DisableBaseRoutes       bool                  `json:"disable_base_routes,omitempty" description:"禁用基础路由"`
-	Debug                   bool                  `json:"debug,omitempty" description:"调试模式"`
+	UserSvc               UserService           `json:"-" description:"自定义服务依赖"`
+	Logger                logger.Iface          `json:"-" description:"日志"`
+	ErrorHandler          fiber.ErrorHandler    `json:"-" description:"请求错误处理方法"`
+	RecoverHandler        StackTraceHandlerFunc `json:"-" description:"异常处理方法"`
+	Version               string                `json:"version,omitempty" description:"APP版本号"`
+	Description           string                `json:"description,omitempty" description:"APP描述"`
+	Title                 string                `json:"title,omitempty" description:"APP标题,也是日志文件名"`
+	ShutdownTimeout       int                   `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
+	DisableSwagAutoCreate bool                  `json:"disable_swag_auto_create,omitempty" description:"禁用自动文档"`
+	EnableMultipleProcess bool                  `json:"enable_multiple_process,omitempty" description:"开启多进程"`
+	EnableDumpPID         bool                  `json:"enable_dump_pid,omitempty" description:"输出PID文件"`
+	DisableBaseRoutes     bool                  `json:"disable_base_routes,omitempty" description:"禁用基础路由"`
+	Debug                 bool                  `json:"debug,omitempty" description:"调试模式"`
 }
 
 // New 创建一个 FastApi 服务
 func New(confs ...Config) *FastApi {
 	conf := Config{
-		Title:                   "FastAPI",
-		Version:                 "1.0.0",
-		Debug:                   false,
-		UserSvc:                 nil,
-		Description:             "FastAPI Application",
-		Logger:                  nil,
-		ShutdownTimeout:         5,
-		DisableBaseRoutes:       false,
-		DisableSwagAutoCreate:   false,
-		DisableRequestValidate:  false,
-		DisableResponseValidate: false,
-		EnableMultipleProcess:   false,
-		EnableDumpPID:           false,
+		Title:                 "FastAPI",
+		Version:               "1.0.0",
+		Debug:                 false,
+		UserSvc:               nil,
+		Description:           "FastAPI Application",
+		Logger:                nil,
+		ShutdownTimeout:       5,
+		DisableBaseRoutes:     false,
+		DisableSwagAutoCreate: false,
+		EnableMultipleProcess: false,
+		EnableDumpPID:         false,
 	}
 	if len(confs) > 0 {
 		if confs[0].Title != "" {
@@ -594,9 +500,7 @@ func New(confs ...Config) *FastApi {
 		conf.ShutdownTimeout = confs[0].ShutdownTimeout
 		conf.DisableBaseRoutes = confs[0].DisableBaseRoutes
 		conf.DisableSwagAutoCreate = confs[0].DisableSwagAutoCreate
-		conf.DisableRequestValidate = confs[0].DisableRequestValidate
 		conf.EnableMultipleProcess = confs[0].EnableMultipleProcess
-		conf.DisableResponseValidate = confs[0].DisableResponseValidate
 		conf.EnableDumpPID = confs[0].EnableDumpPID
 		conf.ErrorHandler = confs[0].ErrorHandler
 		conf.RecoverHandler = confs[0].RecoverHandler
@@ -608,16 +512,15 @@ func New(confs ...Config) *FastApi {
 		sc.scheduler = cronjob.NewScheduler(sc.ctx, nil)
 
 		appEngine = &FastApi{
-			title:       conf.Title,
-			version:     conf.Version,
-			description: conf.Title + " Micro Context",
-			service:     sc,
-			routers:     make([]*Router, 1),
-			isStarted:   make(chan struct{}, 1),
-			afterDeps:   make([]any, 0),
-			events:      make([]*Event, 0),
+			title:         conf.Title,
+			version:       conf.Version,
+			description:   conf.Title + " Micro Context",
+			service:       sc,
+			genericRoutes: make([]RouteIface, 1),
+			isStarted:     make(chan struct{}, 1),
+			afterDeps:     make([]any, 0),
+			events:        make([]*Event, 0),
 		}
-		appEngine.routers[0] = APIRouter("", []string{"Default"})
 	})
 
 	app := appEngine
@@ -643,13 +546,7 @@ func New(confs ...Config) *FastApi {
 	if conf.DisableBaseRoutes {
 		app.DisableBaseRoutes()
 	}
-	if conf.DisableRequestValidate {
-		app.DisableRequestValidate()
-	}
 
-	if conf.DisableResponseValidate {
-		app.DisableResponseValidate()
-	}
 	if conf.DisableSwagAutoCreate {
 		app.DisableSwagAutoCreate()
 	}

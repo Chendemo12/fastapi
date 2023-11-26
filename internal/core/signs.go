@@ -9,9 +9,11 @@ const (
 
 //goland:noinspection GoUnusedGlobalVariable
 var (
-	BaseRoutesDisabled       = false            // 禁用基础路由
-	SwaggerDisabled          = false            // 禁用文档自动生成
-	RequestValidateDisabled  = true             // 禁用请求体自动验证
+	BaseRoutesDisabled = false // 禁用基础路由
+	SwaggerDisabled    = false // 禁用文档自动生成
+	// Deprecated: 删除
+	RequestValidateDisabled = true // 禁用请求体自动验证
+	// Deprecated: 删除
 	ResponseValidateDisabled = false            // 禁用返回体自动验证
 	MultipleProcessEnabled   = true             // 启用多进程
 	ShutdownWithTimeout      = 20 * time.Second // 关机前的最大等待时间

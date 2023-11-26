@@ -45,8 +45,8 @@ func (r *Reference) MarshalJSON() ([]byte, error) {
 
 // ComponentScheme openapi 的模型文档部分
 type ComponentScheme struct {
-	Model *Metadata `json:"model" description:"模型定义"`
-	Name  string    `json:"name" description:"模型名称，包含包名"`
+	Model *BaseModelMeta `json:"model" description:"模型定义"`
+	Name  string         `json:"name" description:"模型名称，包含包名"`
 }
 
 // Components openapi 的模型部分
@@ -62,25 +62,25 @@ func (c *Components) MarshalJSON() ([]byte, error) {
 		m[v.Name] = v.Model.Schema() // 记录根模型
 
 		// 生成模型，处理嵌入类型
-		for _, innerF := range v.Model.InnerFields() {
-			exist, innerM := innerF.ToMetadata()
-			if exist { // 发现子模型
-				m[innerF.SchemaName()] = innerM.Schema() // 对于未命名结构体，给其指定一个结构体名称
-			}
-		}
+		//for _, innerF := range v.Model.InnerFields() {
+		//	exist, innerM := innerF.ToMetadata()
+		//	if exist { // 发现子模型
+		//		m[innerF.SchemaPkg()] = innerM.Schema() // 对于未命名结构体，给其指定一个结构体名称
+		//	}
+		//}
 	}
 
 	// 记录内置错误类型文档
-	m[ValidationErrorDefinition.SchemaName()] = ValidationErrorDefinition.Schema()
-	m[ValidationErrorResponseDefinition.SchemaName()] = ValidationErrorResponseDefinition.Schema()
+	m[ValidationErrorDefinition.SchemaPkg()] = ValidationErrorDefinition.Schema()
+	m[ValidationErrorResponseDefinition.SchemaPkg()] = ValidationErrorResponseDefinition.Schema()
 
 	return helper.JsonMarshal(map[string]any{"schemas": m})
 }
 
 // AddModel 添加一个模型文档
-func (c *Components) AddModel(m *Metadata) {
+func (c *Components) AddModel(m *BaseModelMeta) {
 	c.Scheme = append(c.Scheme, &ComponentScheme{
-		Name:  m.SchemaName(),
+		Name:  m.SchemaPkg(),
 		Model: m,
 	})
 }
@@ -116,9 +116,10 @@ type Parameter struct {
 }
 
 type ModelContentSchema interface {
-	SchemaType() DataType
 	Schema() map[string]any
-	SchemaName(exclude ...bool) string
+	SchemaType() DataType
+	SchemaTitle() string
+	SchemaPkg() string
 }
 
 // RequestBody 路由 请求体模型文档
@@ -140,7 +141,7 @@ func (p *PathModelContent) MarshalJSON() ([]byte, error) {
 	case ObjectType:
 		m[p.MIMEType] = map[string]any{
 			"schema": map[string]string{
-				RefName: RefPrefix + p.Schema.SchemaName(),
+				RefName: RefPrefix + p.Schema.SchemaPkg(),
 			},
 		}
 	default:
@@ -239,14 +240,14 @@ type OpenApi struct {
 }
 
 // AddDefinition 添加一个模型文档
-func (o *OpenApi) AddDefinition(meta *Metadata) *OpenApi {
+func (o *OpenApi) AddDefinition(meta *BaseModelMeta) *OpenApi {
 	o.Components.AddModel(meta)
 	return o
 }
 
 // QueryPathItem 查询路由对象, 不存在则新建
 func (o *OpenApi) QueryPathItem(path string) *PathItem {
-	path = FastApiRoutePath(path) // 修改路径格式
+	path = ToFastApiRoutePath(path) // 修改路径格式
 
 	for _, item := range o.Paths.Paths {
 		if item.Path == path {

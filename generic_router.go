@@ -1,0 +1,167 @@
+package fastapi
+
+import (
+	"github.com/Chendemo12/fastapi/openapi"
+	"net/http"
+)
+
+// Option 泛型接口定义可选项
+// NOTICE: 231126 暂不可用
+type Option struct {
+	Summary       string              `json:"summary" description:"摘要描述"`
+	ResponseModel openapi.ModelSchema `json:"response_model" description:"响应体模型"`
+	RequestModel  openapi.ModelSchema `json:"request_model" description:"请求体模型"`
+	Params        openapi.ModelSchema `json:"params" description:"查询参数,结构体"`
+	Description   string              `json:"description" description:"路由描述"`
+	Tags          []string            `json:"tags" description:"路由标签"`
+	Dependencies  []DependencyFunc    `json:"-" description:"依赖"`
+	Handlers      []HandlerFunc       `json:"-" description:"处理函数"`
+	Deprecated    bool                `json:"deprecated" description:"是否禁用"`
+}
+
+func cleanOpts(opts ...Option) *Option {
+	opt := &Option{
+		Summary:       "",
+		Params:        nil,
+		RequestModel:  nil,
+		ResponseModel: nil,
+		Description:   "",
+		Tags:          make([]string, 0),
+		Dependencies:  make([]DependencyFunc, 0),
+		Handlers:      make([]HandlerFunc, 0),
+		Deprecated:    false,
+	}
+	if len(opts) > 0 {
+		opt.Summary = opts[0].Summary
+		opt.Params = opts[0].Params
+		opt.RequestModel = opts[0].RequestModel
+		opt.ResponseModel = opts[0].ResponseModel
+		opt.Description = opts[0].Description
+		opt.Deprecated = opts[0].Deprecated
+
+		if len(opts[0].Tags) > 0 {
+			opt.Tags = opts[0].Tags
+		}
+		if len(opts[0].Dependencies) > 0 {
+			opt.Dependencies = opts[0].Dependencies
+		}
+		if len(opts[0].Handlers) > 0 {
+			opt.Handlers = opts[0].Handlers
+		}
+	}
+
+	return opt
+}
+
+// GenericRoute 泛型路由定义
+type GenericRoute[T openapi.ModelSchema] struct {
+	swagger   *openapi.RouteSwagger
+	prototype T
+	handler   func(c *Context, params T) *Response
+}
+
+func (r *GenericRoute[T]) Id() string { return r.swagger.Id() }
+
+func (r *GenericRoute[T]) Type() RouteType {
+	return GenericRouteType
+}
+
+func (r *GenericRoute[T]) Swagger() *openapi.RouteSwagger {
+	return r.swagger
+}
+
+func (r *GenericRoute[T]) ResponseBinder() ModelBindMethod {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r *GenericRoute[T]) RequestBinders() ModelBindMethod {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r *GenericRoute[T]) QueryBinders() map[string]ModelBindMethod {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r *GenericRoute[T]) NewRequestModel() any {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r *GenericRoute[T]) Call() {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r *GenericRoute[T]) Init() (err error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r *GenericRoute[T]) Scan() (err error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r *GenericRoute[T]) ScanInner() (err error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+// Get TODO Future:
+func Get[T openapi.ModelSchema](path string, handler func(c *Context, query T) *Response, opt ...Option) *GenericRoute[T] {
+	var prototype T
+	g := &GenericRoute[T]{
+		handler:   handler,
+		prototype: prototype,
+	}
+	// 添加到全局数组
+	g.swagger.RelativePath = path
+	g.swagger.Method = http.MethodGet
+	return g
+}
+
+func Delete[T openapi.ModelSchema](path string, handler func(c *Context, query T) *Response, opt ...Option) *GenericRoute[T] {
+	var prototype T
+	g := &GenericRoute[T]{
+		handler:   handler,
+		prototype: prototype,
+	}
+	// 添加到全局数组
+	g.swagger.RelativePath = path
+	g.swagger.Method = http.MethodDelete
+	return g
+}
+
+func Post[T openapi.ModelSchema](path string, handler func(c *Context, req T) *Response, opt ...Option) *GenericRoute[T] {
+	var prototype T
+	g := &GenericRoute[T]{
+		handler:   handler,
+		prototype: prototype,
+	}
+	// 添加到全局数组
+	g.swagger.RelativePath = path
+	g.swagger.Method = http.MethodPost
+	return g
+}
+
+func Patch[T openapi.ModelSchema](path string, handler func(c *Context, req T) *Response, opt ...Option) *GenericRoute[T] {
+	var prototype T
+	g := &GenericRoute[T]{
+		handler:   handler,
+		prototype: prototype,
+	}
+	// 添加到全局数组
+	g.swagger.RelativePath = path
+	g.swagger.Method = http.MethodPatch
+	return g
+}
+
+// =================================== 👇 路由组元数据 ===================================
+
+// GenericRouterMeta 统一记录所有的泛型路由
+type GenericRouterMeta[T openapi.ModelSchema] struct {
+	routes []*GenericRoute[T]
+}

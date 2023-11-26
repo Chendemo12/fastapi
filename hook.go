@@ -27,9 +27,9 @@ type StackTraceHandlerFunc = func(c *fiber.Ctx, e any)
 // Deprecated:RouteModelValidateHandlerFunc 返回值校验方法
 //
 //	@param	resp	any					响应体
-//	@param	meta	*openapi.Metadata	模型元数据
+//	@param	meta	*openapi.BaseModelMeta	模型元数据
 //	@return	*Response 响应体
-type RouteModelValidateHandlerFunc func(resp any, meta *openapi.Metadata) *Response
+type RouteModelValidateHandlerFunc func(resp any, meta *openapi.BaseModelMeta) *Response
 
 // routeHandler 路由处理方法(装饰器实现)，用于请求体校验和返回体序列化，同时注入全局服务依赖,
 // 此方法接收一个业务层面的路由钩子方法 HandlerFunc，
@@ -102,10 +102,19 @@ func jsoniterUnmarshalErrorToValidationError(err error) *openapi.ValidationError
 }
 
 // 查找注册的路由，校验的基础
-func (c *Context) findRoute() *Route {
+func (c *Context) findRoute() RouteIface {
+	// TODO Future:
 	// Route().Path 获取注册的路径，
-	c.route = c.svc.queryRoute(c.ec.Method(), c.ec.Route().Path)
-	return c.route
+	id := openapi.CreateRouteIdentify(c.ec.Method(), c.ec.Route().Path)
+	item, ok := appEngine.finder.Get(id)
+	if !ok {
+		return nil
+	}
+	route, ok := item.(*GroupRoute)
+	if !ok {
+		return nil
+	}
+	return route
 }
 
 // 路径参数校验
@@ -113,47 +122,47 @@ func (c *Context) findRoute() *Route {
 //	@return	*Response 校验结果, 若为nil则校验通过
 func (c *Context) pathParamsValidate() {
 	// 路径参数校验
-	for _, p := range c.route.PathFields {
-		value := c.ec.Params(p.SchemaName())
-		if p.IsRequired() && value == "" {
-			// 不存在此路径参数, 但是此路径参数设置为必选
-			c.response = validationErrorResponse(&openapi.ValidationError{
-				Loc:  []string{"path", p.SchemaName()},
-				Msg:  PathPsIsEmpty,
-				Type: "string",
-				Ctx:  whereClientError,
-			})
-		}
-
-		c.PathFields[p.SchemaName()] = value
-	}
+	//for _, p := range c.route.PathFields {
+	//	value := c.ec.Params(p.SchemaTitle())
+	//	if p.IsRequired() && value == "" {
+	//		// 不存在此路径参数, 但是此路径参数设置为必选
+	//		c.response = validationErrorResponse(&openapi.ValidationError{
+	//			Loc:  []string{"path", p.SchemaPkg()},
+	//			Msg:  PathPsIsEmpty,
+	//			Type: "string",
+	//			Ctx:  whereClientError,
+	//		})
+	//	}
+	//
+	//	c.PathFields[p.SchemaPkg()] = value
+	//}
 }
 
 // 查询参数校验
 //
 //	@return	*Response 校验结果, 若为nil则校验通过
 func (c *Context) queryParamsValidate() {
-	for _, q := range c.route.QueryFields {
-		value := c.ec.Query(q.SchemaName())
+	for _, q := range c.route.Swagger().QueryFields {
+		value := c.ec.Query(q.SchemaPkg())
 		if q.IsRequired() && value == "" {
 			// 但是此查询参数设置为必选
 			c.response = validationErrorResponse(&openapi.ValidationError{
-				Loc:  []string{"query", q.SchemaName()},
+				Loc:  []string{"query", q.SchemaPkg()},
 				Msg:  QueryPsIsEmpty,
 				Type: "string",
 				Ctx:  whereClientError,
 			})
 		}
-		c.QueryFields[q.SchemaName()] = value
+		c.QueryFields[q.SchemaPkg()] = value
 	}
 }
 
 func (c *Context) dependencyDone() {
-	for i := 0; i < len(c.route.Dependencies); i++ {
-		if err := c.route.Dependencies[i](c); err != nil {
-			break
-		}
-	}
+	//for i := 0; i < len(c.route.Dependencies); i++ {
+	//	if err := c.route.Dependencies[i](c); err != nil {
+	//		break
+	//	}
+	//}
 }
 
 // 请求体校验
@@ -201,26 +210,20 @@ func (c *Context) workflow() {
 //
 //	@return	*Response 校验结果, 若校验不通过则修改 Response.StatusCode 和 Response.Content
 func (c *Context) responseBodyValidate() {
-
-	// 对于返回值类型，允许缺省返回值以屏蔽返回值校验
-	if c.route.ResponseModel == nil || core.ResponseValidateDisabled {
-		return
-	}
-
 	// 仅校验 JSONResponse 和 StringResponse
 	if c.response.Type != JsonResponseType && c.response.Type != StringResponseType {
 		return
 	}
 
 	// 返回值校验，若响应体为nil或关闭了参数校验，则返回原内容
-	resp := c.route.responseValidate(c.response.Content, c.route.ResponseModel)
+	//resp := c.route.responseValidate(c.response.Content, c.route.Swagger().ResponseModel)
 
 	// 校验不通过, 修改 Response.StatusCode 和 Response.Content
-	if resp != nil {
-		c.response.StatusCode = resp.StatusCode
-		c.response.Content = resp.Content
-		c.Logger().Warn(c.response.Content)
-	}
+	//if resp != nil {
+	//	c.response.StatusCode = resp.StatusCode
+	//	c.response.Content = resp.Content
+	//	c.Logger().Warn(c.response.Content)
+	//}
 }
 
 // ----------------------------------------	路由后的响应体校验工作 ----------------------------------------
@@ -290,11 +293,11 @@ func (c *Context) write() error {
 }
 
 // 未定义返回值或关闭了返回值校验
-func routeModelDoNothing(content any, meta *openapi.Metadata) *Response {
+func routeModelDoNothing(content any, meta *openapi.BaseModelMeta) *Response {
 	return nil
 }
 
-func boolResponseValidation(content any, meta *openapi.Metadata) *Response {
+func boolResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
 	rt := openapi.ReflectObjectType(content)
 	if rt.Kind() != reflect.Bool {
 		// 校验不通过, 修改 Response.StatusCode 和 Response.Content
@@ -304,7 +307,7 @@ func boolResponseValidation(content any, meta *openapi.Metadata) *Response {
 	return nil
 }
 
-func stringResponseValidation(content any, meta *openapi.Metadata) *Response {
+func stringResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
 	// TODO: 对于字符串类型，减少内存复制
 	if meta.SchemaType() != openapi.StringType {
 		return modelCannotBeStringResponse(meta.Name())
@@ -313,27 +316,27 @@ func stringResponseValidation(content any, meta *openapi.Metadata) *Response {
 	return nil
 }
 
-func integerResponseValidation(content any, meta *openapi.Metadata) *Response {
+func integerResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
 	rt := openapi.ReflectObjectType(content)
-	if openapi.ReflectKindToOType(rt.Kind()) != openapi.IntegerType {
+	if openapi.ReflectKindToType(rt.Kind()) != openapi.IntegerType {
 		return modelCannotBeIntegerResponse(meta.Name())
 	}
 
 	return nil
 }
 
-func numberResponseValidation(content any, meta *openapi.Metadata) *Response {
+func numberResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
 	rt := openapi.ReflectObjectType(content)
-	if openapi.ReflectKindToOType(rt.Kind()) != openapi.NumberType {
+	if openapi.ReflectKindToType(rt.Kind()) != openapi.NumberType {
 		return modelCannotBeNumberResponse(meta.Name())
 	}
 
 	return nil
 }
 
-func arrayResponseValidation(content any, meta *openapi.Metadata) *Response {
+func arrayResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
 	rt := openapi.ReflectObjectType(content)
-	if openapi.ReflectKindToOType(rt.Kind()) != openapi.ArrayType {
+	if openapi.ReflectKindToType(rt.Kind()) != openapi.ArrayType {
 		// TODO: notImplemented 暂不校验子元素
 		return modelCannotBeArrayResponse("Array")
 	} else {
@@ -350,12 +353,12 @@ func arrayResponseValidation(content any, meta *openapi.Metadata) *Response {
 	return nil
 }
 
-func structResponseValidation(content any, meta *openapi.Metadata) *Response {
-	rt := openapi.ReflectObjectType(content)
+func structResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
 	// 类型校验
-	if rt.Kind() != reflect.Struct && meta.String() != rt.String() {
-		return objectModelNotMatchResponse(meta.String(), rt.String())
-	}
+	//rt := openapi.ReflectObjectType(content)
+	//if rt.Kind() != reflect.Struct && meta.String() != rt.String() {
+	//	return objectModelNotMatchResponse(meta.String(), rt.String())
+	//}
 	// 字段类型校验, 字段的值需符合tag要求
 	resp := appEngine.service.Validate(content, whereServerError)
 	if resp != nil {

@@ -202,7 +202,7 @@ func (s *ServerValidateErrorModel) SchemaDesc() string { return "服务器内部
 func returnServerValidateError(c *Context) *Response {
 	//app := c.App()
 	//return c.OKResponse(ServerValidateErrorModel{
-	//	ServerName: app.Title(),
+	//	ServerName: app.Name(),
 	//	Version:    app.Version(),
 	//})
 	return c.OKResponse(12)
@@ -227,13 +227,6 @@ func getLogonForm(c *Context) *Response {
 	}
 
 	return c.OKResponse(form)
-}
-
-type QueryFieldExample struct {
-	QueryModel
-	Father string `json:"father"`
-	Family string `json:"family"`
-	Size   int    `json:"size"`
 }
 
 type Tunnel struct {
@@ -280,9 +273,8 @@ func TestFastApi_IncludeRouter_Array(t *testing.T) {
 		Debug:       true,
 	})
 
-	r := APIRouter("/example", []string{"Array"})
+	APIRouter("/example", []string{"Array"})
 
-	app.IncludeRouter(r)
 	app.Run(svc.Conf.HTTP.Host, svc.Conf.HTTP.Port) // 阻塞运行
 }
 
@@ -303,25 +295,6 @@ func routeCtxCancel(s *Context) *Response {
 	}()
 	time.Sleep(time.Second * 2)
 	return s.OKResponse(12)
-}
-
-func TestFastApi_IncludeRouter_Context(t *testing.T) {
-	svc := NEWCtx()
-	app := New(Config{
-		UserSvc:     svc,
-		Version:     "1.0.0",
-		Description: "",
-		Title:       "FastApi Example",
-		Debug:       true,
-	})
-
-	r := APIRouter("/text", []string{"Text"})
-	{
-
-	}
-
-	app.IncludeRouter(r)
-	app.Run(svc.Conf.HTTP.Host, svc.Conf.HTTP.Port) // 阻塞运行
 }
 
 func TestFastApi_OnEvent(t *testing.T) {
@@ -387,7 +360,7 @@ type EnosDataItem struct {
 type EnosData struct {
 	BaseModel
 	Data   *EnosDataItem `json:"data"`
-	Kind   string        `json:"kind"`
+	Kind   string        `json:"Type"`
 	Msg    string        `json:"msg,omitempty"`
 	Submsg string        `json:"submsg,omitempty"`
 	Code   int           `json:"code"`
