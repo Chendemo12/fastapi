@@ -25,7 +25,7 @@ const (
 )
 
 // RouteMethodSeparator 路由分隔符，用于分割路由方法和路径
-const RouteMethodSeparator = "|_0#0_|"
+const RouteMethodSeparator = "=|_0#0_|="
 
 const (
 	DefaultValidateTagName    = "validate"
@@ -74,7 +74,7 @@ var IllegalRouteParamType = []reflect.Kind{
 	reflect.Func,
 	reflect.Chan,
 	reflect.UnsafePointer,
-	reflect.Map, // TODO Future: 不应该为map,后期考虑是否支持
+	reflect.Map, // TODO Future-231126.7: 查询参数值不允许为map
 }
 
 const HeaderContentType = "Content-Type"

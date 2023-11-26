@@ -310,7 +310,7 @@ type EnosDataItem struct {
 type EnosData struct {
 	BaseModel
 	Data   *EnosDataItem `json:"data"`
-	Kind   string        `json:"Type"`
+	Kind   string        `json:"kind"`
 	Msg    string        `json:"msg,omitempty"`
 	Submsg string        `json:"submsg,omitempty"`
 	Code   int           `json:"code"`

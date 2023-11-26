@@ -12,10 +12,10 @@ type BaseModelMeta struct {
 	Param       *RouteParam
 	Description string                    `description:"模型描述"`
 	fields      []*BaseModelField         `description:"结构体字段"`
-	innerModels []*BaseModelField         // 子模型, 对于未命名结构体，给其指定一个结构体名称
-	itemModel   *BaseModelMeta            // 当此模型为数组时, 记录内部元素的模型,同样可能是个数组
 	doc         map[string]any            `description:"模型文档"`
 	innerDocs   map[string]map[string]any `description:"内部模型文档,名称:文档"`
+	innerModels []*BaseModelField         `description:"子模型, 对于未命名结构体，给其指定一个结构体名称"`
+	itemModel   *BaseModelMeta            `description:"当此模型为数组时, 记录内部元素的模型,同样可能是个数组"`
 }
 
 func NewBaseModelMeta(param *RouteParam) *BaseModelMeta {
@@ -84,6 +84,10 @@ func (m *BaseModelMeta) scanObject() (err error) {
 	// 此时肯定是结构体了
 	for i := 0; i < rt.NumField(); i++ {
 		field := rt.Field(i)
+		// 此处无需过滤字段，文档生成时会过滤
+		//if utils.Has[string](InnerModelsName, field.Name) {
+		//	continue
+		//}
 		argsType := &args{
 			fatherType: rt,
 			field:      field,
@@ -345,9 +349,10 @@ func (m *BaseModelMeta) scanObjectSwagger() (err error) {
 			continue
 		}
 
-		properties[field.SchemaPkg()] = field.Schema()
+		// NOTICE: 显示为 json 标签名称，而非结构体名称
+		properties[field.JsonName()] = field.Schema()
 		if field.IsRequired() {
-			required = append(required, field.SchemaPkg())
+			required = append(required, field.JsonName())
 		}
 	}
 
@@ -358,6 +363,7 @@ func (m *BaseModelMeta) scanObjectSwagger() (err error) {
 	return
 }
 
+// 数组类型，递归解析子元素
 func (m *BaseModelMeta) scanArraySwagger() (err error) {
 	switch m.itemModel.SchemaType() {
 	// 依据规范,基本类型仅需注释type即可
@@ -435,8 +441,19 @@ func (m *BaseModelMeta) Schema() (dict map[string]any) {
 
 // InnerSchema 内部字段模型文档
 func (m *BaseModelMeta) InnerSchema() []SchemaIface {
-	ss := make([]SchemaIface, 0)
+	ss := make([]SchemaIface, len(m.innerModels))
+	for i := 0; i < len(m.innerModels); i++ {
+		ss[i] = m.innerModels[i]
+	}
+
 	return ss
+}
+
+func (m *BaseModelMeta) RegisterTo(call func(meta SchemaIface) *OpenApi) {
+	call(m)
+	for _, inner := range m.InnerSchema() {
+		call(inner)
+	}
 }
 
 // BaseModelField 模型的字段元数据
@@ -492,7 +509,7 @@ type BaseModelField struct {
 func (f *BaseModelField) Schema() (m map[string]any) {
 	// 最基础的属性，必须
 	m = dict{
-		"name":        f.SchemaPkg(),
+		"name":        f.JsonName(), // NOTICE: 显示为 json 标签名称，而非结构体名称
 		"title":       f.Name,
 		"type":        f.Type,
 		"required":    f.IsRequired(),

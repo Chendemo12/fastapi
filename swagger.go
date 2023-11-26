@@ -24,21 +24,7 @@ func (f *FastApi) registerModels() *FastApi {
 	// 注册路由组数据模型
 	for _, group := range f.groupRouters {
 		for _, route := range group.Routes() {
-			if route.swagger.RequestModel != nil {
-				f.service.openApi.AddDefinition(route.swagger.RequestModel)
-				// 生成模型，处理嵌入类型
-				for _, inner := range route.swagger.RequestModel.InnerSchema() {
-					f.service.openApi.AddDefinition(inner)
-				}
-
-			}
-			if route.swagger.ResponseModel != nil {
-				f.service.openApi.AddDefinition(route.swagger.ResponseModel)
-				// 生成模型，处理嵌入类型
-				for _, inner := range route.swagger.ResponseModel.InnerSchema() {
-					f.service.openApi.AddDefinition(inner)
-				}
-			}
+			route.swagger.RegisterTo(f.service.openApi.AddDefinition)
 		}
 	}
 

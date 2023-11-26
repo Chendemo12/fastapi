@@ -1,7 +1,6 @@
 package openapi
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/Chendemo12/fastapi-tool/helper"
@@ -29,12 +28,11 @@ type RouteSwagger struct {
 func (r *RouteSwagger) Init() (err error) {
 	r.api = CreateRouteIdentify(r.Method, r.Url)
 	// 由于查询参数和请求体需要从方法入参中提取, 以及响应体需要从方法出参中提取,因此在上层进行解析
-	if r.ResponseModel == nil { // TODO Future: 目前返回值不允许为nil
+	if r.ResponseModel == nil { // TODO Future-231126.1: 目前返回值不允许为nil
 		return errors.New("ResponseModel is not init")
 	}
 
 	// 请求体可以为nil
-
 	err = r.Scan()
 
 	return
@@ -61,9 +59,6 @@ func (r *RouteSwagger) ScanInner() (err error) {
 
 	if r.ResponseModel != nil {
 		err = r.ResponseModel.Init()
-
-		v, _ := json.Marshal(r.ResponseModel.doc)
-		println(string(v))
 	}
 
 	return
@@ -110,6 +105,29 @@ func (r *RouteSwagger) scanPath() (err error) {
 
 func (r *RouteSwagger) Id() string { return r.api }
 
+func (r *RouteSwagger) RegisterTo(call func(meta SchemaIface) *OpenApi) {
+	if r.RequestModel != nil {
+		call(r.RequestModel)
+		// 生成模型，处理嵌入类型
+		for _, inner := range r.RequestModel.InnerSchema() {
+			call(inner)
+		}
+		if r.RequestModel.itemModel != nil {
+			r.RequestModel.itemModel.RegisterTo(call)
+		}
+	}
+	if r.ResponseModel != nil {
+		call(r.ResponseModel)
+		// 生成模型，处理嵌入类型
+		for _, inner := range r.ResponseModel.InnerSchema() {
+			call(inner)
+		}
+		if r.ResponseModel.itemModel != nil {
+			r.ResponseModel.itemModel.RegisterTo(call)
+		}
+	}
+}
+
 // RouteParam 路由参数, 具体包含查询参数,路径参数,请求体参数和响应体参数
 // 目前参数不支持一下类型
 type RouteParam struct {
@@ -121,7 +139,7 @@ type RouteParam struct {
 	Pkg           string       // 包含包名,如果是结构体则为: 包名.结构体名, 处理了指针
 	Type          DataType     // 如果是指针,则为指针指向的类型定义
 	Index         int          // 参数处于方法中的原始位置,可通过 method.Type.In(Index) 或 method.Type.Out(Index) 反向获得此参数
-	T             ModelSchema  // TODO Future: 泛型接口定义时有效
+	T             ModelSchema  // TODO Future-231126.5: 泛型路由注册
 }
 
 func NewRouteParam(rt reflect.Type, index int) *RouteParam {
@@ -135,7 +153,7 @@ func NewRouteParam(rt reflect.Type, index int) *RouteParam {
 }
 
 func (r *RouteParam) Init() (err error) {
-	// TODO Future: 是否允许返回一个nil
+	// TODO Future-231126.1: 返回值不允许为nil
 	if r.PrototypeKind == reflect.Invalid {
 		r.IsNil = true
 		return errors.New("response cannot be Nil")
@@ -168,7 +186,7 @@ func (r *RouteParam) SchemaTitle() string { return r.Name }
 
 func (r *RouteParam) SchemaPkg() string { return r.Pkg }
 
-func (r *RouteParam) JsonName() string { return r.Name }
+func (r *RouteParam) JsonNaForwardLinkInfome() string { return r.Name }
 
 func (r *RouteParam) SchemaDesc() string { return "" }
 

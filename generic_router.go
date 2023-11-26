@@ -111,7 +111,7 @@ func (r *GenericRoute[T]) ScanInner() (err error) {
 	panic("implement me")
 }
 
-// Get TODO Future:
+// Get TODO Future-231126.5: 泛型路由注册
 func Get[T openapi.ModelSchema](path string, handler func(c *Context, query T) *Response, opt ...Option) *GenericRoute[T] {
 	var prototype T
 	g := &GenericRoute[T]{

@@ -147,6 +147,7 @@ func (r *GroupRoute) Init() (err error) {
 	}
 
 	err = r.Scan()
+
 	return
 }
 
@@ -184,7 +185,7 @@ func (r *GroupRoute) ScanInner() (err error) {
 	return
 }
 
-// 从方法入参中初始化路由参数
+// 从方法入参中初始化路由参数, 包含了查询参数，请求体参数
 func (r *GroupRoute) scanInParams() (err error) {
 	r.swagger.QueryFields = make([]*openapi.QModel, 0)
 	if r.handlerInNum == FirstInParamOffset { // 只有一个参数,只能是 Context
@@ -216,10 +217,10 @@ func (r *GroupRoute) scanInParams() (err error) {
 			switch lastInParam.Type {
 			case openapi.ObjectType:
 				// 如果为结构体,则结构体的每一个字段都将作为一个查询参数
-				// TODO Future: 目前尚不支持 time.Time
+				// TODO Future-231126.3: 请求体不支持time.Time;
 				r.swagger.QueryFields = append(r.swagger.QueryFields, openapi.StructToQModels(lastInParam.CopyPrototype())...)
 			case openapi.ArrayType:
-				// TODO Future: 后期考虑是否要支持数组
+				// TODO Future-231126.6: 查询参数考虑是否要支持数组
 			default:
 				r.swagger.QueryFields = append(r.swagger.QueryFields, &openapi.QModel{
 					Name:   CreateQueryFieldName(lastInParam.Prototype, r.handlerInNum), // 手动指定一个查询参数名称
@@ -296,11 +297,6 @@ type Scanner interface {
 	ScanInner() (err error) // 扫描并初始化自己包含的字节点,通过 child.Init() 实现
 }
 
-func NewGroupRouteMeta(router GroupRouter) *GroupRouterMeta {
-	r := &GroupRouterMeta{router: router}
-	return r
-}
-
 // GroupRouterMeta 反射构建路由组的元信息
 type GroupRouterMeta struct {
 	router GroupRouter
@@ -309,10 +305,9 @@ type GroupRouterMeta struct {
 	tags   []string
 }
 
-// NewGroupRouter 构建一个路由组的主入口
-func NewGroupRouter(group GroupRouter) *GroupRouterMeta {
-	r := &GroupRouterMeta{}
-	r.router = group
+// NewGroupRouteMeta 构建一个路由组的主入口
+func NewGroupRouteMeta(router GroupRouter) *GroupRouterMeta {
+	r := &GroupRouterMeta{router: router}
 	return r
 }
 
@@ -334,7 +329,7 @@ func (r *GroupRouterMeta) Scan() (err error) {
 
 	// 路由组必须是结构体实现
 	if obj.Kind() != reflect.Struct && obj.Kind() != reflect.Pointer {
-		return errors.New("router not a struct, " + obj.String())
+		return fmt.Errorf("router: '%s' not a struct", obj.String())
 	}
 
 	// 记录包名
@@ -475,7 +470,7 @@ func (r *GroupRouterMeta) isRouteMethod(method reflect.Method) (*openapi.RouteSw
 
 		if strings.ToUpper(method.Name[methodNameLength-offset:]) == hm {
 			swagger.Method = hm
-			swagger.RelativePath = method.Name[:offset]
+			swagger.RelativePath = method.Name[:methodNameLength-offset]
 			break
 		}
 	}
@@ -514,7 +509,7 @@ func (r *GroupRouterMeta) isRouteMethod(method reflect.Method) (*openapi.RouteSw
 	}
 
 	// 判断第一个返回值参数类型是否符合要求
-	// TODO Future: 是否允许返回一个nil, see RouteParam.Init()
+	// TODO Future-231126.1: 返回值不允许为nil, see RouteParam.Init()
 	firstOutParam := method.Type.Out(FirstOutParamOffset)
 	if firstOutParam.Kind() == reflect.Pointer {
 		// 通常情况下会返回指针，此时获取实际的类型

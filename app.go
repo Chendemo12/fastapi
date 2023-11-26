@@ -55,7 +55,7 @@ type FastApi struct {
 	groupRouter   []*GroupRouterMeta `description:"路由组对象"`
 	events        []*Event           `description:"启动和关闭事件"`
 	finder        Finder             `description:"路由对象查找器"`
-	previousDeps  []any              `description:"在接口参数校验前执行的中间件"` // TODO Future: 路由前后中间件
+	previousDeps  []any              `description:"在接口参数校验前执行的中间件"` // TODO Future-231126.4: 路由前后中间件
 	afterDeps     []any              `description:"在接口参数校验成功后执行的中间件"`
 }
 
