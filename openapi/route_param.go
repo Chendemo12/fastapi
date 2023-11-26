@@ -105,6 +105,7 @@ func (r *RouteSwagger) scanPath() (err error) {
 
 func (r *RouteSwagger) Id() string { return r.api }
 
+// RegisterTo home point
 func (r *RouteSwagger) RegisterTo(call func(meta SchemaIface) *OpenApi) {
 	if r.RequestModel != nil {
 		call(r.RequestModel)
