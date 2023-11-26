@@ -12,8 +12,7 @@ import (
 
 // RouteSwagger 路由文档定义，所有类型的路由均包含此部分
 type RouteSwagger struct {
-	Url           string         `json:"url" description:"完整请求路由"`   // 此路由为函数定义时的路由
-	ApiUrl        string         `json:"api_url" description:"文档路由"` // 此路由为 Url 转 fastapi 格式的路由,包含了路径参数的处理
+	Url           string         `json:"url" description:"完整请求路由"` // 此路由为函数定义时的路由
 	RelativePath  string         `json:"relative_path" description:"相对路由"`
 	Method        string         `json:"method" description:"请求方法"`
 	Summary       string         `json:"summary" description:"摘要描述"`
@@ -106,32 +105,7 @@ func (r *RouteSwagger) scanPath() (err error) {
 		}
 	}
 
-	// 原路径格式解析完成后将其修改为fastapi路径格式
-	// 主要区别在于用{}标识路径参数,而非:
-	r.ApiUrl = ToFastApiRoutePath(r.Url)
-
 	return
-}
-
-// Schema 生成一个路由的文档描述, 包含请求参数,响应参数,响应状态码等
-func (r *RouteSwagger) Schema() map[string]map[string]any {
-	return make(map[string]map[string]any)
-}
-
-func (r *RouteSwagger) RegisterModelDoc(call func(pkg string, model *BaseModelMeta)) {
-	if r.RequestModel != nil {
-		call(r.RequestModel.SchemaPkg(), r.RequestModel)
-		for _, inner := range r.RequestModel.innerModels {
-			call(inner.SchemaPkg(), inner)
-		}
-	}
-
-	if r.ResponseModel != nil { // 始终 != nil
-		call(r.ResponseModel.SchemaPkg(), r.ResponseModel)
-		for _, inner := range r.ResponseModel.innerModels {
-			call(inner.SchemaPkg(), inner)
-		}
-	}
 }
 
 func (r *RouteSwagger) Id() string { return r.api }
@@ -203,6 +177,12 @@ func (r *RouteParam) SchemaType() DataType { return r.Type }
 func (r *RouteParam) IsRequired() bool { return true }
 
 func (r *RouteParam) Schema() (m map[string]any) { return map[string]any{} }
+
+// InnerSchema 内部字段模型文档
+func (r *RouteParam) InnerSchema() []SchemaIface {
+	m := make([]SchemaIface, 0)
+	return m
+}
 
 // CreateRouteIdentify 获得一个路由对象的唯一标识
 func CreateRouteIdentify(method, url string) string {

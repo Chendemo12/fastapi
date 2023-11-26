@@ -10,51 +10,67 @@ import (
 
 const staticPrefix = "internal/static/"
 
+// 创建openapi文档
 func (f *FastApi) createOpenApiDoc() *FastApi {
 	f.service.openApi = openapi.NewOpenApi(f.title, f.version, f.Description())
 
-	f.createDefines().createPaths()
-	f.createSwaggerRoutes()
+	f.registerModels().registerPaths().createSwaggerRoutes()
 
 	return f
 }
 
 // 生成模型定义
-func (f *FastApi) createDefines() *FastApi {
-	//for _, router := range f.APIRouters() {
-	//	for _, route := range router.Routes() {
-	//		if route.RequestModel != nil {
-	//			// 内部会处理嵌入类型
-	//			f.service.openApi.AddDefinition(route.RequestModel)
-	//		}
-	//		if route.ResponseModel != nil {
-	//			f.service.openApi.AddDefinition(route.ResponseModel)
-	//		}
-	//	}
-	//}
+func (f *FastApi) registerModels() *FastApi {
+	// 注册路由组数据模型
+	for _, group := range f.groupRouters {
+		for _, route := range group.Routes() {
+			if route.swagger.RequestModel != nil {
+				f.service.openApi.AddDefinition(route.swagger.RequestModel)
+				// 生成模型，处理嵌入类型
+				for _, inner := range route.swagger.RequestModel.InnerSchema() {
+					f.service.openApi.AddDefinition(inner)
+				}
+
+			}
+			if route.swagger.ResponseModel != nil {
+				f.service.openApi.AddDefinition(route.swagger.ResponseModel)
+				// 生成模型，处理嵌入类型
+				for _, inner := range route.swagger.ResponseModel.InnerSchema() {
+					f.service.openApi.AddDefinition(inner)
+				}
+			}
+		}
+	}
 
 	return f
 }
 
 // 生成路由定义
-func (f *FastApi) createPaths() *FastApi {
-	for _, route := range f.service.cache {
-		if route.Get != nil {
-			//routeToPathItem(route.Path, route.Get, f.service.openApi)
-		}
-		if route.Post != nil {
-			//routeToPathItem(route.Path, route.Post, f.service.openApi)
-		}
-		if route.Patch != nil {
-			//routeToPathItem(route.Path, route.Patch, f.service.openApi)
-		}
-		if route.Delete != nil {
-			//routeToPathItem(route.Path, route.Delete, f.service.openApi)
-		}
-		if route.Put != nil {
-			//routeToPathItem(route.Path, route.Put, f.service.openApi)
+func (f *FastApi) registerPaths() *FastApi {
+	for _, group := range f.groupRouters {
+		for _, route := range group.Routes() {
+			// TODO:
+			route.Swagger()
 		}
 	}
+
+	//for _, route := range f.groupRouters {
+	//	if route.Get != nil {
+	//		routeToPathItem(route.Path, route.Get, f.service.openApi)
+	//	}
+	//	if route.Post != nil {
+	//		routeToPathItem(route.Path, route.Post, f.service.openApi)
+	//	}
+	//	if route.Patch != nil {
+	//		routeToPathItem(route.Path, route.Patch, f.service.openApi)
+	//	}
+	//	if route.Delete != nil {
+	//		routeToPathItem(route.Path, route.Delete, f.service.openApi)
+	//	}
+	//	if route.Put != nil {
+	//		routeToPathItem(route.Path, route.Put, f.service.openApi)
+	//	}
+	//}
 
 	return f
 }
@@ -158,7 +174,7 @@ func queryRedocUiJS(c *fiber.Ctx) error {
 
 func routeToPathItem(path string, route RouteIface, api *openapi.OpenApi) {
 	// 存在相同路径，不同方法的路由选项
-	item := api.QueryPathItem(path)
+	item := api.AddPathItem(path)
 
 	// 构造路径参数
 	pathParams := make([]*openapi.Parameter, len(route.Swagger().PathFields))

@@ -10,7 +10,6 @@ import (
 
 //goland:noinspection GoUnusedGlobalVariable
 type H = map[string]any    // gin.H
-type M = map[string]any    // Map
 type Dict = map[string]any // python.Dict
 
 type Ctx = Context

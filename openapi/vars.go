@@ -63,6 +63,12 @@ func (v *ValidationError) Schema() (m map[string]any) {
 	}
 }
 
+// InnerSchema 内部字段模型文档
+func (v *ValidationError) InnerSchema() []SchemaIface {
+	m := make([]SchemaIface, 0)
+	return m
+}
+
 func (v *ValidationError) Error() string {
 	bytes, err := helper.JsonMarshal(v)
 	if err != nil {
@@ -102,6 +108,12 @@ func (v *HTTPValidationError) Schema() map[string]any {
 			},
 		},
 	}
+}
+
+// InnerSchema 内部字段模型文档
+func (v *HTTPValidationError) InnerSchema() []SchemaIface {
+	m := make([]SchemaIface, 0)
+	return m
 }
 
 func (v *HTTPValidationError) Error() string {

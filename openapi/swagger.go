@@ -45,8 +45,8 @@ func (r *Reference) MarshalJSON() ([]byte, error) {
 
 // ComponentScheme openapi 的模型文档部分
 type ComponentScheme struct {
-	Model *BaseModelMeta `json:"model" description:"模型定义"`
-	Name  string         `json:"name" description:"模型名称，包含包名"`
+	Model SchemaIface `json:"model" description:"模型定义"`
+	Name  string      `json:"name" description:"模型名称，包含包名"`
 }
 
 // Components openapi 的模型部分
@@ -60,14 +60,6 @@ func (c *Components) MarshalJSON() ([]byte, error) {
 	m := make(map[string]any)
 	for _, v := range c.Scheme {
 		m[v.Name] = v.Model.Schema() // 记录根模型
-
-		// 生成模型，处理嵌入类型
-		//for _, innerF := range v.Model.InnerFields() {
-		//	exist, innerM := innerF.ToMetadata()
-		//	if exist { // 发现子模型
-		//		m[innerF.SchemaPkg()] = innerM.Schema() // 对于未命名结构体，给其指定一个结构体名称
-		//	}
-		//}
 	}
 
 	// 记录内置错误类型文档
@@ -78,7 +70,7 @@ func (c *Components) MarshalJSON() ([]byte, error) {
 }
 
 // AddModel 添加一个模型文档
-func (c *Components) AddModel(m *BaseModelMeta) {
+func (c *Components) AddModel(m SchemaIface) {
 	c.Scheme = append(c.Scheme, &ComponentScheme{
 		Name:  m.SchemaPkg(),
 		Model: m,
@@ -239,14 +231,58 @@ type OpenApi struct {
 	initialized bool
 }
 
-// AddDefinition 添加一个模型文档
-func (o *OpenApi) AddDefinition(meta *BaseModelMeta) *OpenApi {
+// NewOpenApi 构造一个新的 OpenApi 文档
+func NewOpenApi(title, version, description string) *OpenApi {
+	return &OpenApi{
+		Version: ApiVersion,
+		Info: &Info{
+			Title:          title,
+			Version:        version,
+			Description:    description,
+			TermsOfService: "",
+			Contact: Contact{
+				Name:  "FastApi",
+				Url:   "github.com/Chendemo12/fastapi",
+				Email: "chendemo12@gmail.com",
+			},
+			License: License{
+				Name: "FastApi",
+				Url:  "github.com/Chendemo12/fastapi",
+			},
+		},
+		Components:  &Components{Scheme: make([]*ComponentScheme, 0)},
+		Paths:       &Paths{Paths: make([]*PathItem, 0)},
+		initialized: false,
+		cache:       make([]byte, 0),
+	}
+}
+
+func (o *OpenApi) AddLicense(info License) *OpenApi {
+	o.Info.License.Url = info.Url
+	o.Info.License.Name = info.Name
+
+	return o
+}
+
+func (o *OpenApi) AddContact(info Contact) *OpenApi {
+	o.Info.Contact.Url = info.Url
+	o.Info.Contact.Name = info.Name
+	o.Info.Contact.Email = info.Email
+
+	return o
+}
+
+// AddDefinition 添加一个模型文档,需
+func (o *OpenApi) AddDefinition(meta SchemaIface) *OpenApi {
 	o.Components.AddModel(meta)
 	return o
 }
 
-// QueryPathItem 查询路由对象, 不存在则新建
-func (o *OpenApi) QueryPathItem(path string) *PathItem {
+// AddPathItem 添加路由对象, 不存在则新建，存在则更新
+func (o *OpenApi) AddPathItem(path string) *PathItem {
+	// 修改路径格式为fastapi路径格式
+	// 主要区别在于用{}标识路径参数,而非:
+
 	path = ToFastApiRoutePath(path) // 修改路径格式
 
 	for _, item := range o.Paths.Paths {
@@ -254,6 +290,7 @@ func (o *OpenApi) QueryPathItem(path string) *PathItem {
 			return item
 		}
 	}
+
 	item := &PathItem{
 		Path:   path,
 		Get:    nil,
@@ -265,6 +302,7 @@ func (o *OpenApi) QueryPathItem(path string) *PathItem {
 		Trace:  nil,
 	}
 	o.Paths.Paths = append(o.Paths.Paths, item)
+
 	return item
 }
 

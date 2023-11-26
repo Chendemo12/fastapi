@@ -3,6 +3,7 @@ package fastapi
 import (
 	"github.com/Chendemo12/fastapi/openapi"
 	"net/http"
+	"reflect"
 )
 
 // Option 泛型接口定义可选项
@@ -85,7 +86,7 @@ func (r *GenericRoute[T]) QueryBinders() map[string]ModelBindMethod {
 	panic("implement me")
 }
 
-func (r *GenericRoute[T]) NewRequestModel() any {
+func (r *GenericRoute[T]) NewRequestModel() reflect.Value {
 	//TODO implement me
 	panic("implement me")
 }

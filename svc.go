@@ -2,8 +2,6 @@ package fastapi
 
 import (
 	"context"
-	"net/http"
-
 	"github.com/Chendemo12/fastapi-tool/cronjob"
 	"github.com/Chendemo12/fastapi-tool/logger"
 	"github.com/Chendemo12/fastapi/openapi"
@@ -18,17 +16,6 @@ const ( // json序列化错误, 关键信息的序号
 )
 
 // ------------------------------------------------------------------------------------
-
-// Deprecated:RouteMeta 记录创建的路由对象，用于其后的请求和响应校验
-type RouteMeta struct {
-	Get    *Route
-	Post   *Route
-	Patch  *Route
-	Delete *Route
-	Put    *Route
-	Any    *Route
-	Path   string `json:"path" description:"绝对路由"`
-}
 
 // UserService 自定义服务依赖信息
 type UserService interface {
@@ -47,49 +34,6 @@ type Service struct {
 	cancel    context.CancelFunc  `description:"取消函数"`
 	scheduler *cronjob.Scheduler  `description:"定时任务"`
 	addr      string              `description:"绑定地址"`
-	cache     []*RouteMeta        `description:"用于数据校验的路由信息"`
-}
-
-// 查询自定义路由
-//
-//	@param	method	string	请求方法
-//	@param	path	string	请求路由
-//	@return	*Route 自定义路由对象
-func (s *Service) queryRoute(method string, path string) (route *Route) {
-	for i := 0; i < len(s.cache); i++ {
-		if s.cache[i].Path == path {
-			switch method {
-			case http.MethodGet:
-				route = s.cache[i].Get
-			case http.MethodPut:
-				route = s.cache[i].Put
-			case http.MethodPatch:
-				route = s.cache[i].Patch
-			case http.MethodDelete:
-				route = s.cache[i].Delete
-			case http.MethodPost:
-				route = s.cache[i].Post
-			default:
-				route = nil
-			}
-			break
-		}
-	}
-
-	return
-}
-
-func (s *Service) queryRouteMeta(path string) *RouteMeta {
-	for i := 0; i < len(s.cache); i++ {
-		if s.cache[i].Path == path {
-			return s.cache[i]
-		}
-	}
-
-	// 不存在则创建
-	meta := &RouteMeta{Path: path}
-	s.cache = append(s.cache, meta)
-	return meta
 }
 
 // 设置一个自定义服务信息

@@ -19,6 +19,7 @@ func DefaultCORS(c *fiber.Ctx) error {
 }
 
 type BaseGroupRouter struct {
+	BaseRouter
 	Title   string
 	Version string
 	Desc    string

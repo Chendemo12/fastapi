@@ -10,11 +10,9 @@ import (
 // BaseModelMeta 所有数据模型 ModelSchema 的元信息
 type BaseModelMeta struct {
 	Param       *RouteParam
-	Description string            `description:"模型描述"`
-	fields      []*BaseModelField `description:"结构体字段"`
-	// Deprecated: use innerModels
-	innerFields []*BaseModelField         `description:"内部字段"`
-	innerModels []*BaseModelMeta          // 子模型
+	Description string                    `description:"模型描述"`
+	fields      []*BaseModelField         `description:"结构体字段"`
+	innerModels []*BaseModelField         // 子模型, 对于未命名结构体，给其指定一个结构体名称
 	itemModel   *BaseModelMeta            // 当此模型为数组时, 记录内部元素的模型,同样可能是个数组
 	doc         map[string]any            `description:"模型文档"`
 	innerDocs   map[string]map[string]any `description:"内部模型文档,名称:文档"`
@@ -58,7 +56,7 @@ func (m *BaseModelMeta) scanModel() (err error) {
 
 	// 检测到数组或结构体, 解析模型信息
 	m.fields = make([]*BaseModelField, 0)
-	m.innerFields = make([]*BaseModelField, 0)
+	m.innerModels = make([]*BaseModelField, 0)
 
 	if m.Param.Type == ArrayType {
 		// 数组,递归处理子元素
@@ -361,26 +359,31 @@ func (m *BaseModelMeta) scanObjectSwagger() (err error) {
 }
 
 func (m *BaseModelMeta) scanArraySwagger() (err error) {
-	m.Description = m.innerFields[0].Description + "数组"
-
-	switch m.innerFields[0].SchemaType() {
+	switch m.itemModel.SchemaType() {
 	// 依据规范,基本类型仅需注释type即可
 	case IntegerType, NumberType, BoolType, StringType:
 		m.doc = dict{
 			"title": ArrayTypePrefix + m.SchemaTitle(),
-			"items": dict{"type": m.innerFields[0].SchemaType()},
+			"items": dict{"type": m.itemModel.SchemaType()},
 		}
 	default: // 数组或结构体类型, 关联模型
 		m.doc = dict{
 			"title": m.SchemaTitle(),
 			"name":  m.SchemaPkg(),
 			"items": map[string]string{
-				RefName: RefPrefix + m.innerFields[0].SchemaPkg(),
+				RefName: RefPrefix + m.itemModel.SchemaPkg(),
 			},
 		}
 	}
 
-	m.Description = m.innerFields[0].SchemaDesc()
+	// 将子元素的文档作为此模型的文档，如果子元素是结构体则反射获取其文档
+	m.Description = ArrayTypePrefix + m.itemModel.SchemaDesc()
+	if m.itemModel.SchemaType() == ObjectType {
+		if desc := ReflectCallSchemaDesc(m.itemModel.Param.Prototype); desc != "" {
+			m.Description = ArrayTypePrefix + desc
+		}
+	}
+
 	m.doc[DescriptionTagName] = m.SchemaDesc()
 	m.doc["type"] = ArrayType
 
@@ -394,7 +397,7 @@ func (m *BaseModelMeta) addField(field *BaseModelField, depth int) {
 	if depth < 1 {
 		m.fields = append(m.fields, field)
 	} else {
-		m.innerFields = append(m.innerFields, field)
+		m.innerModels = append(m.innerModels, field)
 	}
 }
 
@@ -430,8 +433,10 @@ func (m *BaseModelMeta) Schema() (dict map[string]any) {
 	return
 }
 
-func (m *BaseModelMeta) InnerSchema() map[string]map[string]any {
-	return m.innerDocs
+// InnerSchema 内部字段模型文档
+func (m *BaseModelMeta) InnerSchema() []SchemaIface {
+	ss := make([]SchemaIface, 0)
+	return ss
 }
 
 // BaseModelField 模型的字段元数据
@@ -603,8 +608,8 @@ func (f *BaseModelField) IsRequired() bool { return IsFieldRequired(f.Tag) }
 // IsArray 字段是否是数组类型
 func (f *BaseModelField) IsArray() bool { return f.Type == ArrayType }
 
-// InnerSchema 内部字段模型文档, 全名:文档
-func (f *BaseModelField) InnerSchema() (m map[string]map[string]any) {
-	m = make(map[string]map[string]any)
-	return
+// InnerSchema 内部字段模型文档
+func (f *BaseModelField) InnerSchema() []SchemaIface {
+	m := make([]SchemaIface, 0)
+	return m
 }

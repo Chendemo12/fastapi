@@ -83,11 +83,6 @@ func (f *FastApi) isFieldsOk() *FastApi {
 	return f
 }
 
-// mountBaseRoutes 创建基础路由
-func (f *FastApi) mountBaseRoutes() {
-
-}
-
 // mountUserRoutes 挂载并记录自定义路由
 func (f *FastApi) mountUserRoutes() {
 
@@ -113,10 +108,27 @@ func (f *FastApi) initialize() *FastApi {
 
 	// 挂载基础路由
 	if !core.BaseRoutesDisabled {
-		f.mountBaseRoutes()
+		f.IncludeRouter(&BaseGroupRouter{
+			Title:   f.Title(),
+			Version: f.Version(),
+			Desc:    f.Description(),
+			Debug:   f.IsDebug(),
+		})
 	}
+
 	// 挂载自定义路由
 	f.mountUserRoutes()
+
+	// 反射路由数据，必须在路由添加完成，swagger注册之前调用
+	var err error
+	for _, group := range f.groupRouters {
+		err = group.Init()
+		if err != nil {
+			panic(fmt.Errorf("swagger created failld, %v", err))
+		}
+	}
+
+	// TODO：初始化finder
 
 	// 创建 OpenApi Swagger 文档, 必须等上层注册完路由之后才能调用
 	if !core.SwaggerDisabled || core.IsDebug() {
@@ -218,6 +230,7 @@ func (f *FastApi) SetDescription(description string) *FastApi {
 //
 //	@param	router	*Router	路由组
 func (f *FastApi) IncludeRouter(router GroupRouter) *FastApi {
+	f.groupRouters = append(f.groupRouters, NewGroupRouteMeta(router))
 	return f
 }
 
@@ -281,7 +294,7 @@ func (f *FastApi) ReleaseCtx(ctx *Context) {
 	f.pool.Put(ctx)
 }
 
-// ReplaceErrorHandler 替换fiber错误处理方法，是 请求错误处理方法
+// ReplaceErrorHandler 替换fiber错误处理方法，即 请求错误处理方法
 func (f *FastApi) ReplaceErrorHandler(fc fiber.ErrorHandler) *FastApi {
 	fiberErrorHandler = fc
 	return f

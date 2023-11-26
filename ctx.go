@@ -81,6 +81,34 @@ func (c *Context) Validate(stc any, ctx ...map[string]any) *Response {
 	return c.svc.Validate(stc, ctx...)
 }
 
+// Query 获取查询参数
+func (c *Context) Query(name string, undefined ...string) string {
+	v, ok := c.QueryFields[name]
+	if ok {
+		return v
+	}
+
+	if len(undefined) > 0 {
+		return undefined[0]
+	}
+
+	return ""
+}
+
+// PathField 获取路径参数
+func (c *Context) PathField(name string, undefined ...string) string {
+	v, ok := c.PathFields[name]
+	if ok {
+		return v
+	}
+
+	if len(undefined) > 0 {
+		return undefined[0]
+	}
+
+	return ""
+}
+
 // BodyParser 序列化请求体
 //
 //	@param	c	*fiber.Ctx	fiber上下文

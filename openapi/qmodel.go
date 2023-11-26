@@ -54,6 +54,12 @@ func (q *QModel) Schema() (m map[string]any) {
 	return
 }
 
+// InnerSchema 内部字段模型文档
+func (q *QModel) InnerSchema() []SchemaIface {
+	m := make([]SchemaIface, 0)
+	return m
+}
+
 // StructToQModels 将一个结构体的每一个导出字段都转换为一个查询参数
 func StructToQModels(rt reflect.Type) []*QModel {
 	if rt.Kind() == reflect.Ptr {

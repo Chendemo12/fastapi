@@ -28,16 +28,17 @@ type ServiceContext struct {
 
 func (c *ServiceContext) Config() any { return c.Conf }
 
-func NEWCtx() *ServiceContext {
+func NewCtx() *ServiceContext {
 	conf := &Configuration{}
 	conf.HTTP.Host = "0.0.0.0"
 	conf.HTTP.Port = "8099"
+
 	return &ServiceContext{Conf: conf, Logger: logger.NewDefaultLogger()}
 }
 
 func TestContext_UserSVC(t *testing.T) {
 	ctx := &Context{svc: &Service{}}
-	ctx.svc.setUserSVC(NEWCtx())
+	ctx.svc.setUserSVC(NewCtx())
 
 	conf, ok := ctx.UserSVC().Config().(*Configuration)
 	if ok {
@@ -61,7 +62,7 @@ func (c *Clock) Do(_ context.Context) error {
 }
 
 func TestFastApi_AddCronjob(t *testing.T) {
-	svc := NEWCtx()
+	svc := NewCtx()
 	app := New(Config{
 		UserSvc:     svc,
 		Version:     "1.0.0",
@@ -80,7 +81,7 @@ func TestFastApi_AddCronjob(t *testing.T) {
 }
 
 func TestFastApi_DumpPID(t *testing.T) {
-	svc := NEWCtx()
+	svc := NewCtx()
 	svc.Conf.HTTP.Port = "8089"
 	app := New(Config{
 		UserSvc:     svc,
@@ -107,7 +108,7 @@ func TestFastApi_DumpPID(t *testing.T) {
 }
 
 func TestFastApi_Description(t *testing.T) {
-	svc := NEWCtx()
+	svc := NewCtx()
 	app := New(Config{
 		UserSvc:     svc,
 		Version:     "1.0.0",
@@ -125,14 +126,36 @@ func TestFastApi_Description(t *testing.T) {
 	}
 }
 
+func TestFastApi_OnEvent(t *testing.T) {
+	svc := NewCtx()
+	app := New(Config{
+		UserSvc:     svc,
+		Version:     "1.0.0",
+		Description: "",
+		Title:       "FastApi Example",
+		Debug:       true,
+	})
+
+	app.OnEvent("startup", func() { app.Service().Logger().Info("current pid: ", app.PID()) })
+	app.OnEvent("startup", func() { app.Service().Logger().Info("startup event: 1") })
+	app.OnEvent("shutdown", func() { app.Service().Logger().Info("shutdown event: 1") })
+	app.OnEvent("shutdown", func() { app.Service().Logger().Info("shutdown event: 2") })
+
+	app.Run(svc.Conf.HTTP.Host, svc.Conf.HTTP.Port) // 阻塞运行
+}
+
+type FastApiRouter struct {
+	BaseRouter
+}
+
 // ReturnLinkInfo 反向链路参数
 type ReturnLinkInfo struct {
 	BaseModel
-	ModType     string            `json:"mod_type"`
-	FecRate     string            `json:"fec_rate"`
-	ForwardLink []ForwardLinkInfo `json:"forward_link" description:"前向链路"`
-	IfFrequency int               `json:"if_frequency" description:"中频频点"`
-	SymbolRate  int               `json:"symbol_rate" description:"符号速率"`
+	ModType     string             `json:"mod_type"`
+	FecRate     string             `json:"fec_rate"`
+	ForwardLink []*ForwardLinkInfo `json:"forward_link" description:"前向链路"`
+	IfFrequency int                `json:"if_frequency" description:"中频频点"`
+	SymbolRate  int                `json:"symbol_rate" description:"符号速率"`
 }
 
 func (m ReturnLinkInfo) SchemaDesc() string {
@@ -152,42 +175,12 @@ type ForwardLinkInfo struct {
 	Reset       bool    `json:"reset"`
 }
 
-func (m ForwardLinkInfo) SchemaDesc() string { return "前向链路参数" }
+func (m *ForwardLinkInfo) SchemaDesc() string { return "前向链路参数" }
 
-func setReturnLinks(s *Context) *Response {
-	p := make([]ReturnLinkInfo, 0)
-	if err := s.ShouldBindJSON(&p); err != nil {
-		return err
-	}
+func (f *FastApiRouter) SetReturnLinkPost(c *Context, req []*ReturnLinkInfo) (*ForwardLinkInfo, error) {
 	time.Sleep(time.Millisecond * 200) // 休眠200ms,模拟设置硬件时长
-	return s.OKResponse(p[0].ForwardLink)
-}
 
-type ComplexModel struct {
-	BaseModel
-	Name    string    `json:"name" validate:"required,oneof=lee wang fan"`
-	Steps   []Step    `json:"steps"`
-	Actions []*Action `json:"actions"`
-}
-
-func (s *ComplexModel) SchemaDesc() string { return "一个复杂的模型" }
-
-type Step struct {
-	Click string `json:"click"`
-}
-
-type Action struct {
-	OneStep  Step     `json:"one_step"`
-	TwoSteps []Step   `json:"two_steps"`
-	Next     []string `json:"next"`
-}
-
-func getComplexModel(s *Context) *Response {
-	return s.OKResponse(&ComplexModel{
-		Name:    "lee",
-		Steps:   nil,
-		Actions: nil,
-	})
+	return req[0].ForwardLink[0], nil
 }
 
 // ServerValidateErrorModel 服务器内部模型校验错误示例
@@ -199,13 +192,12 @@ type ServerValidateErrorModel struct {
 
 func (s *ServerValidateErrorModel) SchemaDesc() string { return "服务器内部模型示例" }
 
-func returnServerValidateError(c *Context) *Response {
-	//app := c.App()
-	//return c.OKResponse(ServerValidateErrorModel{
-	//	ServerName: app.Name(),
-	//	Version:    app.Version(),
-	//})
-	return c.OKResponse(12)
+func (f *FastApiRouter) GetServerValidateError(c *Context) (*ServerValidateErrorModel, error) {
+
+	return &ServerValidateErrorModel{
+		ServerName: "FastApi",
+		Version:    "0.2.0",
+	}, nil
 }
 
 type LogonForm struct {
@@ -218,15 +210,15 @@ type LogonForm struct {
 
 func (s *LogonForm) SchemaDesc() string { return "简单的登录表单" }
 
-func getLogonForm(c *Context) *Response {
-	form := LogonForm{
-		Name:   c.PathFields["name"],
-		Age:    c.PathFields["age"],
+func (f *FastApiRouter) GetLogon(c *Context, father string, family string) (*LogonForm, error) {
+	form := &LogonForm{
+		Name:   c.Query("name", "undefined"),
+		Age:    c.PathField("age", "18"),
 		Father: c.QueryFields["father"],
 		Family: c.QueryFields["family"],
 	}
 
-	return c.OKResponse(form)
+	return form, nil
 }
 
 type Tunnel struct {
@@ -237,45 +229,21 @@ type Tunnel struct {
 
 func (t *Tunnel) SchemaDesc() string { return "通道信息" }
 
-func getTunnels(c *Context) *Response {
-	return c.OKResponse([]Tunnel{
+func (f *FastApiRouter) GetTunnels(c *Context, boardId int) ([]Tunnel, error) {
+	return []Tunnel{
 		{
-			No:      10,
-			BoardId: 1,
+			No:      boardId + 10,
+			BoardId: boardId,
 		},
 		{
-			No:      11,
-			BoardId: 1,
+			No:      boardId + 12,
+			BoardId: boardId,
 		},
 		{
-			No:      20,
-			BoardId: 2,
+			No:      boardId + 14,
+			BoardId: boardId,
 		},
-	})
-}
-
-func intToInts(s *Context) *Response {
-	i := 0
-	err := s.BodyParser(&i)
-	if err != nil {
-		return err
-	}
-	return s.OKResponse([]int{i})
-}
-
-func TestFastApi_IncludeRouter_Array(t *testing.T) {
-	svc := NEWCtx()
-	app := New(Config{
-		UserSvc:     svc,
-		Version:     "1.0.0",
-		Description: "",
-		Title:       "FastApi Example",
-		Debug:       true,
-	})
-
-	APIRouter("/example", []string{"Array"})
-
-	app.Run(svc.Conf.HTTP.Host, svc.Conf.HTTP.Port) // 阻塞运行
+	}, nil
 }
 
 func routeCtxCancel(s *Context) *Response {
@@ -297,24 +265,6 @@ func routeCtxCancel(s *Context) *Response {
 	return s.OKResponse(12)
 }
 
-func TestFastApi_OnEvent(t *testing.T) {
-	svc := NEWCtx()
-	app := New(Config{
-		UserSvc:     svc,
-		Version:     "1.0.0",
-		Description: "",
-		Title:       "FastApi Example",
-		Debug:       true,
-	})
-
-	app.OnEvent("startup", func() { app.Service().Logger().Info("current pid: ", app.PID()) })
-	app.OnEvent("startup", func() { app.Service().Logger().Info("startup event: 1") })
-	app.OnEvent("shutdown", func() { app.Service().Logger().Info("shutdown event: 1") })
-	app.OnEvent("shutdown", func() { app.Service().Logger().Info("shutdown event: 2") })
-
-	app.Run(svc.Conf.HTTP.Host, svc.Conf.HTTP.Port) // 阻塞运行
-}
-
 type IPModel struct {
 	BaseModel
 	IP     string `json:"ip" description:"IPv4地址"`
@@ -327,7 +277,7 @@ type IPModel struct {
 
 func (m IPModel) SchemaDesc() string { return "IP信息" }
 
-func getAddress(c *Context) *Response {
+func (f *FastApiRouter) GetAddress(c *Context) (*IPModel, error) {
 	info := &IPModel{}
 	info.Detail.IPv4Full = c.EngineCtx().Context().RemoteAddr().String()
 
@@ -344,7 +294,7 @@ func getAddress(c *Context) *Response {
 
 	c.Logger().Debug("fiber think: ", fiberIP, " X-Forwarded-For: ", headerIP)
 
-	return c.OKResponse(info)
+	return info, nil
 }
 
 type EnosDataItem struct {
@@ -378,18 +328,13 @@ type DomainRecord struct {
 	} `json:"addresses" description:"主机地址"`
 }
 
-func pushEnOSData(c *Context) *Response {
-	data := &EnosData{}
-	err := c.ShouldBindJSON(data)
-	if err != nil {
-		return err
-	}
-	c.Logger().Info("receive enos data: ", data.Kind)
+func (f *FastApiRouter) PostPushEnOSData(c *Context, req *EnosData) (int, error) {
+	c.Logger().Info("receive enos data: ", req.Kind)
 
-	return c.OKResponse(data)
+	return 200, nil
 }
 
-func getDomainRecord(c *Context) *Response {
+func (f *FastApiRouter) GetDomainRecord(c *Context) (*DomainRecord, error) {
 	r := &DomainRecord{
 		Timestamp: 0,
 		Addresses: []struct {
@@ -418,5 +363,20 @@ func getDomainRecord(c *Context) *Response {
 			"0:0:0:0:0",
 		}),
 	}
-	return c.OKResponse(r)
+	return r, nil
+}
+
+func TestNew(t *testing.T) {
+	svc := NewCtx()
+	app := New(Config{
+		UserSvc:     svc,
+		Version:     "1.0.0",
+		Description: "",
+		Title:       "FastApi Example",
+		Debug:       true,
+	})
+
+	app.IncludeRouter(&FastApiRouter{})
+
+	app.Run(svc.Conf.HTTP.Host, svc.Conf.HTTP.Port) // 阻塞运行
 }

@@ -263,13 +263,26 @@ func (r *GroupRoute) QueryBinders() map[string]ModelBindMethod {
 	panic("implement me")
 }
 
-func (r *GroupRoute) NewRequestModel() any {
-	//TODO implement me
-	panic("implement me")
+func (r *GroupRoute) NewRequestModel() reflect.Value {
+	if r.swagger.RequestModel != nil {
+		req := r.inParams[r.handlerInNum-1]
+		var rt reflect.Type
+		if req.IsPtr {
+			rt = req.CopyPrototype().Elem()
+		} else {
+			rt = req.CopyPrototype()
+		}
+		newValue := reflect.New(rt).Interface()
+		reqParam := reflect.ValueOf(newValue)
+
+		return reqParam
+	}
+	return reflect.Value{}
 }
 
 func (r *GroupRoute) Call() {
 	//TODO implement me
+	// result := method.Func.Call([]reflect.Value{reflect.ValueOf(newValue)})
 	panic("implement me")
 }
 
@@ -356,6 +369,8 @@ func (r *GroupRouterMeta) ScanInner() (err error) {
 
 	return
 }
+
+func (r *GroupRouterMeta) Routes() []*GroupRoute { return r.routes }
 
 // 扫描tags, 由于接口方法允许留空，此处需处理默认值
 func (r *GroupRouterMeta) scanTags() {
