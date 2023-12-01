@@ -31,16 +31,9 @@ const ( // error message
 	QueryPsIsEmpty     = "Query must not be empty"
 )
 
-var responseHeaders []*ResponseHeader
 var emptyLocList = []string{"response"}
 var whereServerError = map[string]any{"where error": "server"}
 var whereClientError = map[string]any{"where error": "client"}
-
-// ResponseHeader 自定义响应头
-type ResponseHeader struct {
-	Key   string `json:"key" description:"Key" binding:"required"`
-	Value string `json:"value" description:"Value" binding:"required"`
-}
 
 // Response 路由返回值
 type Response struct {

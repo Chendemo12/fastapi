@@ -12,36 +12,6 @@ import (
 	"unicode"
 )
 
-const WebsocketMethod = "WS"
-const HttpMethodMinimumLength = len(http.MethodGet)
-const (
-	FirstInParamOffset       = 1                      // 第一个有效参数的索引位置，由于结构体接收器处于第一位置
-	FirstCustomInParamOffset = FirstInParamOffset + 1 // 第一个自定义参数的索引位置
-	FirstOutParamOffset      = 0
-	LastOutParamOffset       = 1 // 最后一个返回值参数的索引位置
-	OutParamNum              = 2
-)
-
-const (
-	FirstInParamName = "Context" // 第一个入参名称
-	LastOutParamName = "error"   // 最后一个出参名称
-)
-
-var HttpMethods = []string{
-	http.MethodGet,
-	http.MethodPost,
-	http.MethodPatch,
-	http.MethodPut,
-	http.MethodDelete,
-	http.MethodOptions,
-}
-
-// IllegalResponseType 非法的返回值类型, 不支持指针的指针
-var IllegalResponseType = append(openapi.IllegalRouteParamType, reflect.Ptr)
-
-// IllegalLastInParamType 非法的请求体类型, 不支持指针的指针
-var IllegalLastInParamType = append(openapi.IllegalRouteParamType, reflect.Ptr)
-
 // GroupRouter 结构体路由组定义
 // 用法：首先实现此接口，然后通过调用 FastApi.IncludeRoute 方法进行注册绑定
 type GroupRouter interface {
@@ -111,183 +81,37 @@ func (g *BaseRouter) Description() map[string]string {
 	return map[string]string{}
 }
 
-// GroupRoute 路由组路由定义
-type GroupRoute struct {
-	swagger *openapi.RouteSwagger
-	method  reflect.Method // 路由方法所属的结构体方法, 用于API调用
-	index   int            // 当前方法所属的结构体方法的偏移量
-	// 路由函数入参数量, 入参数量可以不固定,但第一个必须是 Context
-	// 如果>1:则最后一个视为请求体(Post/Patch/Post)或查询参数(Get/Delete)
-	handlerInNum int
-	// 路由函数出参数量, 出参数量始终为2,最后一个必须是 error
-	handlerOutNum int
-	inParams      []*openapi.RouteParam // 不包含第一个 Context, 因此 handlerInNum - len(inParams) = 1
-	outParams     *openapi.RouteParam   // 不包含最后一个 error, 因此只有一个出参
-}
-
-func (r *GroupRoute) Id() string { return r.swagger.Id() }
-
-func NewGroupRoute(swagger *openapi.RouteSwagger, method reflect.Method, group *GroupRouterMeta) *GroupRoute {
-	r := &GroupRoute{}
-	r.method = method
-	r.swagger = swagger
-	//r.group = group
-	r.index = method.Index
-
-	return r
-}
-
-func (r *GroupRoute) Init() (err error) {
-	r.handlerInNum = r.method.Type.NumIn() - FirstInParamOffset // 排除接收器
-	r.handlerOutNum = OutParamNum                               // 返回值数量始终为2
-
-	r.outParams = openapi.NewRouteParam(r.method.Type.Out(FirstOutParamOffset), FirstOutParamOffset)
-	for n := FirstCustomInParamOffset; n <= r.handlerInNum; n++ {
-		r.inParams = append(r.inParams, openapi.NewRouteParam(r.method.Type.In(n), n))
-	}
-
-	err = r.Scan()
-
-	return
-}
-
-func (r *GroupRoute) Scan() (err error) {
-	// 首先初始化参数
-	for _, in := range r.inParams {
-		err = in.Init()
-		if err != nil {
-			return err
-		}
-	}
-	// 由于以下几个scan方法续需读取内部的反射数据, swagger 层面无法读取,因此在此层面进行解析
-	// 解析响应体
-	err = r.outParams.Init()
-	if err != nil {
-		return err
-	}
-
-	// 初始化模型文档
-	err = r.scanInParams()
-	if err != nil {
-		return err
-	}
-	err = r.scanOutParams()
-	if err != nil {
-		return err
-	}
-
-	err = r.ScanInner()
-	return
-}
-
-func (r *GroupRoute) ScanInner() (err error) {
-	err = r.swagger.Init()
-	return
-}
-
-// 从方法入参中初始化路由参数, 包含了查询参数，请求体参数
-func (r *GroupRoute) scanInParams() (err error) {
-	r.swagger.QueryFields = make([]*openapi.QModel, 0)
-	if r.handlerInNum == FirstInParamOffset { // 只有一个参数,只能是 Context
-		return nil
-	}
-
-	if r.handlerInNum > FirstInParamOffset { // 存在自定义参数
-		// 处理查询参数
-		for index, param := range r.inParams[:r.handlerInNum-1-1] {
-			switch param.Type {
-			case openapi.ObjectType, openapi.ArrayType:
-				return errors.New(fmt.Sprintf("param: %s, index: %d cannot be a %s",
-					param.Pkg, index+FirstInParamOffset, param.Type))
-			default:
-				// 掐头去尾,获得查询参数,必须为基本数据类型
-				// NOTICE: 此处无法获得方法的参数名，只能获得参数类型的名称
-				r.swagger.QueryFields = append(r.swagger.QueryFields, &openapi.QModel{
-					Name:   CreateQueryFieldName(param.Prototype, index), // 手动指定一个查询参数名称
-					Tag:    "",
-					Type:   param.Type,
-					InPath: false,
-				})
-			}
-		}
-		// 入参最后一个视为请求体或查询参数
-		lastInParam := r.inParams[r.handlerInNum-FirstCustomInParamOffset]
-		if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
-			// 作为查询参数
-			switch lastInParam.Type {
-			case openapi.ObjectType:
-				// 如果为结构体,则结构体的每一个字段都将作为一个查询参数
-				// TODO Future-231126.3: 请求体不支持time.Time;
-				r.swagger.QueryFields = append(r.swagger.QueryFields, openapi.StructToQModels(lastInParam.CopyPrototype())...)
-			case openapi.ArrayType:
-				// TODO Future-231126.6: 查询参数考虑是否要支持数组
-			default:
-				r.swagger.QueryFields = append(r.swagger.QueryFields, &openapi.QModel{
-					Name:   CreateQueryFieldName(lastInParam.Prototype, r.handlerInNum), // 手动指定一个查询参数名称
-					Tag:    "",
-					Type:   lastInParam.Type,
-					InPath: false,
-				})
-			}
-		} else { // 作为请求体
-			r.swagger.RequestModel = openapi.NewBaseModelMeta(lastInParam)
-		}
-	}
-	return nil
-}
-
-// 从方法出参中初始化路由响应体
-func (r *GroupRoute) scanOutParams() (err error) {
-	// RouteSwagger.Init -> ResponseModel.Init() 时会自行处理
-	r.swagger.ResponseModel = openapi.NewBaseModelMeta(r.outParams)
-	return err
-}
-
-func (r *GroupRoute) Type() RouteType { return GroupRouteType }
-
-func (r *GroupRoute) Swagger() *openapi.RouteSwagger {
-	return r.swagger
-}
-
-func (r *GroupRoute) ResponseBinder() ModelBindMethod {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (r *GroupRoute) RequestBinders() ModelBindMethod {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (r *GroupRoute) QueryBinders() map[string]ModelBindMethod {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (r *GroupRoute) NewRequestModel() reflect.Value {
-	if r.swagger.RequestModel != nil {
-		req := r.inParams[r.handlerInNum-1]
-		var rt reflect.Type
-		if req.IsPtr {
-			rt = req.CopyPrototype().Elem()
-		} else {
-			rt = req.CopyPrototype()
-		}
-		newValue := reflect.New(rt).Interface()
-		reqParam := reflect.ValueOf(newValue)
-
-		return reqParam
-	}
-	return reflect.Value{}
-}
-
-func (r *GroupRoute) Call() {
-	//TODO implement me
-	// result := method.Func.Call([]reflect.Value{reflect.ValueOf(newValue)})
-	panic("implement me")
-}
-
 // =================================== 👇 路由组元数据 ===================================
+
+const WebsocketMethod = "WS"
+const HttpMethodMinimumLength = len(http.MethodGet)
+const (
+	FirstInParamOffset       = 1                      // 第一个有效参数的索引位置，由于结构体接收器处于第一位置
+	FirstCustomInParamOffset = FirstInParamOffset + 1 // 第一个自定义参数的索引位置
+	FirstOutParamOffset      = 0
+	LastOutParamOffset       = 1 // 最后一个返回值参数的索引位置
+	OutParamNum              = 2
+)
+
+const (
+	FirstInParamName = "Context" // 第一个入参名称
+	LastOutParamName = "error"   // 最后一个出参名称
+)
+
+var HttpMethods = []string{
+	http.MethodGet,
+	http.MethodPost,
+	http.MethodPatch,
+	http.MethodPut,
+	http.MethodDelete,
+	http.MethodOptions,
+}
+
+// IllegalResponseType 非法的返回值类型, 不支持指针的指针
+var IllegalResponseType = append(openapi.IllegalRouteParamType, reflect.Ptr)
+
+// IllegalLastInParamType 非法的请求体类型, 不支持指针的指针
+var IllegalLastInParamType = append(openapi.IllegalRouteParamType, reflect.Ptr)
 
 // Scanner 元数据接口
 // Init -> Scan -> ScanInner -> Init 级联初始化
@@ -353,7 +177,7 @@ func (r *GroupRouterMeta) Scan() (err error) {
 	return
 }
 
-// ScanInner 处理内部路由的文档等数据
+// ScanInner 处理内部路由 GroupRoute 的文档等数据
 func (r *GroupRouterMeta) ScanInner() (err error) {
 	for _, route := range r.routes {
 		err = route.Init()
@@ -525,6 +349,182 @@ func (r *GroupRouterMeta) isRouteMethod(method reflect.Method) (*openapi.RouteSw
 
 	// 全部符合要求
 	return swagger, true
+}
+
+// GroupRoute 路由组路由定义
+type GroupRoute struct {
+	swagger *openapi.RouteSwagger
+	method  reflect.Method // 路由方法所属的结构体方法, 用于API调用
+	index   int            // 当前方法所属的结构体方法的偏移量
+	// 路由函数入参数量, 入参数量可以不固定,但第一个必须是 Context
+	// 如果>1:则最后一个视为请求体(Post/Patch/Post)或查询参数(Get/Delete)
+	handlerInNum  int
+	handlerOutNum int                   // 路由函数出参数量, 出参数量始终为2,最后一个必须是 error
+	inParams      []*openapi.RouteParam // 不包含第一个 Context, 因此 handlerInNum - len(inParams) = 1
+	outParams     *openapi.RouteParam   // 不包含最后一个 error, 因此只有一个出参
+}
+
+func (r *GroupRoute) Id() string { return r.swagger.Id() }
+
+func NewGroupRoute(swagger *openapi.RouteSwagger, method reflect.Method, group *GroupRouterMeta) *GroupRoute {
+	r := &GroupRoute{}
+	r.method = method
+	r.swagger = swagger
+	//r.group = group
+	r.index = method.Index
+
+	return r
+}
+
+func (r *GroupRoute) Init() (err error) {
+	r.handlerInNum = r.method.Type.NumIn() - FirstInParamOffset // 排除接收器
+	r.handlerOutNum = OutParamNum                               // 返回值数量始终为2
+
+	r.outParams = openapi.NewRouteParam(r.method.Type.Out(FirstOutParamOffset), FirstOutParamOffset)
+	for n := FirstCustomInParamOffset; n <= r.handlerInNum; n++ {
+		r.inParams = append(r.inParams, openapi.NewRouteParam(r.method.Type.In(n), n))
+	}
+
+	err = r.Scan()
+
+	return
+}
+
+func (r *GroupRoute) Scan() (err error) {
+	// 首先初始化参数
+	for _, in := range r.inParams {
+		err = in.Init()
+		if err != nil {
+			return err
+		}
+	}
+	// 由于以下几个scan方法续需读取内部的反射数据, swagger 层面无法读取,因此在此层面进行解析
+	// 解析响应体
+	err = r.outParams.Init()
+	if err != nil {
+		return err
+	}
+
+	// 初始化模型文档
+	err = r.scanInParams()
+	if err != nil {
+		return err
+	}
+	err = r.scanOutParams()
+	if err != nil {
+		return err
+	}
+
+	err = r.ScanInner()
+	return
+}
+
+// ScanInner 解析内部 openapi.RouteSwagger 数据
+func (r *GroupRoute) ScanInner() (err error) {
+	err = r.swagger.Init()
+	return
+}
+
+// 从方法入参中初始化路由参数, 包含了查询参数，请求体参数
+func (r *GroupRoute) scanInParams() (err error) {
+	r.swagger.QueryFields = make([]*openapi.QModel, 0)
+	if r.handlerInNum == FirstInParamOffset { // 只有一个参数,只能是 Context
+		return nil
+	}
+
+	if r.handlerInNum > FirstInParamOffset { // 存在自定义参数
+		// 处理查询参数
+		for index, param := range r.inParams[:r.handlerInNum-1-1] {
+			switch param.Type {
+			case openapi.ObjectType, openapi.ArrayType:
+				return errors.New(fmt.Sprintf("param: %s, index: %d cannot be a %s",
+					param.Pkg, index+FirstInParamOffset, param.Type))
+			default:
+				// 掐头去尾,获得查询参数,必须为基本数据类型
+				// NOTICE: 此处无法获得方法的参数名，只能获得参数类型的名称
+				r.swagger.QueryFields = append(r.swagger.QueryFields, &openapi.QModel{
+					Name:   CreateQueryFieldName(param.Prototype, index), // 手动指定一个查询参数名称
+					Tag:    "",
+					Type:   param.Type,
+					InPath: false,
+				})
+			}
+		}
+		// 入参最后一个视为请求体或查询参数
+		lastInParam := r.inParams[r.handlerInNum-FirstCustomInParamOffset]
+		if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
+			// 作为查询参数
+			switch lastInParam.Type {
+			case openapi.ObjectType:
+				// 如果为结构体,则结构体的每一个字段都将作为一个查询参数
+				// TODO Future-231126.3: 请求体不支持time.Time;
+				r.swagger.QueryFields = append(r.swagger.QueryFields, openapi.StructToQModels(lastInParam.CopyPrototype())...)
+			case openapi.ArrayType:
+				// TODO Future-231126.6: 查询参数考虑是否要支持数组
+			default:
+				r.swagger.QueryFields = append(r.swagger.QueryFields, &openapi.QModel{
+					Name:   CreateQueryFieldName(lastInParam.Prototype, r.handlerInNum), // 手动指定一个查询参数名称
+					Tag:    "",
+					Type:   lastInParam.Type,
+					InPath: false,
+				})
+			}
+		} else { // 作为请求体
+			r.swagger.RequestModel = openapi.NewBaseModelMeta(lastInParam)
+		}
+	}
+	return nil
+}
+
+// 从方法出参中初始化路由响应体
+func (r *GroupRoute) scanOutParams() (err error) {
+	// RouteSwagger.Init -> ResponseModel.Init() 时会自行处理
+	r.swagger.ResponseModel = openapi.NewBaseModelMeta(r.outParams)
+	return err
+}
+
+func (r *GroupRoute) RouteType() RouteType { return GroupRouteType }
+
+func (r *GroupRoute) Swagger() *openapi.RouteSwagger {
+	return r.swagger
+}
+
+func (r *GroupRoute) ResponseBinder() ModelBindMethod {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r *GroupRoute) RequestBinders() ModelBindMethod {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r *GroupRoute) QueryBinders() map[string]ModelBindMethod {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r *GroupRoute) NewRequestModel() reflect.Value {
+	if r.swagger.RequestModel != nil {
+		req := r.inParams[r.handlerInNum-1]
+		var rt reflect.Type
+		if req.IsPtr {
+			rt = req.CopyPrototype().Elem()
+		} else {
+			rt = req.CopyPrototype()
+		}
+		newValue := reflect.New(rt).Interface()
+		reqParam := reflect.ValueOf(newValue)
+
+		return reqParam
+	}
+	return reflect.Value{}
+}
+
+func (r *GroupRoute) Call() {
+	//TODO implement me
+	// result := method.Func.Call([]reflect.Value{reflect.ValueOf(newValue)})
+	panic("implement me")
 }
 
 func CreateQueryFieldName(rt reflect.Type, index int) string {

@@ -49,6 +49,7 @@ func (r *RouteSwagger) Scan() (err error) {
 	return
 }
 
+// ScanInner 解析内部 BaseModelMeta 模型数据
 func (r *RouteSwagger) ScanInner() (err error) {
 	if r.RequestModel != nil {
 		err = r.RequestModel.Init()
@@ -105,30 +106,6 @@ func (r *RouteSwagger) scanPath() (err error) {
 
 func (r *RouteSwagger) Id() string { return r.api }
 
-// RegisterTo home point
-func (r *RouteSwagger) RegisterTo(call func(meta SchemaIface) *OpenApi) {
-	if r.RequestModel != nil {
-		call(r.RequestModel)
-		// 生成模型，处理嵌入类型
-		for _, inner := range r.RequestModel.InnerSchema() {
-			call(inner)
-		}
-		if r.RequestModel.itemModel != nil {
-			r.RequestModel.itemModel.RegisterTo(call)
-		}
-	}
-	if r.ResponseModel != nil {
-		call(r.ResponseModel)
-		// 生成模型，处理嵌入类型
-		for _, inner := range r.ResponseModel.InnerSchema() {
-			call(inner)
-		}
-		if r.ResponseModel.itemModel != nil {
-			r.ResponseModel.itemModel.RegisterTo(call)
-		}
-	}
-}
-
 // RouteParam 路由参数, 具体包含查询参数,路径参数,请求体参数和响应体参数
 // 目前参数不支持一下类型
 type RouteParam struct {
@@ -139,7 +116,7 @@ type RouteParam struct {
 	Name          string       // 名称
 	Pkg           string       // 包含包名,如果是结构体则为: 包名.结构体名, 处理了指针
 	Type          DataType     // 如果是指针,则为指针指向的类型定义
-	Index         int          // 参数处于方法中的原始位置,可通过 method.Type.In(Index) 或 method.Type.Out(Index) 反向获得此参数
+	Index         int          // 参数处于方法中的原始位置,可通过 method.RouteType.In(Index) 或 method.RouteType.Out(Index) 反向获得此参数
 	T             ModelSchema  // TODO Future-231126.5: 泛型路由注册
 }
 
@@ -187,7 +164,7 @@ func (r *RouteParam) SchemaTitle() string { return r.Name }
 
 func (r *RouteParam) SchemaPkg() string { return r.Pkg }
 
-func (r *RouteParam) JsonNaForwardLinkInfome() string { return r.Name }
+func (r *RouteParam) JsonName() string { return r.Name }
 
 func (r *RouteParam) SchemaDesc() string { return "" }
 

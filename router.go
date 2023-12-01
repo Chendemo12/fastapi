@@ -18,7 +18,7 @@ const (
 // 路由组接口定义或泛型接口定义都需实现此接口
 type RouteIface interface {
 	Scanner
-	Type() RouteType
+	RouteType() RouteType
 	Swagger() *openapi.RouteSwagger           // 路由文档
 	ResponseBinder() ModelBindMethod          // 响应体的处理接口,响应体只有一个
 	RequestBinders() ModelBindMethod          // 请求体的处理接口,请求体也只有一个

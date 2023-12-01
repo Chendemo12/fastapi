@@ -90,7 +90,6 @@ func TestFastApi_DumpPID(t *testing.T) {
 		Title:       "FastApi Example",
 		Debug:       true,
 	})
-	app.EnableDumpPID()
 
 	go func() {
 		time.Sleep(2 * time.Second)
@@ -136,7 +135,6 @@ func TestFastApi_OnEvent(t *testing.T) {
 		Debug:       true,
 	})
 
-	app.OnEvent("startup", func() { app.Service().Logger().Info("current pid: ", app.PID()) })
 	app.OnEvent("startup", func() { app.Service().Logger().Info("startup event: 1") })
 	app.OnEvent("shutdown", func() { app.Service().Logger().Info("shutdown event: 1") })
 	app.OnEvent("shutdown", func() { app.Service().Logger().Info("shutdown event: 2") })

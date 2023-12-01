@@ -63,7 +63,7 @@ type GenericRoute[T openapi.ModelSchema] struct {
 
 func (r *GenericRoute[T]) Id() string { return r.swagger.Id() }
 
-func (r *GenericRoute[T]) Type() RouteType {
+func (r *GenericRoute[T]) RouteType() RouteType {
 	return GenericRouteType
 }
 

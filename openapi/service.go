@@ -9,39 +9,16 @@ import (
 	"strings"
 )
 
-type args struct {
-	field      reflect.StructField `description:"字段信息"`
-	fatherType reflect.Type        `description:"父结构体类型"`
-	depth      int                 `description:"层级数"`
-}
-
-func (m args) String() string {
-	if m.IsAnonymousStruct() {
-		return m.fatherType.String()
-	}
-	return m.fatherType.String()
-}
-
-func (m args) FieldType() reflect.Type {
-	if m.field.Type.Kind() == reflect.Ptr {
-		return m.field.Type.Elem()
-	}
-	return m.field.Type
-}
-
-func (m args) IsAnonymousStruct() bool {
-	return isAnonymousStruct(m.field.Type)
-}
-
-// 是否是匿名(未声明)的结构体
-func isAnonymousStruct(fieldType reflect.Type) bool {
+// IsAnonymousStruct 是否是匿名(未声明)的结构体
+func IsAnonymousStruct(fieldType reflect.Type) bool {
 	if fieldType.Kind() == reflect.Ptr {
 		return fieldType.Elem().Name() == ""
 	}
 	return fieldType.Name() == ""
 }
 
-func getReflectType(rt reflect.Type) reflect.Type {
+// GetElementType 获取实际元素的反射类型
+func GetElementType(rt reflect.Type) reflect.Type {
 	var fieldType reflect.Type
 
 	switch rt.Kind() {
@@ -206,7 +183,7 @@ func MakeOperationRequestBody(model *BaseModelMeta) *RequestBody {
 	}
 }
 
-// Deprecated: MakeOperationResponses 将路由中的 *openapi.BaseModelMeta 转换成 openapi 的返回体 []*Response
+// MakeOperationResponses 将路由中的 *openapi.BaseModelMeta 转换成 openapi 的返回体 []*Response
 func MakeOperationResponses(model *BaseModelMeta) []*Response {
 	if model == nil { // 若返回值为空，则设置为字符串
 		model = &BaseModelMeta{}
@@ -228,7 +205,6 @@ func MakeOperationResponses(model *BaseModelMeta) []*Response {
 	return m
 }
 
-// Deprecated:
 func QModelToParameter(model *QModel) *Parameter {
 	p := &Parameter{
 		ParameterBase: ParameterBase{
@@ -254,7 +230,7 @@ func QModelToParameter(model *QModel) *Parameter {
 
 func getModelNames(fieldMeta *BaseModelField, fieldType reflect.Type) (string, string) {
 	var pkg, name string
-	if isAnonymousStruct(fieldType) {
+	if IsAnonymousStruct(fieldType) {
 		// 未命名的结构体类型, 没有名称, 分配包名和名称
 		name = fieldMeta.Name + "Model"
 		//pkg = fieldMeta.Pkg + AnonymousModelNameConnector + name

@@ -47,17 +47,6 @@ func createFiberApp(title, version string) *fiber.App {
 		StackTraceHandler: recoverHandler,
 	}))
 
-	// 设置自定义响应头
-	app.Use(func(c *fiber.Ctx) error {
-		for i := 0; i < len(responseHeaders); i++ {
-			if responseHeaders[i].Value != "" {
-				c.Append(responseHeaders[i].Key, responseHeaders[i].Value)
-			}
-		}
-
-		return c.Next()
-	})
-
 	return app
 }
 

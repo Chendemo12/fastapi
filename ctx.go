@@ -22,7 +22,6 @@ import (
 type Context struct {
 	PathFields  map[string]string  `json:"path_fields,omitempty"`  // 路径参数
 	QueryFields map[string]string  `json:"query_fields,omitempty"` // 查询参数
-	RequestBody any                `json:"request_body,omitempty"` // 请求体，初始值为1
 	svc         *Service           `description:"flask-go service"`
 	ec          *fiber.Ctx         `description:"engine context"`
 	route       RouteIface         `description:"用于请求体和响应体校验"`

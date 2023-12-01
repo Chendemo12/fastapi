@@ -17,7 +17,6 @@ var (
 	ResponseValidateDisabled = false            // 禁用返回体自动验证
 	MultipleProcessEnabled   = true             // 启用多进程
 	ShutdownWithTimeout      = 20 * time.Second // 关机前的最大等待时间
-	DumpPIDEnabled           = false            // 是否记录PID
 )
 
 var isDebug bool = false

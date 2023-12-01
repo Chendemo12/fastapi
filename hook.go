@@ -44,9 +44,9 @@ type RouteModelValidateHandlerFunc func(resp any, meta *openapi.BaseModelMeta) *
 func routeHandler(handler HandlerFunc) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		// Acquire Ctx with fiber.Ctx request from pool
-		ctx := appEngine.AcquireCtx(c)
+		ctx := appEngine.acquireCtx(c)
 		// Release Ctx to pool
-		defer appEngine.ReleaseCtx(ctx)
+		defer appEngine.releaseCtx(ctx)
 
 		if ctx.findRoute() != nil { // 获取请求路由 -- 存在路由信息
 			ctx.workflow() // 路由前的校验

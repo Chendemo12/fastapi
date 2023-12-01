@@ -2,6 +2,7 @@ package openapi
 
 import (
 	"github.com/Chendemo12/fastapi-tool/helper"
+	"net/http"
 )
 
 // Contact 联系方式, 显示在 info 字段内部
@@ -32,7 +33,7 @@ type Info struct {
 
 // Reference 引用模型,用于模型字段和路由之间互相引用
 type Reference struct {
-	// 关联模型, 取值为 openapi.RefPrefix + modelName
+	// 关联模型, 取值为 RefPrefix + modelName
 	Name string `json:"-" description:"关联模型"`
 }
 
@@ -102,9 +103,9 @@ type ParameterSchema struct {
 
 // Parameter 路径参数或者查询参数
 type Parameter struct {
+	ParameterBase
 	Default any              `json:"default,omitempty" description:"默认值"`
 	Schema  *ParameterSchema `json:"schema,omitempty" description:"字段模型"`
-	ParameterBase
 }
 
 type ModelContentSchema interface {
@@ -272,13 +273,13 @@ func (o *OpenApi) AddContact(info Contact) *OpenApi {
 	return o
 }
 
-// AddDefinition 添加一个模型文档,需
+// AddDefinition 手动添加一个模型文档
 func (o *OpenApi) AddDefinition(meta SchemaIface) *OpenApi {
 	o.Components.AddModel(meta)
 	return o
 }
 
-// AddPathItem 添加路由对象, 不存在则新建，存在则更新
+// AddPathItem 手动添加路由对象, 不存在则新建, 存在则更新
 func (o *OpenApi) AddPathItem(path string) *PathItem {
 	// 修改路径格式为fastapi路径格式
 	// 主要区别在于用{}标识路径参数,而非:
@@ -304,6 +305,96 @@ func (o *OpenApi) AddPathItem(path string) *PathItem {
 	o.Paths.Paths = append(o.Paths.Paths, item)
 
 	return item
+}
+
+func (o *OpenApi) modelFrom(swagger *RouteSwagger) {
+	if swagger.RequestModel != nil {
+		o.AddDefinition(swagger.RequestModel)
+		// 生成模型，处理嵌入类型
+		for _, inner := range swagger.RequestModel.InnerSchema() {
+			o.AddDefinition(inner)
+		}
+		if swagger.RequestModel.itemModel != nil {
+			o.AddDefinition(swagger.RequestModel.itemModel)
+			for _, inner := range swagger.RequestModel.itemModel.InnerSchema() {
+				o.AddDefinition(inner)
+			}
+		}
+	}
+	if swagger.ResponseModel != nil {
+		o.AddDefinition(swagger.ResponseModel)
+		// 生成模型，处理嵌入类型
+		for _, inner := range swagger.ResponseModel.InnerSchema() {
+			o.AddDefinition(inner)
+		}
+		if swagger.ResponseModel.itemModel != nil {
+			o.AddDefinition(swagger.ResponseModel.itemModel)
+			for _, inner := range swagger.ResponseModel.itemModel.InnerSchema() {
+				o.AddDefinition(inner)
+			}
+		}
+	}
+}
+
+func (o *OpenApi) pathFrom(swagger *RouteSwagger) {
+	// 存在相同路径，不同方法的路由选项
+	item := o.AddPathItem(swagger.Url)
+
+	// 构造路径参数
+	pathParams := make([]*Parameter, len(swagger.PathFields))
+	for no, q := range swagger.PathFields {
+		p := QModelToParameter(q)
+		p.Deprecated = swagger.Deprecated
+
+		pathParams[no] = p
+	}
+
+	// 构造查询参数
+	queryParams := make([]*Parameter, len(swagger.QueryFields))
+	for no, q := range swagger.QueryFields {
+		p := QModelToParameter(q)
+		p.Deprecated = swagger.Deprecated
+		queryParams[no] = p
+	}
+
+	// 构造操作符
+	operation := &Operation{
+		Summary:     swagger.Summary,
+		Description: swagger.Description,
+		Tags:        swagger.Tags,
+		Parameters:  append(pathParams, queryParams...),
+		RequestBody: MakeOperationRequestBody(swagger.RequestModel),
+		Responses:   MakeOperationResponses(swagger.ResponseModel),
+		Deprecated:  swagger.Deprecated,
+	}
+
+	// 绑定到操作方法
+	switch swagger.Method {
+
+	case http.MethodPost:
+		item.Post = operation
+	case http.MethodPut:
+		item.Put = operation
+	case http.MethodDelete:
+		item.Delete = operation
+	case http.MethodPatch:
+		item.Patch = operation
+	case http.MethodHead:
+		item.Head = operation
+	case http.MethodTrace:
+		item.Trace = operation
+
+	default:
+		item.Get = operation
+	}
+}
+
+// RegisterFrom home point
+func (o *OpenApi) RegisterFrom(swagger *RouteSwagger) *OpenApi {
+	o.modelFrom(swagger)
+	o.pathFrom(swagger)
+
+	return o
 }
 
 // RecreateDocs 重建Swagger 文档

@@ -41,8 +41,8 @@ func (m *BaseModelMeta) Scan() (err error) {
 	return
 }
 
+// ScanInner 无内部模型，无需向下递归解析 BaseModelField
 func (m *BaseModelMeta) ScanInner() (err error) {
-
 	return
 }
 
@@ -88,19 +88,13 @@ func (m *BaseModelMeta) scanObject() (err error) {
 		//if utils.Has[string](InnerModelsName, field.Name) {
 		//	continue
 		//}
-		argsType := &args{
-			fatherType: rt,
-			field:      field,
-			depth:      0,
-		}
-		m.scanStructField(argsType, 0) // field0 根起点
+		m.scanStructField(rt, field, 0) // field0 根起点
 	}
 	return
 }
 
 // 提取结构体字段信息并添加到元信息中
-func (m *BaseModelMeta) scanStructField(argsType *args, depth int) {
-	field := argsType.field
+func (m *BaseModelMeta) scanStructField(fatherModel reflect.Type, field reflect.StructField, depth int) {
 	// 过滤模型基类
 	if field.Anonymous && utils.Has[string](InnerModelsName, field.Name) {
 		return
@@ -117,19 +111,10 @@ func (m *BaseModelMeta) scanStructField(argsType *args, depth int) {
 		Anonymous: field.Anonymous,
 		rType:     field.Type,
 	}
-	fieldMeta.Name = field.Name
 	fieldMeta.Tag = field.Tag
 	fieldMeta.Description = QueryFieldTag(field.Tag, DescriptionTagName, field.Name)
 	fieldMeta.Type = ReflectKindToType(field.Type.Kind())
-
-	if argsType.IsAnonymousStruct() {
-		// 遇到匿名结构体，分配一个名称
-		fieldMeta.Pkg = argsType.String() + AnonymousModelNameConnector + field.Name
-	} else {
-		// TODO: error
-		fieldMeta.Pkg = argsType.FieldType().String()
-		//fieldMeta.Pkg = argsType.fatherType.String() + "." + argsType.field.Name
-	}
+	fieldMeta.Pkg, fieldMeta.Name = getModelNames(fieldMeta, fatherModel)
 
 	m.addField(fieldMeta, depth)
 
@@ -144,19 +129,19 @@ func (m *BaseModelMeta) scanStructField(argsType *args, depth int) {
 			// 接口或map无需继续向下递归
 			return
 		}
-		fieldType := getReflectType(field.Type)
+		fieldType := GetElementType(field.Type)
 		m.scanFieldWhichIsStruct(fieldMeta, fieldType, depth+1)
 
 	case ArrayType: // 字段为数组
-		elemType := getReflectType(field.Type) // 子元素类型
+		elemType := GetElementType(field.Type) // 子元素类型
 		m.scanFieldWhichIsArray(fieldMeta, elemType, depth+1)
 	}
 }
 
 // 处理字段是数组的元素
 //
-//	@param	elemType	reflect.Type	子元素类型
-//	@param	metadata	*ModelMeta		根模型元信息
+//	@param	elemType	reflect.Type		子元素类型
+//	@param	metadata	*ModelMeta			根模型元信息
 //	@param	metaField	*BaseModelField		字段元信息
 func (m *BaseModelMeta) scanFieldWhichIsArray(fieldMeta *BaseModelField, elemType reflect.Type, depth int) {
 	if elemType.Kind() == reflect.Pointer { // 数组元素为指针结构体
@@ -194,7 +179,7 @@ func (m *BaseModelMeta) scanFieldWhichIsArray(fieldMeta *BaseModelField, elemTyp
 
 	case reflect.Struct:
 		fieldMeta.ItemRef = pkg
-		rt := getReflectType(elemType)
+		rt := GetElementType(elemType)
 		m.scanFieldWhichIsStruct(fieldMeta, rt, depth+1)
 
 	default:
@@ -209,8 +194,8 @@ func (m *BaseModelMeta) scanFieldWhichIsArray(fieldMeta *BaseModelField, elemTyp
 
 // 处理字段是结构体的元素
 //
-//	@param	elemType	reflect.Type	子元素类型
-//	@param	metadata	*ModelMeta		根模型元信息
+//	@param	elemType	reflect.Type		子元素类型
+//	@param	metadata	*ModelMeta			根模型元信息
 //	@param	metaField	*BaseModelField		字段元信息
 func (m *BaseModelMeta) scanFieldWhichIsStruct(fieldMeta *BaseModelField, fieldType reflect.Type, depth int) {
 	// 计算子结构体的包信息
@@ -228,12 +213,7 @@ func (m *BaseModelMeta) scanFieldWhichIsStruct(fieldMeta *BaseModelField, fieldT
 
 	for i := 0; i < fieldType.NumField(); i++ {
 		field := fieldType.Field(i)
-		argsType := &args{
-			fatherType: fieldType,
-			field:      field,
-			depth:      depth,
-		}
-		m.scanStructField(argsType, depth+1)
+		m.scanStructField(fieldType, field, depth+1)
 	}
 }
 
@@ -449,13 +429,6 @@ func (m *BaseModelMeta) InnerSchema() []SchemaIface {
 	return ss
 }
 
-func (m *BaseModelMeta) RegisterTo(call func(meta SchemaIface) *OpenApi) {
-	call(m)
-	for _, inner := range m.InnerSchema() {
-		call(inner)
-	}
-}
-
 // BaseModelField 模型的字段元数据
 // 基本数据模型, 此模型不可再分, 同时也是 ModelSchema 的字段类型
 // 但此类型不再递归记录,仅记录一个关联模型为基本
@@ -516,7 +489,7 @@ func (f *BaseModelField) Schema() (m map[string]any) {
 		"description": f.SchemaDesc(),
 	}
 	// 以validate标签为准
-	validatorLabelsMap := make(map[string]string, 0)
+	validatorLabelsMap := map[string]string{}
 	validateTag := QueryFieldTag(f.Tag, DefaultValidateTagName, "")
 
 	// 解析Tag
@@ -595,7 +568,7 @@ func (f *BaseModelField) Schema() (m map[string]any) {
 			}
 		}
 
-	case ObjectType:
+	case ObjectType: // 简体
 		if f.ItemRef != "" { // 字段类型为自定义结构体，生成关联类型，此内部结构体已注册
 			m["$ref"] = RefPrefix + f.ItemRef
 		}

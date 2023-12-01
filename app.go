@@ -2,7 +2,6 @@ package fastapi
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/Chendemo12/fastapi-tool/helper"
 	jsoniter "github.com/json-iterator/go"
@@ -10,8 +9,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"runtime"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -144,7 +141,6 @@ func (f *FastApi) Host() string    { return f.host }
 func (f *FastApi) Port() string    { return f.port }
 func (f *FastApi) Version() string { return f.version }
 func (f *FastApi) IsDebug() bool   { return core.IsDebug() }
-func (f *FastApi) PID() int        { return os.Getpid() }
 
 // Description 描述信息，同时会显示在Swagger文档上
 func (f *FastApi) Description() string { return f.description }
@@ -159,7 +155,7 @@ func (f *FastApi) Engine() *fiber.App { return f.engine }
 
 // OnEvent 添加事件
 //
-//	@param	Type	事件类型，取值需为	"startup"	/	"shutdown"
+//	@param	kind	事件类型，取值需为	"startup"/"shutdown"
 //	@param	fs		func()		事件
 func (f *FastApi) OnEvent(kind EventKind, fc func()) *FastApi {
 	switch kind {
@@ -175,30 +171,6 @@ func (f *FastApi) OnEvent(kind EventKind, fc func()) *FastApi {
 		})
 	default:
 	}
-	return f
-}
-
-// OnStartup  添加启动事件
-//
-//	@param	fs	func()	事件
-func (f *FastApi) OnStartup(fc func()) *FastApi {
-	f.events = append(f.events, &Event{
-		Type: startupEvent,
-		Fc:   fc,
-	})
-
-	return f
-}
-
-// OnShutdown 添加关闭事件
-//
-//	@param	fs	func()	事件
-func (f *FastApi) OnShutdown(fc func()) *FastApi {
-	f.events = append(f.events, &Event{
-		Type: shutdownEvent,
-		Fc:   fc,
-	})
-
 	return f
 }
 
@@ -234,8 +206,8 @@ func (f *FastApi) IncludeRouter(router GroupRouter) *FastApi {
 	return f
 }
 
-// Use 添加中间件
-func (f *FastApi) Use(middleware ...any) *FastApi {
+// UseAfter 添加一个校验后中间件
+func (f *FastApi) UseAfter(middleware ...any) *FastApi {
 	f.afterDeps = append(f.afterDeps, middleware...)
 	return f
 }
@@ -266,28 +238,26 @@ func (f *FastApi) ActivateHotSwitch() *FastApi {
 	return f
 }
 
-// AcquireCtx 申请一个 Context 并初始化
-func (f *FastApi) AcquireCtx(fctx *fiber.Ctx) *Context {
+// 申请一个 Context 并初始化
+func (f *FastApi) acquireCtx(fctx *fiber.Ctx) *Context {
 	c := f.pool.Get().(*Context)
 	// 初始化各种参数
 	c.ec = fctx
 	c.routeCtx, c.routeCancel = context.WithCancel(f.service.ctx) // 为每一个路由创建一个独立的ctx
-	c.RequestBody = int64(1)                                      // 初始化为1，避免访问错误
 	c.PathFields = map[string]string{}
 	c.QueryFields = map[string]string{}
 
 	return c
 }
 
-// ReleaseCtx 释放并归还 Context
-func (f *FastApi) ReleaseCtx(ctx *Context) {
+// 释放并归还 Context
+func (f *FastApi) releaseCtx(ctx *Context) {
 	ctx.ec = nil
 	ctx.route = nil
 	ctx.routeCtx = nil
 	ctx.routeCancel = nil
 	ctx.response = nil // 释放内存
 
-	ctx.RequestBody = int64(1)
 	ctx.PathFields = nil
 	ctx.QueryFields = nil
 
@@ -311,38 +281,6 @@ func (f *FastApi) ReplaceRecover(fc StackTraceHandlerFunc) *FastApi {
 	return f.ReplaceStackTraceHandler(fc)
 }
 
-// AddResponseHeader 添加一个响应头
-//
-//	@param	key		string	键
-//	@param	value	string	值
-func (f *FastApi) AddResponseHeader(key, value string) *FastApi {
-	// 首先判定是否已经存在
-	for i := 0; i < len(responseHeaders); i++ {
-		if responseHeaders[i].Key == key {
-			responseHeaders[i].Value = value
-			return f
-		}
-	}
-	// 不存在，新建
-	responseHeaders = append(responseHeaders, &ResponseHeader{
-		Key:   key,
-		Value: value,
-	})
-	return f
-}
-
-// DeleteResponseHeader 删除一个响应头
-//
-//	@param	key	string	键
-func (f *FastApi) DeleteResponseHeader(key string) *FastApi {
-	for i := 0; i < len(responseHeaders); i++ {
-		if responseHeaders[i].Key == key {
-			responseHeaders[i].Value = ""
-		}
-	}
-	return f
-}
-
 // SetShutdownTimeout 修改关机前最大等待时间
 //
 //	@param	timeout	in	修改关机前最大等待时间,	单位秒
@@ -363,40 +301,9 @@ func (f *FastApi) DisableSwagAutoCreate() *FastApi {
 	return f
 }
 
-// EnableMultipleProcess 开启多进程
-func (f *FastApi) EnableMultipleProcess() *FastApi {
-	core.MultipleProcessEnabled = true
-	return f
-}
-
 // ShutdownWithTimeout 关机前最大等待时间
 func (f *FastApi) ShutdownWithTimeout() time.Duration {
 	return core.ShutdownWithTimeout * time.Second
-}
-
-// EnableDumpPID 启用PID存储
-func (f *FastApi) EnableDumpPID() *FastApi {
-	core.DumpPIDEnabled = true
-	return f
-}
-
-// DumpPID 存储PID, 文件权限为0775
-// 对于 Windows 其文件为当前运行目录下的pid.txt;
-// 对于 类unix系统，其文件为/run/{Name}.pid, 若无读写权限则改为当前运行目录下的pid.txt;
-func (f *FastApi) DumpPID() {
-	var path string
-	switch runtime.GOOS {
-	case "darwin", "linux":
-		path = fmt.Sprintf("/run/%s.pid", f.title)
-	case "windows":
-		path = "pid.txt"
-	}
-
-	pid := []byte(strconv.Itoa(f.PID()))
-	err := os.WriteFile(path, pid, 755)
-	if errors.Is(err, os.ErrPermission) {
-		_ = os.WriteFile("pid.txt", pid, 0775)
-	}
 }
 
 // Shutdown 平滑关闭
@@ -458,10 +365,6 @@ func (f *FastApi) Run(host, port string) {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt)
 
-	if core.DumpPIDEnabled {
-		f.DumpPID()
-	}
-
 	<-quit // 阻塞进程，直到接收到停止信号,准备关闭程序
 	f.Shutdown()
 }
@@ -477,7 +380,6 @@ type Config struct {
 	ShutdownTimeout       int                   `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
 	DisableSwagAutoCreate bool                  `json:"disable_swag_auto_create,omitempty" description:"禁用自动文档"`
 	EnableMultipleProcess bool                  `json:"enable_multiple_process,omitempty" description:"开启多进程"`
-	EnableDumpPID         bool                  `json:"enable_dump_pid,omitempty" description:"输出PID文件"`
 	DisableBaseRoutes     bool                  `json:"disable_base_routes,omitempty" description:"禁用基础路由"`
 	Debug                 bool                  `json:"debug,omitempty" description:"调试模式"`
 }
@@ -495,7 +397,6 @@ func New(confs ...Config) *FastApi {
 		DisableBaseRoutes:     false,
 		DisableSwagAutoCreate: false,
 		EnableMultipleProcess: false,
-		EnableDumpPID:         false,
 	}
 	if len(confs) > 0 {
 		if confs[0].Title != "" {
@@ -514,7 +415,6 @@ func New(confs ...Config) *FastApi {
 		conf.DisableBaseRoutes = confs[0].DisableBaseRoutes
 		conf.DisableSwagAutoCreate = confs[0].DisableSwagAutoCreate
 		conf.EnableMultipleProcess = confs[0].EnableMultipleProcess
-		conf.EnableDumpPID = confs[0].EnableDumpPID
 		conf.ErrorHandler = confs[0].ErrorHandler
 		conf.RecoverHandler = confs[0].RecoverHandler
 	}
@@ -566,9 +466,7 @@ func New(confs ...Config) *FastApi {
 	if conf.EnableMultipleProcess {
 		//app.EnableMultipleProcess()
 	}
-	if conf.EnableDumpPID {
-		app.EnableDumpPID()
-	}
+
 	return app
 }
 
