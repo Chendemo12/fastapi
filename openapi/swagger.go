@@ -388,6 +388,7 @@ func (o *OpenApi) modelFrom(swagger *RouteSwagger) {
 			}
 		}
 	}
+
 	if swagger.ResponseModel != nil {
 		o.AddDefinition(swagger.ResponseModel)
 		// 生成模型，处理嵌入类型
@@ -585,15 +586,18 @@ func GetDefaultV(tag reflect.StructTag, otype DataType) (v any) {
 	return
 }
 
-func assignModelNames(field reflect.StructField, fatherModel reflect.Type) (string, string) {
+// 针对结构体字段仍然是结构体或数组的情况，如果目标是个匿名对象则人为分配个名称，反之则获取实际的名称
+func assignModelNames(fieldMeta *BaseModelField, fieldType reflect.Type) (string, string) {
 	var pkg, name string
-	if utils.IsAnonymousStruct(field.Type) {
+
+	if utils.IsAnonymousStruct(fieldType) {
 		// 未命名的结构体类型, 没有名称, 分配包名和名称
-		name = fatherModel.Name() + "Model"
-		pkg = fatherModel.PkgPath() + AnonymousModelNameConnector + name
-	} else { // 命名的结构体
-		pkg = field.Type.String() // 关联模型
-		name = field.Type.Name()
+		name = fieldMeta.Name + "Model"
+		//pkg = fieldMeta._pkg + AnonymousModelNameConnector + name
+		pkg = fieldMeta.Pkg
+	} else {
+		pkg = fieldType.String() // 关联模型
+		name = fieldType.Name()
 	}
 
 	return pkg, name

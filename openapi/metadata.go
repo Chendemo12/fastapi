@@ -10,12 +10,11 @@ import (
 // BaseModelMeta 所有数据模型 ModelSchema 的元信息
 type BaseModelMeta struct {
 	Param       *RouteParam
-	Description string                    `description:"模型描述"`
-	fields      []*BaseModelField         `description:"结构体字段"`
-	doc         map[string]any            `description:"模型文档"`
-	innerDocs   map[string]map[string]any `description:"内部模型文档,名称:文档"`
-	innerModels []*BaseModelField         `description:"子模型, 对于未命名结构体，给其指定一个结构体名称"`
-	itemModel   *BaseModelMeta            `description:"当此模型为数组时, 记录内部元素的模型,同样可能是个数组"`
+	Description string            `description:"模型描述"`
+	fields      []*BaseModelField `description:"结构体字段"`
+	doc         map[string]any    `description:"模型文档"`
+	innerModels []*BaseModelField `description:"子模型, 对于未命名结构体，给其指定一个结构体名称"`
+	itemModel   *BaseModelMeta    `description:"当此模型为数组时, 记录内部元素的模型,同样可能是个数组"`
 }
 
 func NewBaseModelMeta(param *RouteParam) *BaseModelMeta {
@@ -88,13 +87,19 @@ func (m *BaseModelMeta) scanObject() (err error) {
 	for i := 0; i < rt.NumField(); i++ {
 		field := rt.Field(i)
 		// 此处无需过滤字段，文档生成时会过滤
-		m.scanStructField(rt, field, 0) // field0 根起点
+		argsType := &ArgsType{
+			fatherType: rt,
+			field:      field,
+			depth:      0,
+		}
+		m.scanStructField(argsType, 0) // field0 根起点
 	}
 	return
 }
 
 // 提取结构体字段信息并添加到元信息中
-func (m *BaseModelMeta) scanStructField(fatherStruct reflect.Type, field reflect.StructField, depth int) {
+func (m *BaseModelMeta) scanStructField(argsType *ArgsType, depth int) {
+	field := argsType.field
 	// 过滤模型基类
 	if utils.Has[string](InnerModelsName, field.Name) {
 		return
@@ -107,15 +112,22 @@ func (m *BaseModelMeta) scanStructField(fatherStruct reflect.Type, field reflect
 		rType:     field.Type,
 	}
 	fieldMeta.Tag = field.Tag
+	fieldMeta.Name = field.Name
 	fieldMeta.Type = ReflectKindToType(field.Type.Kind())
 	fieldMeta.Description = utils.QueryFieldTag(field.Tag, DescriptionTagName, field.Name)
+
+	if argsType.IsAnonymousStruct() {
+		// 遇到匿名结构体，分配一个名称
+		fieldMeta.Pkg = argsType.String() + AnonymousModelNameConnector + field.Name
+	} else {
+		fieldMeta.Pkg = argsType.FieldType().String()
+	}
 
 	m.addField(fieldMeta, depth)
 
 	switch fieldMeta.SchemaType() {
 	case IntegerType, NumberType, BoolType, StringType:
 		// 基本类型,无需继续递归处理
-		fieldMeta.Pkg, fieldMeta.Name = field.PkgPath, field.Name
 		return
 
 	case ObjectType:
@@ -126,13 +138,11 @@ func (m *BaseModelMeta) scanStructField(fatherStruct reflect.Type, field reflect
 		}
 
 		elemType := utils.GetElementType(field.Type)
-		fieldMeta.Pkg, fieldMeta.Name = confirmStructFieldName(fatherStruct, field, elemType)
-		m.scanFieldWhichIsStruct(field, fieldMeta, elemType, depth+1)
+		m.scanFieldWhichIsStruct(fieldMeta, elemType, depth+1)
 
 	case ArrayType: // 字段为数组
 		elemType := utils.GetElementType(field.Type) // 子元素类型
-		fieldMeta.Pkg, fieldMeta.Name = confirmStructFieldName(fatherStruct, field, elemType)
-		m.scanFieldWhichIsArray(field, fieldMeta, elemType, depth+1)
+		m.scanFieldWhichIsArray(fieldMeta, elemType, depth+1)
 	}
 }
 
@@ -150,17 +160,13 @@ func confirmStructFieldName(fatherStruct reflect.Type, field reflect.StructField
 }
 
 // 处理字段是数组的元素
-//
-//	@param	elemType	reflect.Type		子元素类型
-//	@param	metadata	*ModelMeta			根模型元信息
-//	@param	metaField	*BaseModelField		字段元信息
-func (m *BaseModelMeta) scanFieldWhichIsArray(fatherModel reflect.StructField, fieldMeta *BaseModelField, elemType reflect.Type, depth int) {
+func (m *BaseModelMeta) scanFieldWhichIsArray(fieldMeta *BaseModelField, elemType reflect.Type, depth int) {
 	if elemType.Kind() == reflect.Pointer { // 数组元素为指针结构体
 		elemType = elemType.Elem()
 	}
 
 	// 处理数组的子元素
-	pkg, name := assignModelNames(fatherModel, elemType)
+	pkg, name := assignModelNames(fieldMeta, elemType)
 
 	kind := elemType.Kind()
 	switch kind {
@@ -186,12 +192,12 @@ func (m *BaseModelMeta) scanFieldWhichIsArray(fatherModel reflect.StructField, f
 		}
 
 		m.addField(mf, depth)
-		m.scanFieldWhichIsArray(fatherModel, mf, elemType.Elem(), depth+1)
+		m.scanFieldWhichIsArray(mf, elemType.Elem(), depth+1)
 
 	case reflect.Struct:
 		fieldMeta.ItemRef = pkg
 		rt := utils.GetElementType(elemType)
-		m.scanFieldWhichIsStruct(fatherModel, fieldMeta, rt, depth+1)
+		m.scanFieldWhichIsStruct(fieldMeta, rt, depth+1)
 
 	default:
 		if reflect.Bool < kind && kind <= reflect.Uint64 {
@@ -204,22 +210,14 @@ func (m *BaseModelMeta) scanFieldWhichIsArray(fatherModel reflect.StructField, f
 }
 
 // 处理字段是结构体的元素
-//
-//	@param	elemType	reflect.Type		子元素类型
-//	@param	metadata	*ModelMeta			根模型元信息
-//	@param	metaField	*BaseModelField		字段元信息
-func (m *BaseModelMeta) scanFieldWhichIsStruct(fieldStruct reflect.StructField, fieldMeta *BaseModelField, fieldType reflect.Type, depth int) {
+func (m *BaseModelMeta) scanFieldWhichIsStruct(fieldMeta *BaseModelField, fieldType reflect.Type, depth int) {
+	pkg, name := assignModelNames(fieldMeta, fieldType)
+
 	// 首先记录一下结构体自身, 不设置为 BaseModelMeta 原因在于，避免递归处理，将模型展平
 	mf := &BaseModelField{Exported: true, Anonymous: false, rType: fieldType, Type: ObjectType}
 	mf.Description = fieldMeta.Description
-	// 计算子结构体的包信息
-	if fieldType.Name() == "" { // 匿名结构体, 将上层分配的自定义名称作为此结构体的标识
-		mf.Pkg = fieldMeta.Pkg
-		mf.Name = fieldMeta.Name
-	} else {
-		mf.Pkg = fieldType.String() // 具名结构体，获得真实名称
-		mf.Name = fieldType.Name()
-	}
+	mf.Pkg = pkg   // 如果是匿名结构体, 将上层分配的自定义名称作为此结构体的标识
+	mf.Name = name // 如果是具名结构体，获得真实名称
 
 	// 将上一个字段关联此模型
 	fieldMeta.ItemRef = mf.Pkg
@@ -228,7 +226,12 @@ func (m *BaseModelMeta) scanFieldWhichIsStruct(fieldStruct reflect.StructField, 
 
 	for i := 0; i < fieldType.NumField(); i++ {
 		field := fieldType.Field(i)
-		m.scanStructField(fieldType, field, depth+1)
+		argsType := &ArgsType{
+			fatherType: fieldType,
+			field:      field,
+			depth:      depth,
+		}
+		m.scanStructField(argsType, depth+1)
 	}
 }
 
@@ -428,8 +431,8 @@ func (m *BaseModelMeta) IsRequired() bool {
 }
 
 // Schema 输出为OpenAPI文档模型,字典格式
-// 数组类型: 需要单独处理, 取其 fields 的第一个元素作为子元素的实际类型
-// 结构体类型: 需处理全部的 fields 和 innerFields
+// 数组类型: 需要单独处理, 取其内部 itemModel 作为子元素的实际类型
+// 结构体类型: 需处理全部的 fields 和 innerModels
 func (m *BaseModelMeta) Schema() (dict map[string]any) {
 	dict = m.doc
 	return
@@ -439,7 +442,23 @@ func (m *BaseModelMeta) Schema() (dict map[string]any) {
 func (m *BaseModelMeta) InnerSchema() []SchemaIface {
 	ss := make([]SchemaIface, len(m.innerModels))
 	for i := 0; i < len(m.innerModels); i++ {
-		ss[i] = m.innerModels[i]
+		inner := m.innerModels[i]
+		if inner.rType.Kind() == reflect.Struct || inner.rType.Kind() == reflect.Ptr {
+			// 仍然是个模型，继续反射
+			param := NewRouteParam(inner.rType, 0)
+			err := param.Init()
+			if err != nil {
+				panic(err)
+			}
+			model := NewBaseModelMeta(param)
+			err = model.Init()
+			if err != nil {
+				panic(err)
+			}
+			ss[i] = model
+		} else {
+			ss[i] = inner
+		}
 	}
 
 	return ss
@@ -618,4 +637,28 @@ func (f *BaseModelField) IsArray() bool { return f.Type == ArrayType }
 func (f *BaseModelField) InnerSchema() []SchemaIface {
 	m := make([]SchemaIface, 0)
 	return m
+}
+
+type ArgsType struct {
+	field      reflect.StructField `description:"字段信息"`
+	fatherType reflect.Type        `description:"父结构体类型"`
+	depth      int                 `description:"层级数"`
+}
+
+func (m ArgsType) String() string {
+	if m.IsAnonymousStruct() {
+		return m.fatherType.String()
+	}
+	return m.fatherType.String()
+}
+
+func (m ArgsType) FieldType() reflect.Type {
+	if m.field.Type.Kind() == reflect.Ptr {
+		return m.field.Type.Elem()
+	}
+	return m.field.Type
+}
+
+func (m ArgsType) IsAnonymousStruct() bool {
+	return utils.IsAnonymousStruct(m.field.Type)
 }
