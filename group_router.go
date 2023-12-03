@@ -360,10 +360,11 @@ type GroupRoute struct {
 	index   int            // 当前方法所属的结构体方法的偏移量
 	// 路由函数入参数量, 入参数量可以不固定,但第一个必须是 Context
 	// 如果>1:则最后一个视为请求体(Post/Patch/Post)或查询参数(Get/Delete)
-	handlerInNum  int
-	handlerOutNum int                   // 路由函数出参数量, 出参数量始终为2,最后一个必须是 error
-	inParams      []*openapi.RouteParam // 不包含第一个 Context, 因此 handlerInNum - len(inParams) = 1
-	outParams     *openapi.RouteParam   // 不包含最后一个 error, 因此只有一个出参
+	handlerInNum   int
+	handlerOutNum  int                   // 路由函数出参数量, 出参数量始终为2,最后一个必须是 error
+	inParams       []*openapi.RouteParam // 不包含第一个 Context, 因此 handlerInNum - len(inParams) = 1
+	outParams      *openapi.RouteParam   // 不包含最后一个 error, 因此只有一个出参
+	responseBinder ModelBindMethod
 }
 
 func (r *GroupRoute) Id() string { return r.swagger.Id() }
@@ -502,8 +503,7 @@ func (r *GroupRoute) Swagger() *openapi.RouteSwagger {
 }
 
 func (r *GroupRoute) ResponseBinder() ModelBindMethod {
-	//TODO implement me
-	panic("implement me")
+	return r.responseBinder
 }
 
 func (r *GroupRoute) RequestBinders() ModelBindMethod {

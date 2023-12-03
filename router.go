@@ -25,6 +25,7 @@ type RouteIface interface {
 	QueryBinders() map[string]ModelBindMethod // 查询参数的处理接口(查询参数名:处理接口)，查询参数可有多个
 	NewRequestModel() reflect.Value           // TODO: 创建一个新的参数实例
 	Call()                                    // 调用API
+	Id() string
 }
 
 // BaseModel 基本数据模型, 对于上层的路由定义其请求体和响应体都应为继承此结构体的结构体

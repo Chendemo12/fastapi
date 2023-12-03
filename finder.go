@@ -1,17 +1,14 @@
 package fastapi
 
-type FinderItem interface {
-	Id() string
-}
-
 // Finder 固定元素的查找器
 // 用于从一个固定的元素集合内依据唯一标识来快速查找元素
-type Finder interface {
-	Init(items []FinderItem) // 通过固定元素初始化查找器
-	Get(id string) (FinderItem, bool)
+type Finder[T RouteIface] interface {
+	Init(items []T) // 通过固定元素初始化查找器
+	Get(id string) (T, bool)
+	Range(fn func(item T) bool)
 }
 
-type IndexFinder[T FinderItem] struct {
+type IndexFinder[T RouteIface] struct {
 	prototype  T
 	elementNum int
 	cache      []T
@@ -47,6 +44,16 @@ func (f *IndexFinder[T]) Get(id string) (T, bool) {
 	return item, true
 }
 
+// Range if false returned, for-loop will stop
+func (f *IndexFinder[T]) Range(fn func(item T) bool) {
+	for i := 0; i < f.elementNum; i++ {
+		b := fn(f.cache[i])
+		if !b {
+			return
+		}
+	}
+}
+
 // 经典校验和算法, 适用于长度小于65535个元素
 func (f *IndexFinder[T]) checksum(data []byte) int {
 	sum := 0
@@ -65,4 +72,41 @@ func (f *IndexFinder[T]) checksum(data []byte) int {
 
 func (f *IndexFinder[T]) crc(data []byte) int {
 	return f.checksum(data)
+}
+
+type SimpleFinder[T RouteIface] struct {
+	prototype  T // 空值
+	elementNum int
+	cache      []T
+}
+
+func (s *SimpleFinder[T]) Init(items []T) {
+	s.elementNum = len(items)
+	s.cache = make([]T, s.elementNum)
+	for i := 0; i < s.elementNum; i++ {
+		s.cache[i] = items[i]
+	}
+}
+
+func (s *SimpleFinder[T]) Get(id string) (T, bool) {
+	for i := 0; i < s.elementNum; i++ {
+		if s.cache[i].Id() == id {
+			return s.cache[i], true
+		}
+	}
+	return s.prototype, false
+}
+
+// Range if false returned, for-loop will stop
+func (s *SimpleFinder[T]) Range(fn func(item T) bool) {
+	for i := 0; i < s.elementNum; i++ {
+		b := fn(s.cache[i])
+		if !b {
+			return
+		}
+	}
+}
+
+func DefaultFinder() Finder[RouteIface] {
+	return &SimpleFinder[RouteIface]{}
 }

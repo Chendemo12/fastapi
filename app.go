@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/Chendemo12/fastapi-tool/helper"
+	"github.com/Chendemo12/fastapi/openapi"
 	jsoniter "github.com/json-iterator/go"
 	"log"
 	"net"
@@ -47,16 +48,15 @@ type FastApi struct {
 	title         string             `description:"程序名,同时作为日志文件名"`
 	port          string             `description:"运行端口"`
 	version       string             `description:"程序版本号"`
-	groupRouters  []*GroupRouterMeta `description:"路由组"`
+	groupRouters  []*GroupRouterMeta `description:"路由组对象"`
 	genericRoutes []RouteIface       `description:"泛型路由对象"`
-	groupRouter   []*GroupRouterMeta `description:"路由组对象"`
 	events        []*Event           `description:"启动和关闭事件"`
-	finder        Finder             `description:"路由对象查找器"`
+	finder        Finder[RouteIface] `description:"路由对象查找器"`
 	previousDeps  []any              `description:"在接口参数校验前执行的中间件"` // TODO Future-231126.4: 路由前后中间件
 	afterDeps     []any              `description:"在接口参数校验成功后执行的中间件"`
 }
 
-func (f *FastApi) isFieldsOk() *FastApi {
+func (f *FastApi) initService() *FastApi {
 	f.service.addr = net.JoinHostPort(f.host, f.port)
 
 	if f.version == "" {
@@ -76,34 +76,18 @@ func (f *FastApi) isFieldsOk() *FastApi {
 		},
 	}
 	f.service.setLogger(f.service.Logger())
+	f.service.Logger().Debug("Run at: " + core.GetMode(true))
 
 	return f
 }
 
-// mountUserRoutes 挂载并记录自定义路由
-func (f *FastApi) mountUserRoutes() {
-
+func (f *FastApi) initEngine() *FastApi {
+	f.engine = createFiberApp(f.title, f.version)
+	return f
 }
 
-// 初始化FastApi,并完成服务依赖的建立
-// FastApi启动前，必须显式的初始化FastApi的基本配置，若初始化中发生异常则panic
-//  1. 记录工作地址： host:Port
-//  2. 创建fiber.App createFiberApp
-//  3. 挂载中间件
-//  4. 按需挂载基础路由 mountBaseRoutes
-//  5. 挂载自定义路由 mountUserRoutes
-//  6. 安装创建swagger文档 makeSwaggerDocs
-func (f *FastApi) initialize() *FastApi {
-	f.service.Logger().Debug("Run at: " + core.GetMode(true))
-
-	// 创建 fiber.App
-	f.engine = createFiberApp(f.title, f.version)
-	// 注册中间件
-	for _, middleware := range f.afterDeps {
-		f.engine.Use(middleware)
-	}
-
-	// 挂载基础路由
+func (f *FastApi) initRoutes() *FastApi {
+	// 创建基础路由
 	if !core.BaseRoutesDisabled {
 		f.IncludeRouter(&BaseGroupRouter{
 			Title:   f.Title(),
@@ -112,10 +96,6 @@ func (f *FastApi) initialize() *FastApi {
 			Debug:   f.IsDebug(),
 		})
 	}
-
-	// 挂载自定义路由
-	f.mountUserRoutes()
-
 	// 反射路由数据，必须在路由添加完成，swagger注册之前调用
 	var err error
 	for _, group := range f.groupRouters {
@@ -125,12 +105,68 @@ func (f *FastApi) initialize() *FastApi {
 		}
 	}
 
-	// TODO：初始化finder
+	// 处理并记录泛型路由
 
-	// 创建 OpenApi Swagger 文档, 必须等上层注册完路由之后才能调用
+	f.scanRouteBinders()
+
+	return f
+}
+
+func (f *FastApi) scanRouteBinders() *FastApi {
+	// TODO: not finished
+	for _, group := range f.groupRouters {
+		for index, route := range group.Routes() {
+			switch route.Swagger().ResponseModel.SchemaType() {
+			case openapi.ObjectType:
+				group.routes[index].responseBinder = &JsonBindMethod{}
+			}
+		}
+	}
+
+	for _, route := range f.genericRoutes {
+		_ = route
+	}
+
+	return f
+}
+
+func (f *FastApi) initFinder() *FastApi {
+	// 记录全部的路由对象, 包含路由组路由和泛型路由
+	routes := make([]RouteIface, 0)
+	for _, group := range f.groupRouters {
+		for _, r := range group.Routes() {
+			routes = append(routes, r)
+		}
+	}
+	// 处理并记录泛型路由
+	for _, r := range f.genericRoutes {
+		routes = append(routes, r)
+	}
+
+	// 初始化finder
+	f.finder = &SimpleFinder[RouteIface]{}
+	f.finder.Init(routes)
+
+	return f
+}
+
+// 创建 OpenApi Swagger 文档, 必须等上层注册完路由之后才能调用
+func (f *FastApi) initSwagger() *FastApi {
 	if !core.SwaggerDisabled || core.IsDebug() {
 		f.createOpenApiDoc()
 	}
+
+	return f
+}
+
+// 初始化FastApi,并完成服务依赖的建立
+// FastApi启动前，必须显式的初始化FastApi的基本配置，若初始化中发生异常则panic
+func (f *FastApi) initialize() *FastApi {
+	f.initService()
+	f.initEngine()
+	f.initRoutes()
+	f.initFinder()
+	f.initSwagger()
 
 	return f
 }
@@ -339,7 +375,7 @@ func (f *FastApi) Run(host, port string) {
 	if !fiber.IsChild() {
 		f.host = host
 		f.port = port
-		f.isFieldsOk().initialize().ActivateHotSwitch()
+		f.initialize().ActivateHotSwitch()
 
 		// 执行启动前事件
 		for _, event := range f.events {
