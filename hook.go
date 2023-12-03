@@ -2,6 +2,7 @@ package fastapi
 
 import (
 	"bytes"
+	"github.com/Chendemo12/fastapi/utils"
 	"io"
 	"net/http"
 	"reflect"
@@ -298,7 +299,7 @@ func routeModelDoNothing(content any, meta *openapi.BaseModelMeta) *Response {
 }
 
 func boolResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
-	rt := openapi.ReflectObjectType(content)
+	rt := utils.ReflectObjectType(content)
 	if rt.Kind() != reflect.Bool {
 		// 校验不通过, 修改 Response.StatusCode 和 Response.Content
 		return modelCannotBeBoolResponse(meta.Name())
@@ -317,7 +318,7 @@ func stringResponseValidation(content any, meta *openapi.BaseModelMeta) *Respons
 }
 
 func integerResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
-	rt := openapi.ReflectObjectType(content)
+	rt := utils.ReflectObjectType(content)
 	if openapi.ReflectKindToType(rt.Kind()) != openapi.IntegerType {
 		return modelCannotBeIntegerResponse(meta.Name())
 	}
@@ -326,7 +327,7 @@ func integerResponseValidation(content any, meta *openapi.BaseModelMeta) *Respon
 }
 
 func numberResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
-	rt := openapi.ReflectObjectType(content)
+	rt := utils.ReflectObjectType(content)
 	if openapi.ReflectKindToType(rt.Kind()) != openapi.NumberType {
 		return modelCannotBeNumberResponse(meta.Name())
 	}
@@ -335,7 +336,7 @@ func numberResponseValidation(content any, meta *openapi.BaseModelMeta) *Respons
 }
 
 func arrayResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
-	rt := openapi.ReflectObjectType(content)
+	rt := utils.ReflectObjectType(content)
 	if openapi.ReflectKindToType(rt.Kind()) != openapi.ArrayType {
 		// TODO: notImplemented 暂不校验子元素
 		return modelCannotBeArrayResponse("Array")

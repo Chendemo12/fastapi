@@ -7,6 +7,7 @@ import (
 	"github.com/Chendemo12/fastapi/pathschema"
 	"github.com/Chendemo12/fastapi/utils"
 	"net/http"
+	"path"
 	"reflect"
 	"strings"
 	"unicode"
@@ -212,7 +213,7 @@ func (r *GroupRouterMeta) scanPath(swagger *openapi.RouteSwagger, method reflect
 		// 此方式可存在路径参数
 		v, ok := r.router.Path()[method.Name]
 		if ok {
-			dv = v
+			dv = path.Join(r.router.Prefix(), v)
 		}
 	}
 
@@ -232,7 +233,7 @@ func (r *GroupRouterMeta) scanSummary(swagger *openapi.RouteSwagger, method refl
 }
 
 func (r *GroupRouterMeta) scanDescription(swagger *openapi.RouteSwagger, method reflect.Method) string {
-	dv := fmt.Sprintf("%s %s", swagger.Method, swagger.RelativePath)
+	dv := r.scanSummary(swagger, method)
 	if len(r.router.Description()) > 0 {
 		v, ok := r.router.Description()[method.Name]
 		if ok {
@@ -354,6 +355,7 @@ func (r *GroupRouterMeta) isRouteMethod(method reflect.Method) (*openapi.RouteSw
 // GroupRoute 路由组路由定义
 type GroupRoute struct {
 	swagger *openapi.RouteSwagger
+	group   *GroupRouterMeta
 	method  reflect.Method // 路由方法所属的结构体方法, 用于API调用
 	index   int            // 当前方法所属的结构体方法的偏移量
 	// 路由函数入参数量, 入参数量可以不固定,但第一个必须是 Context
@@ -370,7 +372,7 @@ func NewGroupRoute(swagger *openapi.RouteSwagger, method reflect.Method, group *
 	r := &GroupRoute{}
 	r.method = method
 	r.swagger = swagger
-	//r.group = group
+	r.group = group
 	r.index = method.Index
 
 	return r
@@ -431,25 +433,35 @@ func (r *GroupRoute) scanInParams() (err error) {
 	if r.handlerInNum == FirstInParamOffset { // 只有一个参数,只能是 Context
 		return nil
 	}
+	// TODO: Future-231203.9: POST/PATCH/PUT方法最多支持2个结构体参数
 
 	if r.handlerInNum > FirstInParamOffset { // 存在自定义参数
-		// 处理查询参数
+		// 掐头去尾,获得查询参数,GET/DELETE 必须为基本数据类型
 		for index, param := range r.inParams[:r.handlerInNum-1-1] {
 			switch param.Type {
 			case openapi.ObjectType, openapi.ArrayType:
-				return errors.New(fmt.Sprintf("param: %s, index: %d cannot be a %s",
-					param.Pkg, index+FirstInParamOffset, param.Type))
+				if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
+					// GET/DELETE方法不支持多个结构体参数, 打印出结构体方法名，参数索引出从1开始
+					return errors.New(fmt.Sprintf(
+						"method: '%s' param: '%s', index: %d cannot be a %s",
+						r.group.pkg+"."+r.method.Name, param.Pkg, index+FirstInParamOffset+1, param.Type,
+					))
+				} else {
+					// POST/PATCH/PUT 方法，识别为结构体查询参数
+					r.swagger.QueryFields = append(r.swagger.QueryFields, openapi.StructToQModels(param.CopyPrototype())...)
+				}
+
 			default:
-				// 掐头去尾,获得查询参数,必须为基本数据类型
 				// NOTICE: 此处无法获得方法的参数名，只能获得参数类型的名称
 				r.swagger.QueryFields = append(r.swagger.QueryFields, &openapi.QModel{
-					Name:   CreateQueryFieldName(param.Prototype, index), // 手动指定一个查询参数名称
+					Name:   assignQueryFieldName(param.Prototype, index), // 手动指定一个查询参数名称
 					Tag:    "",
 					Type:   param.Type,
 					InPath: false,
 				})
 			}
 		}
+
 		// 入参最后一个视为请求体或查询参数
 		lastInParam := r.inParams[r.handlerInNum-FirstCustomInParamOffset]
 		if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
@@ -463,7 +475,7 @@ func (r *GroupRoute) scanInParams() (err error) {
 				// TODO Future-231126.6: 查询参数考虑是否要支持数组
 			default:
 				r.swagger.QueryFields = append(r.swagger.QueryFields, &openapi.QModel{
-					Name:   CreateQueryFieldName(lastInParam.Prototype, r.handlerInNum), // 手动指定一个查询参数名称
+					Name:   assignQueryFieldName(lastInParam.Prototype, r.handlerInNum), // 手动指定一个查询参数名称
 					Tag:    "",
 					Type:   lastInParam.Type,
 					InPath: false,
@@ -527,7 +539,11 @@ func (r *GroupRoute) Call() {
 	panic("implement me")
 }
 
-func CreateQueryFieldName(rt reflect.Type, index int) string {
+// 手动指定一个查询参数名称
+//
+//	@param 	rt		reflect.Type	参数元类型
+//	@param	index	int				参数处于方法的第几个
+func assignQueryFieldName(rt reflect.Type, index int) string {
 	if rt.Kind() == reflect.Ptr {
 		rt = rt.Elem()
 	}

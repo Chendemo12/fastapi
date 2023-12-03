@@ -5,7 +5,7 @@ package fastapi
 
 import (
 	"github.com/Chendemo12/fastapi-tool/helper"
-	"github.com/Chendemo12/fastapi/openapi"
+	"github.com/Chendemo12/fastapi/utils"
 )
 
 //goland:noinspection GoUnusedGlobalVariable
@@ -18,9 +18,7 @@ type Opt = Option
 
 //goland:noinspection GoUnusedGlobalVariable
 var (
-	QueryJsonName     = openapi.QueryJsonName
-	IsFieldRequired   = openapi.IsFieldRequired
-	ReflectObjectType = openapi.ReflectObjectType
+	ReflectObjectType = utils.ReflectObjectType
 )
 
 //goland:noinspection GoUnusedGlobalVariable

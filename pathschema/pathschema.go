@@ -255,10 +255,12 @@ func Format(prefix string, relativePath string, schema RoutePathSchema) string {
 // SplitWords 将字符串s按照单词进行切分, 判断单词的依据为：是否首字母大写
 // 如果输入s无法切分，则返回只有s构成的一个元素的数组
 func SplitWords(s string) []string {
+	// TODO: 处理数字，和下划线等
 	spans := rule.FindAllString(s, -1)
 	if spans == nil {
 		spans = []string{s}
 	}
+
 	return spans
 }
 

@@ -49,11 +49,43 @@ go-bindata -o openapi/css.go --pkg openapi internal/static/...
 
 ```
 
-## Examples:
+## Guide:
 
-### Guide
+### 面向对象式路由：GroupRouter
 
-- [guide example](example/simple.go)
+```go
+package main
+
+type QueryParamRouter struct {
+	BaseRouter
+}
+
+func (r *QueryParamRouter) Prefix() string { return "/api/query-param" }
+
+func (r *QueryParamRouter) IntQueryParamGet(c *Context, age int) (int, error) {
+	return age, nil
+}
+
+```
+
+1. 对于请求参数
+
+- [x] 识别函数参数作为查询参数, (GET/DELETE/POST/PUT/PATCH)。
+  > 由于反射限制，无法识别函数参数名称，因此显示在文档上的参数名为随机分配的，推荐通过结构体实现。
+- [x] 将最后一个结构体解析为查询参数, (GET/DELETE), 推荐。
+    ```go
+    package main
+    
+    type LogonQuery struct {
+        Father string `query:"father" validate:"required" description:"姓氏"` // 必选查询参数
+        Name   string `query:"name" description:"姓名"`                       // 可选查询参数
+    }
+    ```
+- [x] 将最后一个结构体解析为请求体, (POST/PUT/PATCH)。
+- [x] 将除最后一个参数解析为查询参数（包含结构体查询参数）, (POST/PUT/PATCH)。
+- [x] 允许重载API路由以支持路径参数, (GET/DELETE/POST/PUT/PATCH)。
+
+- 在任何时候，通过添加方法`SchemaDesc() string`以为模型添加文本说明
 
 ## 一些常用的API
 

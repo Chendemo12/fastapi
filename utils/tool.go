@@ -1,6 +1,11 @@
 package utils
 
-import "strconv"
+import (
+	"reflect"
+	"runtime"
+	"strconv"
+	"strings"
+)
 
 // StringsToInts 将字符串数组转换成int数组, 简单实现
 //
@@ -36,4 +41,70 @@ func StringsToFloats(strs []string) []float64 {
 	}
 
 	return floats
+}
+
+// IsAnonymousStruct 是否是匿名(未声明)的结构体
+func IsAnonymousStruct(fieldType reflect.Type) bool {
+	if fieldType.Kind() == reflect.Ptr {
+		return fieldType.Elem().Name() == ""
+	}
+	return fieldType.Name() == ""
+}
+
+// GetElementType 获取实际元素的反射类型
+func GetElementType(rt reflect.Type) reflect.Type {
+	var fieldType reflect.Type
+
+	switch rt.Kind() {
+	case reflect.Ptr, reflect.Slice, reflect.Array:
+		fieldType = rt.Elem()
+	default:
+		fieldType = rt
+	}
+
+	return fieldType
+}
+
+// ReflectObjectType 获取任意对象的类型，若为指针，则反射具体的类型
+func ReflectObjectType(obj any) reflect.Type {
+	rt := reflect.TypeOf(obj)
+	if rt.Kind() == reflect.Ptr {
+		rt = rt.Elem()
+	}
+	return rt
+}
+
+// ReflectFuncName 反射获得函数名或方法名
+func ReflectFuncName(handler any) string {
+	funcName := runtime.FuncForPC(reflect.ValueOf(handler).Pointer()).Name()
+	parts := strings.Split(funcName, ".")
+	funcName = parts[len(parts)-1]
+	return funcName
+}
+
+// QueryFieldTag 查找struct字段的Tag
+//
+//	@param	tag			reflect.StructTag	字段的Tag
+//	@param	label		string				要查找的标签
+//	@param	undefined	string				当查找的标签不存在时返回的默认值
+//	@return	string 查找到的标签值, 不存在则返回提供的默认值
+func QueryFieldTag(tag reflect.StructTag, label string, undefined string) string {
+	if tag == "" {
+		return undefined
+	}
+	if v := tag.Get(label); v != "" {
+		return v
+	}
+	return undefined
+}
+
+// QueryJsonName 查询字段定义的json名称
+func QueryJsonName(tag reflect.StructTag, undefined string) string {
+	if tag == "" {
+		return undefined
+	}
+	if v := tag.Get("json"); v != "" {
+		return strings.TrimSpace(strings.Split(v, ",")[0])
+	}
+	return undefined
 }

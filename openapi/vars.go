@@ -2,7 +2,6 @@ package openapi
 
 import (
 	"github.com/Chendemo12/fastapi-tool/helper"
-	"net/http"
 )
 
 const (
@@ -15,15 +14,6 @@ var ValidationErrorDefinition = &ValidationError{}
 
 // ValidationErrorResponseDefinition 请求体相应体错误消息
 var ValidationErrorResponseDefinition = &HTTPValidationError{}
-
-var Resp422 = &Response{
-	StatusCode:  http.StatusUnprocessableEntity,
-	Description: http.StatusText(http.StatusUnprocessableEntity),
-	Content: &PathModelContent{
-		MIMEType: MIMEApplicationJSON,
-		Schema:   &ValidationError{},
-	},
-}
 
 type dict map[string]any
 

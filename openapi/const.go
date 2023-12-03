@@ -63,8 +63,8 @@ const AnonymousModelNameConnector = "_"
 
 // InnerModelsName 特殊的内部模型名称
 var InnerModelsName = []string{
-	"ModelSchema",
-	"Field",
+	"BaseModel",
+	"BaseModelField",
 }
 
 // IllegalRouteParamType 不支持的参数类型

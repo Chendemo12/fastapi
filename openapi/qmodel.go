@@ -1,11 +1,12 @@
 package openapi
 
 import (
+	"github.com/Chendemo12/fastapi/utils"
 	"reflect"
 	"unicode"
 )
 
-// QModel 查询参数或路径参数模型, 此类型会进一步转换为 openapi.Parameter
+// QModel 查询参数或路径参数元数据, 此类型会进一步转换为 openapi.Parameter
 type QModel struct {
 	Name   string            `json:"name,omitempty" description:"字段名称"` // 如果是通过结构体生成,则为json标签名称
 	Tag    reflect.StructTag `json:"tag,omitempty" description:"TAG"`   // 仅在结构体作为查询参数时有效
@@ -17,11 +18,14 @@ func (q *QModel) SchemaTitle() string { return q.Name }
 
 func (q *QModel) SchemaPkg() string { return q.Name }
 
-func (q *QModel) JsonName() string { return QueryFieldTag(q.Tag, DefaultJsonTagName, q.Name) }
+// JsonName 对于查询参数结构体，其文档名称 tag 为 query
+func (q *QModel) JsonName() string {
+	return utils.QueryFieldTag(q.Tag, DefaultQueryTagName, q.Name)
+}
 
 // SchemaDesc 结构体文档注释
 func (q *QModel) SchemaDesc() string {
-	return QueryFieldTag(q.Tag, DescriptionTagName, q.Name)
+	return utils.QueryFieldTag(q.Tag, DescriptionTagName, q.Name)
 }
 
 // SchemaType 模型类型
@@ -51,6 +55,7 @@ func (q *QModel) Schema() (m map[string]any) {
 	}
 	m["name"] = q.SchemaPkg()
 	m["in"] = "query"
+
 	return
 }
 
@@ -76,6 +81,7 @@ func StructToQModels(rt reflect.Type) []*QModel {
 		field := rt.Field(i)
 
 		// 仅导出字段可用
+		// TODO: Future-231203.8: 模型不支持嵌入
 		if field.Anonymous || unicode.IsLower(rune(field.Name[0])) {
 			continue
 		}
