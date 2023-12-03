@@ -108,3 +108,45 @@ func QueryJsonName(tag reflect.StructTag, undefined string) string {
 	}
 	return undefined
 }
+
+// Pluralize 获得一个单词的复数形式，按照语法规则进行变换
+func Pluralize(word string) string {
+	if word == "" {
+		return word
+	}
+
+	// 定义一些特殊情况的规则
+	irregulars := map[string]string{
+		"man":   "men",
+		"woman": "women",
+		"child": "children",
+		"Man":   "Men",
+		"Woman": "Women",
+		"Child": "Children",
+	}
+
+	// 检查特殊规则
+	if plural, ok := irregulars[word]; ok {
+		return plural
+	}
+
+	// 检查以 "s", "x", "z", "ch", "sh" 结尾的单词
+	if strings.HasSuffix(word, "s") || strings.HasSuffix(word, "x") || strings.HasSuffix(word, "z") ||
+		strings.HasSuffix(word, "ch") || strings.HasSuffix(word, "sh") {
+		return word + "es"
+	}
+
+	// 检查以辅音字母 + "y" 结尾的单词
+	if strings.HasSuffix(word, "y") && !isVowel(word[len(word)-2]) {
+		return word[:len(word)-1] + "ies"
+	}
+
+	// 默认情况，在单词末尾加上 "s"
+	return word + "s"
+}
+
+func isVowel(c uint8) bool {
+	vowels := "aeiou"
+
+	return strings.ContainsRune(vowels, rune(c))
+}

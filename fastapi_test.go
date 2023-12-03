@@ -158,6 +158,37 @@ func (r *ResponseModelRouter) ReturnNormalStructGet(c *Context) (*BoardCard, err
 	}, nil
 }
 
+func (r *ResponseModelRouter) GetTunnels(c *Context) ([]*Tunnel, error) {
+	return []*Tunnel{
+		{
+			No:      10,
+			BoardId: 0x4321,
+		},
+		{
+			No:      12,
+			BoardId: 0x4323,
+		},
+	}, nil
+}
+
+type Child struct {
+	Age  int
+	Name string
+}
+
+func (r *ResponseModelRouter) GetChildren(c *Context) ([]*Child, error) {
+	return []*Child{
+		{
+			Age:  10,
+			Name: "li",
+		},
+	}, nil
+}
+
+func (r *ResponseModelRouter) PostReportMessage(c *Context, form []*Child) ([]*Child, error) {
+	return form, nil
+}
+
 // ============================================================================
 
 type FastApiRouter struct {

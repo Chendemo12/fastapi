@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/Chendemo12/fastapi-tool/helper"
 	"github.com/Chendemo12/fastapi/pathschema"
+	"github.com/Chendemo12/fastapi/utils"
 	"reflect"
 	"strings"
 )
@@ -145,6 +146,18 @@ func (r *RouteParam) Init() (err error) {
 		r.Type = ReflectKindToType(r.PrototypeKind)
 		r.Name = r.Prototype.Name()
 		r.Pkg = r.Prototype.String()
+	}
+
+	// 对于[]object 形式，修改其模型名称
+	if r.Type == ArrayType {
+		elem := r.Prototype.Elem()
+		if elem.Kind() == reflect.Ptr {
+			elem = elem.Elem()
+		}
+
+		r.Name = utils.Pluralize(elem.Name())
+		ss := strings.Split(elem.String(), ".")
+		r.Pkg = strings.Join(ss[:len(ss)-1], "") + "." + utils.Pluralize(elem.Name())
 	}
 	return nil
 }

@@ -1,6 +1,7 @@
 package openapi
 
 import (
+	"fmt"
 	"github.com/Chendemo12/fastapi/utils"
 	"reflect"
 	"strings"
@@ -60,6 +61,10 @@ func (m *BaseModelMeta) scanModel() (err error) {
 	if m.Param.Type == ArrayType {
 		// 方法处直接返回数组, 递归处理子元素
 		param := NewRouteParam(m.Param.CopyPrototype().Elem(), 0)
+		err = param.Init()
+		if err != nil {
+			return err
+		}
 		m.itemModel = NewBaseModelMeta(param)
 		err = m.itemModel.Init()
 
@@ -382,10 +387,10 @@ func (m *BaseModelMeta) scanArraySwagger() (err error) {
 	}
 
 	// 将子元素的文档作为此模型的文档，如果子元素是结构体则反射获取其文档
-	m.Description = ArrayTypePrefix + m.itemModel.SchemaDesc()
+	m.Description = m.itemModel.SchemaDesc()
 	if m.itemModel.SchemaType() == ObjectType {
 		if desc := ReflectCallSchemaDesc(m.itemModel.Param.Prototype); desc != "" {
-			m.Description = ArrayTypePrefix + desc
+			m.Description = desc
 		}
 	}
 
@@ -440,24 +445,24 @@ func (m *BaseModelMeta) Schema() (dict map[string]any) {
 
 // InnerSchema 内部字段模型文档
 func (m *BaseModelMeta) InnerSchema() []SchemaIface {
-	ss := make([]SchemaIface, len(m.innerModels))
+	ss := make([]SchemaIface, 0)
 	for i := 0; i < len(m.innerModels); i++ {
 		inner := m.innerModels[i]
 		if inner.rType.Kind() == reflect.Struct || inner.rType.Kind() == reflect.Ptr {
 			// 仍然是个模型，继续反射
 			param := NewRouteParam(inner.rType, 0)
 			err := param.Init()
-			if err != nil {
-				panic(err)
+			if err != nil { // 应该输出日志
+				fmt.Println(fmt.Sprintf("model: '%s' document create faild, %v", param.Pkg, err))
+				continue
 			}
 			model := NewBaseModelMeta(param)
 			err = model.Init()
 			if err != nil {
-				panic(err)
+				fmt.Println(fmt.Sprintf("model: '%s' document create faild, %v", param.Pkg, err))
+				continue
 			}
-			ss[i] = model
-		} else {
-			ss[i] = inner
+			ss = append(ss, model)
 		}
 	}
 
