@@ -15,8 +15,6 @@ type Option struct {
 	Params        openapi.ModelSchema `json:"params" description:"查询参数,结构体"`
 	Description   string              `json:"description" description:"路由描述"`
 	Tags          []string            `json:"tags" description:"路由标签"`
-	Dependencies  []DependencyFunc    `json:"-" description:"依赖"`
-	Handlers      []HandlerFunc       `json:"-" description:"处理函数"`
 	Deprecated    bool                `json:"deprecated" description:"是否禁用"`
 }
 
@@ -28,8 +26,6 @@ func cleanOpts(opts ...Option) *Option {
 		ResponseModel: nil,
 		Description:   "",
 		Tags:          make([]string, 0),
-		Dependencies:  make([]DependencyFunc, 0),
-		Handlers:      make([]HandlerFunc, 0),
 		Deprecated:    false,
 	}
 	if len(opts) > 0 {
@@ -42,12 +38,6 @@ func cleanOpts(opts ...Option) *Option {
 
 		if len(opts[0].Tags) > 0 {
 			opt.Tags = opts[0].Tags
-		}
-		if len(opts[0].Dependencies) > 0 {
-			opt.Dependencies = opts[0].Dependencies
-		}
-		if len(opts[0].Handlers) > 0 {
-			opt.Handlers = opts[0].Handlers
 		}
 	}
 
@@ -91,7 +81,7 @@ func (r *GenericRoute[T]) NewRequestModel() reflect.Value {
 	panic("implement me")
 }
 
-func (r *GenericRoute[T]) Call() {
+func (r *GenericRoute[T]) Call(resp *Response, params ...reflect.Value) {
 	//TODO implement me
 	panic("implement me")
 }

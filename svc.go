@@ -8,12 +8,29 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
+// HotSwitchSigint 默认热调试开关
+const HotSwitchSigint = 30
+
 const ( // json序列化错误, 关键信息的序号
 	jsoniterUnmarshalErrorSeparator = "|" // 序列化错误信息分割符, 定义于 validator/validator_instance.orSeparator
 	jsonErrorFieldMsgIndex          = 0   // 错误原因
 	jsonErrorFieldNameFormIndex     = 1   // 序列化错误的字段和值
 	jsonErrorFormIndex              = 3   // 接收到的数据
 )
+
+// EventKind 事件类型
+type EventKind string
+
+const (
+	StartupEvent  EventKind = "startup"
+	ShutdownEvent EventKind = "shutdown"
+)
+
+// Event 事件
+type Event struct {
+	Fc   func()
+	Type EventKind // 事件类型：startup 或 shutdown
+}
 
 // ------------------------------------------------------------------------------------
 

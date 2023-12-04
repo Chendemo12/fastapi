@@ -1,17 +1,50 @@
-package fastapi
+package fiberEngine
 
 import (
 	"fmt"
-	"runtime"
-
 	"github.com/Chendemo12/fastapi-tool/helper"
 	"github.com/gofiber/fiber/v2"
-	echo "github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/gofiber/fiber/v2/middleware/recover"
+	"runtime"
 )
 
-// createFiberApp 创建 fiber.App 已做了基本的中间件配置
-func createFiberApp(title, version string) *fiber.App {
+type FiberMux struct {
+}
+
+func (f *FiberMux) BindRoute(method, path string, handler any) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (f *FiberMux) BodyParser(ctx any, model any) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (f *FiberMux) Shutdown() error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (f *FiberMux) Listen(addr string) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (f *FiberMux) SetErrorHandler(handler any) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (f *FiberMux) SetRecoverHandler(handler any) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func New(title, version string) *FiberMux { return &FiberMux{} }
+
+// f 创建 fiber.App 已做了基本的中间件配置
+func f(title, version string) *fiber.App {
+	// fc fiber.ErrorHandler
 	if fiberErrorHandler == nil {
 		fiberErrorHandler = customFiberErrorHandler
 	}
@@ -57,12 +90,12 @@ func customRecoverHandler(c *fiber.Ctx, e any) {
 	msg := helper.CombineStrings(
 		"Request RelativePath: ", c.Path(), fmt.Sprintf(", Error: %v, \n", e), string(buf),
 	)
-	appEngine.Service().Logger().Error(msg)
+	//wrapper.Service().Logger().Error(msg)
 }
 
 // customFiberErrorHandler 自定义fiber接口错误处理函数
 func customFiberErrorHandler(c *fiber.Ctx, e error) error {
-	//appEngine.logger.Warn(helper.CombineStrings(
+	//wrapper.logger.Warn(helper.CombineStrings(
 	//	"error happened during: '",
 	//	c.Method(), ": ", c.RelativePath(),
 	//	"', Msg: ", e.Error(),

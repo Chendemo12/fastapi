@@ -533,7 +533,7 @@ func (r *GroupRoute) NewRequestModel() reflect.Value {
 	return reflect.Value{}
 }
 
-func (r *GroupRoute) Call() {
+func (r *GroupRoute) Call(resp *Response, params ...reflect.Value) {
 	//TODO implement me
 	// result := method.Func.Call([]reflect.Value{reflect.ValueOf(newValue)})
 	panic("implement me")

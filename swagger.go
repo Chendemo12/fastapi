@@ -10,7 +10,7 @@ const staticPrefix = "internal/static/"
 
 // 创建openapi文档
 func (f *FastApi) createOpenApiDoc() *FastApi {
-	f.service.openApi = openapi.NewOpenApi(f.title, f.version, f.Description())
+	f.service.openApi = openapi.NewOpenApi(f.Config().Title, f.Config().Version, f.Config().Description)
 	f.registerRouteDoc().registerRouteHandle()
 
 	return f
@@ -40,7 +40,7 @@ func (f *FastApi) registerRouteHandle() *FastApi {
 	f.engine.Get("/docs", func(c *fiber.Ctx) error {
 		c.Set(openapi.HeaderContentType, openapi.MIMETextHTMLCharsetUTF8)
 		return c.SendString(openapi.MakeSwaggerUiHtml(
-			f.title,
+			f.Config().Title,
 			openapi.JsonUrl,
 			openapi.SwaggerJsName,
 			openapi.SwaggerCssName,
@@ -52,7 +52,7 @@ func (f *FastApi) registerRouteHandle() *FastApi {
 	f.engine.Get("/redoc", func(c *fiber.Ctx) error {
 		c.Set(openapi.HeaderContentType, openapi.MIMETextHTMLCharsetUTF8)
 		return c.SendString(openapi.MakeRedocUiHtml(
-			f.title,
+			f.Config().Title,
 			openapi.JsonUrl,
 			openapi.RedocJsName,
 			openapi.FaviconName,

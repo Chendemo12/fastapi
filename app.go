@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/Chendemo12/fastapi-tool/helper"
 	"github.com/Chendemo12/fastapi/openapi"
+	"github.com/Chendemo12/fastapi/utils"
 	jsoniter "github.com/json-iterator/go"
 	"log"
 	"net"
@@ -16,38 +17,22 @@ import (
 
 	"github.com/Chendemo12/fastapi-tool/cronjob"
 	"github.com/Chendemo12/fastapi-tool/logger"
-	"github.com/Chendemo12/fastapi/internal/core"
 	"github.com/go-playground/validator/v10"
-	"github.com/gofiber/fiber/v2"
 )
 
-const (
-	startupEvent  EventKind = "startup"
-	shutdownEvent EventKind = "shutdown"
-)
+// Wrapper 包装器对象
+type Wrapper = FastApi
 
-var (
-	once               = sync.Once{}
-	appEngine *FastApi = nil // 单例模式
-)
+var one = &sync.Once{}
+var wrapper *FastApi = nil // 默认实例
 
-type EventKind string
-
-type Event struct {
-	Fc   func()
-	Type EventKind // 事件类型：startup 或 shutdown
-}
-
+// FastApi 服务器对象，本质是一个包装器
 type FastApi struct {
+	conf          *Profile           `description:"配置项"`
 	service       *Service           `description:"全局服务依赖"`
-	engine        *fiber.App         `description:"fiber.App"`
 	pool          *sync.Pool         `description:"FastApi.Context资源池"`
+	mux           EngineMux          `description:"后端路由器"`
 	isStarted     chan struct{}      `description:"标记程序是否完成启动"`
-	host          string             `description:"运行地址"`
-	description   string             `description:"程序描述"`
-	title         string             `description:"程序名,同时作为日志文件名"`
-	port          string             `description:"运行端口"`
-	version       string             `description:"程序版本号"`
 	groupRouters  []*GroupRouterMeta `description:"路由组对象"`
 	genericRoutes []RouteIface       `description:"泛型路由对象"`
 	events        []*Event           `description:"启动和关闭事件"`
@@ -56,11 +41,22 @@ type FastApi struct {
 	afterDeps     []any              `description:"在接口参数校验成功后执行的中间件"`
 }
 
-func (f *FastApi) initService() *FastApi {
-	f.service.addr = net.JoinHostPort(f.host, f.port)
+type Profile struct {
+	Host            string        `json:"host,omitempty" description:"运行地址"`
+	Port            string        `json:"port,omitempty" description:"运行端口"`
+	Title           string        `json:"title,omitempty" description:"程序名,同时作为日志文件名"`
+	Version         string        `json:"version,omitempty" description:"程序版本号"`
+	Description     string        `json:"description,omitempty" description:"程序描述"`
+	Debug           bool          `json:"debug,omitempty" description:"调试开关"`
+	SwaggerDisabled bool          `json:"swaggerDisabled,omitempty" description:"禁用自动文档"`
+	ShutdownTimeout time.Duration `json:"shutdownTimeout,omitempty" description:"平滑关机,单位秒"`
+}
 
-	if f.version == "" {
-		f.version = "1.0.0"
+func (f *FastApi) initService() *FastApi {
+	f.service.addr = net.JoinHostPort(f.conf.Host, f.conf.Port)
+
+	if f.conf.Version == "" {
+		f.conf.Version = "1.0.0"
 	}
 
 	// 初始化日志logger logger.NewLogger
@@ -76,26 +72,19 @@ func (f *FastApi) initService() *FastApi {
 		},
 	}
 	f.service.setLogger(f.service.Logger())
-	f.service.Logger().Debug("Run at: " + core.GetMode(true))
 
 	return f
 }
 
-func (f *FastApi) initEngine() *FastApi {
-	f.engine = createFiberApp(f.title, f.version)
-	return f
-}
-
-func (f *FastApi) initRoutes() *FastApi {
-	// 创建基础路由
-	if !core.BaseRoutesDisabled {
-		f.IncludeRouter(&BaseGroupRouter{
-			Title:   f.Title(),
-			Version: f.Version(),
-			Desc:    f.Description(),
-			Debug:   f.IsDebug(),
-		})
+func (f *FastApi) initMux() *FastApi {
+	if f.mux == nil {
+		panic("mux is not initialized")
 	}
+	return f
+}
+
+// 初始化路由
+func (f *FastApi) initRoutes() *FastApi {
 	// 反射路由数据，必须在路由添加完成，swagger注册之前调用
 	var err error
 	for _, group := range f.groupRouters {
@@ -106,8 +95,35 @@ func (f *FastApi) initRoutes() *FastApi {
 	}
 
 	// 处理并记录泛型路由
+	for _, route := range f.genericRoutes {
+		_ = route
+	}
 
+	// 构造参数的验证器
 	f.scanRouteBinders()
+
+	// 挂载路由到路由器上
+	for _, group := range f.groupRouters {
+		for _, route := range group.Routes() {
+			err = f.mux.BindRoute(route.Swagger().Method, route.Swagger().Url, f.Handler)
+			if err != nil {
+				// 此时日志已初始化完毕
+				f.Service().Logger().Error(fmt.Sprintf(
+					"route: '%s:%s' bind failed, %v", route.Swagger().Method, route.Swagger().Url, err,
+				))
+			}
+		}
+	}
+
+	for _, route := range f.genericRoutes {
+		err = f.mux.BindRoute(route.Swagger().Method, route.Swagger().Url, f.Handler)
+		if err != nil {
+			// 此时日志已初始化完毕
+			f.Service().Logger().Error(fmt.Sprintf(
+				"route: '%s:%s' bind failed, %v", route.Swagger().Method, route.Swagger().Url, err,
+			))
+		}
+	}
 
 	return f
 }
@@ -152,7 +168,7 @@ func (f *FastApi) initFinder() *FastApi {
 
 // 创建 OpenApi Swagger 文档, 必须等上层注册完路由之后才能调用
 func (f *FastApi) initSwagger() *FastApi {
-	if !core.SwaggerDisabled || core.IsDebug() {
+	if !f.conf.SwaggerDisabled || f.conf.Debug {
 		f.createOpenApiDoc()
 	}
 
@@ -162,32 +178,106 @@ func (f *FastApi) initSwagger() *FastApi {
 // 初始化FastApi,并完成服务依赖的建立
 // FastApi启动前，必须显式的初始化FastApi的基本配置，若初始化中发生异常则panic
 func (f *FastApi) initialize() *FastApi {
+	helper.SetJsonEngine(jsoniter.ConfigCompatibleWithStandardLibrary)
+
 	f.initService()
-	f.initEngine()
+	f.initMux()
 	f.initRoutes()
 	f.initFinder()
 	f.initSwagger()
 
+	f.service.Logger().Debug("Run at: " +
+		utils.Ternary[string](f.conf.Debug, "Development", "Production"))
 	return f
 }
 
-// Title 应用程序名和日志文件名
-func (f *FastApi) Title() string   { return f.title }
-func (f *FastApi) Host() string    { return f.host }
-func (f *FastApi) Port() string    { return f.port }
-func (f *FastApi) Version() string { return f.version }
-func (f *FastApi) IsDebug() bool   { return core.IsDebug() }
+// 申请一个 Context 并初始化
+func (f *FastApi) acquireCtx(ctx MuxCtx) *Context {
+	c := f.pool.Get().(*Context)
+	// 初始化各种参数
+	c.muxCtx = ctx
+	// TODO Future: 允许不启用此功能
+	c.routeCtx, c.routeCancel = context.WithCancel(f.service.ctx) // 为每一个路由创建一个独立的ctx
+	c.PathFields = map[string]string{}
+	c.QueryFields = map[string]string{}
 
-// Description 描述信息，同时会显示在Swagger文档上
-func (f *FastApi) Description() string { return f.description }
+	return c
+}
+
+// 释放并归还 Context
+func (f *FastApi) releaseCtx(ctx *Context) {
+	ctx.muxCtx = nil
+	ctx.route = nil
+	ctx.routeCtx = nil
+	ctx.routeCancel = nil
+	ctx.response = nil // 释放内存
+
+	ctx.PathFields = nil
+	ctx.QueryFields = nil
+
+	f.pool.Put(ctx)
+}
+
+// ResetRunMode 重设运行时环境
+func (f *FastApi) resetRunMode(md bool) {
+	f.conf.Debug = md
+}
+
+// Handler 路由函数，实现逻辑类似于中间件
+//
+// 路由处理方法(装饰器实现)，用于请求体校验和返回体序列化，同时注入全局服务依赖,
+// 此方法接收一个业务层面的路由钩子方法 RouteIface.Call
+//
+// Handler 方法首先会查找路由元信息，如果找不到则直接跳过验证环节，由路由器返回404
+// 反之：
+//
+//  1. 申请一个 Context, 并初始化请求体、路由参数等
+//  2. 之后会校验并绑定路由参数（包含路径参数和查询参数）是否正确，如果错误则直接返回422错误，反之会继续序列化并绑定请求体（如果存在）序列化成功之后会校验请求参数正确性，
+//  3. 校验通过后会调用 RouteIface.Call 并将返回值绑定在 Context 内的 Response 上
+//  4. 校验返回值，并返回422或将返回值写入到实际的 response
+func (f *FastApi) Handler(ctx MuxCtx) *Response {
+	route, exist := f.finder.Get(openapi.CreateRouteIdentify(ctx.Method(), ctx.Path()))
+	if !exist {
+		return nil
+	}
+
+	// 发现定义的路由信息
+	wrapperCtx := f.acquireCtx(ctx)
+	wrapperCtx.route = route
+	defer f.releaseCtx(wrapperCtx)
+
+	// TODO Future: 校验前中间件
+	// 路由前的校验
+	wrapperCtx.workflow()
+
+	if wrapperCtx.response != nil {
+		// 校验工作流不通过, 中断执行
+		return wrapperCtx.write()
+	}
+
+	// TODO Future: 执行校验后中间件
+
+	//
+	// 全部校验完成，执行处理函数并获取返回值
+	route.Call(wrapperCtx.response) // TODO: call method
+	// 路由返回值校验
+	wrapperCtx.responseBodyValidate() // TODO: 修改验证方式，由 ModelBindMethod 实现
+	return wrapperCtx.write()         // 返回消息流
+}
+
+func (f *FastApi) Config() *Profile { return f.conf }
 
 // Service 获取FastApi全局服务依赖
 func (f *FastApi) Service() *Service { return f.service }
 
-// Engine 获取fiber引擎
-//
-//	@return	*fiber.App fiber引擎
-func (f *FastApi) Engine() *fiber.App { return f.engine }
+// Mux 获取路由器
+func (f *FastApi) Mux() EngineMux { return f.mux }
+
+// SetMux 设置路由器，必须在启动之前设置
+func (f *FastApi) SetMux(mux EngineMux) *FastApi {
+	f.mux = mux
+	return f
+}
 
 // OnEvent 添加事件
 //
@@ -195,14 +285,14 @@ func (f *FastApi) Engine() *fiber.App { return f.engine }
 //	@param	fs		func()		事件
 func (f *FastApi) OnEvent(kind EventKind, fc func()) *FastApi {
 	switch kind {
-	case startupEvent:
+	case StartupEvent:
 		f.events = append(f.events, &Event{
-			Type: startupEvent,
+			Type: StartupEvent,
 			Fc:   fc,
 		})
-	case shutdownEvent:
+	case ShutdownEvent:
 		f.events = append(f.events, &Event{
-			Type: shutdownEvent,
+			Type: ShutdownEvent,
 			Fc:   fc,
 		})
 	default:
@@ -230,7 +320,7 @@ func (f *FastApi) SetLogger(logger logger.Iface) *FastApi {
 //
 //	@param	Description	string	详细描述信息
 func (f *FastApi) SetDescription(description string) *FastApi {
-	f.description = description
+	f.conf.Description = description
 	return f
 }
 
@@ -255,91 +345,57 @@ func (f *FastApi) AddCronjob(jobs ...cronjob.CronJob) *FastApi {
 	return f
 }
 
-// ActivateHotSwitch 创建一个热开关，监听信号量30，用来改变程序调试开关状态
-func (f *FastApi) ActivateHotSwitch() *FastApi {
+// ActivateHotSwitch 创建一个热开关，监听信号量(默认值：30)，用来改变程序调试开关状态
+func (f *FastApi) ActivateHotSwitch(s ...int) *FastApi {
+	var st = HotSwitchSigint
+	if len(s) > 0 {
+		st = s[0]
+	}
+
 	swt := make(chan os.Signal, 1)
-	signal.Notify(swt, syscall.Signal(core.HotSwitchSigint))
+	signal.Notify(swt, syscall.Signal(st))
 
 	go func() {
 		for range swt {
-			if f.IsDebug() {
-				resetRunMode(false)
+			if f.conf.Debug {
+				f.resetRunMode(false)
 			} else {
-				resetRunMode(true)
+				f.resetRunMode(true)
 			}
-			f.service.Logger().Debug("Hot-switch received, convert to:", core.GetMode())
+			f.service.Logger().Debug(
+				"Hot-switch received, convert to:",
+				utils.Ternary[string](f.conf.Debug, "Development", "Production"),
+			)
 		}
 	}()
 
 	return f
 }
 
-// 申请一个 Context 并初始化
-func (f *FastApi) acquireCtx(fctx *fiber.Ctx) *Context {
-	c := f.pool.Get().(*Context)
-	// 初始化各种参数
-	c.ec = fctx
-	c.routeCtx, c.routeCancel = context.WithCancel(f.service.ctx) // 为每一个路由创建一个独立的ctx
-	c.PathFields = map[string]string{}
-	c.QueryFields = map[string]string{}
-
-	return c
-}
-
-// 释放并归还 Context
-func (f *FastApi) releaseCtx(ctx *Context) {
-	ctx.ec = nil
-	ctx.route = nil
-	ctx.routeCtx = nil
-	ctx.routeCancel = nil
-	ctx.response = nil // 释放内存
-
-	ctx.PathFields = nil
-	ctx.QueryFields = nil
-
-	f.pool.Put(ctx)
-}
-
 // ReplaceErrorHandler 替换fiber错误处理方法，即 请求错误处理方法
-func (f *FastApi) ReplaceErrorHandler(fc fiber.ErrorHandler) *FastApi {
-	fiberErrorHandler = fc
+func (f *FastApi) ReplaceErrorHandler(handler any) *FastApi {
+	f.mux.SetErrorHandler(handler)
 	return f
 }
 
 // ReplaceStackTraceHandler 替换错误堆栈处理函数，即 recover 方法
-func (f *FastApi) ReplaceStackTraceHandler(fc StackTraceHandlerFunc) *FastApi {
-	recoverHandler = fc
+func (f *FastApi) ReplaceStackTraceHandler(handler any) *FastApi {
+	f.mux.SetRecoverHandler(handler)
 	return f
-}
-
-// ReplaceRecover 重写全局 recover 方法
-func (f *FastApi) ReplaceRecover(fc StackTraceHandlerFunc) *FastApi {
-	return f.ReplaceStackTraceHandler(fc)
 }
 
 // SetShutdownTimeout 修改关机前最大等待时间
 //
 //	@param	timeout	in	修改关机前最大等待时间,	单位秒
 func (f *FastApi) SetShutdownTimeout(timeout int) *FastApi {
-	core.ShutdownWithTimeout = time.Duration(timeout) * time.Second
-	return f
-}
-
-// DisableBaseRoutes 禁用基础路由
-func (f *FastApi) DisableBaseRoutes() *FastApi {
-	core.BaseRoutesDisabled = true
+	f.conf.ShutdownTimeout = time.Duration(timeout) * time.Second
 	return f
 }
 
 // DisableSwagAutoCreate 禁用文档自动生成
 func (f *FastApi) DisableSwagAutoCreate() *FastApi {
-	core.SwaggerDisabled = true
+	f.conf.SwaggerDisabled = true
 	return f
-}
-
-// ShutdownWithTimeout 关机前最大等待时间
-func (f *FastApi) ShutdownWithTimeout() time.Duration {
-	return core.ShutdownWithTimeout * time.Second
 }
 
 // Shutdown 平滑关闭
@@ -348,20 +404,20 @@ func (f *FastApi) Shutdown() {
 
 	// 执行关机前事件
 	for _, event := range f.events {
-		if event.Type == shutdownEvent {
+		if event.Type == ShutdownEvent {
 			event.Fc()
 		}
 	}
 
 	go func() {
-		err := f.Engine().Shutdown()
+		err := f.mux.Shutdown()
 		if err != nil {
 			fmt.Println(err.Error())
 		}
 	}()
 	// Engine().Shutdown() 执行成功后将会直接退出进程，以下代码段仅当超时未关闭时执行到。
 	// Shutdown() 不会关闭设置了 keepalive 的连接，除非设置了 ReadTimeout ，因此设置以下内容以确保关闭.
-	<-time.After(core.ShutdownWithTimeout * time.Second)
+	<-time.After(time.Duration(f.conf.ShutdownTimeout) * time.Second)
 	// 此处避免因logger关闭引发错误
 	fmt.Println("Forced shutdown.") // 仅当超时时会到达此行
 }
@@ -371,30 +427,28 @@ func (f *FastApi) Shutdown() {
 // 当 Interrupt 信号被触发时，首先会关闭 根Context，然后逐步执行“关机事件”，最后调用平滑关闭方法，关闭服务
 // 启动前通过 SetShutdownTimeout 设置"平滑关闭异常时"的最大超时时间
 func (f *FastApi) Run(host, port string) {
-	helper.SetJsonEngine(jsoniter.ConfigCompatibleWithStandardLibrary)
-	if !fiber.IsChild() {
-		f.host = host
-		f.port = port
-		f.initialize().ActivateHotSwitch()
+	f.conf.Host = host
+	f.conf.Port = port
 
-		// 执行启动前事件
-		for _, event := range f.events {
-			if event.Type == startupEvent {
-				event.Fc()
-			}
+	f.initialize()
+	f.ActivateHotSwitch()
+
+	// 执行启动前事件
+	for _, event := range f.events {
+		if event.Type == StartupEvent {
+			event.Fc()
 		}
-
-		f.isStarted <- struct{}{} // 解除阻塞上层的任务
-		f.service.Logger().Debug("HTTP server listening on: " + f.service.Addr())
-
-		// 在各种初始化及启动事件执行完成之后触发
-		f.service.scheduler.Run()
-		close(f.isStarted)
 	}
 
-	// TODO:
+	f.isStarted <- struct{}{} // 解除阻塞上层的任务
+	f.service.Logger().Debug("HTTP server listening on: " + f.service.Addr())
+
+	// 在各种初始化及启动事件执行完成之后触发
+	f.service.scheduler.Run()
+	close(f.isStarted)
+
 	go func() {
-		log.Fatal(f.engine.Listen(f.service.Addr()))
+		log.Fatal(f.mux.Listen(f.service.Addr()))
 	}()
 
 	// 关闭开关, buffered
@@ -406,22 +460,17 @@ func (f *FastApi) Run(host, port string) {
 }
 
 type Config struct {
-	UserSvc               UserService           `json:"-" description:"自定义服务依赖"`
-	Logger                logger.Iface          `json:"-" description:"日志"`
-	ErrorHandler          fiber.ErrorHandler    `json:"-" description:"请求错误处理方法"`
-	RecoverHandler        StackTraceHandlerFunc `json:"-" description:"异常处理方法"`
-	Version               string                `json:"version,omitempty" description:"APP版本号"`
-	Description           string                `json:"description,omitempty" description:"APP描述"`
-	Title                 string                `json:"title,omitempty" description:"APP标题,也是日志文件名"`
-	ShutdownTimeout       int                   `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
-	DisableSwagAutoCreate bool                  `json:"disable_swag_auto_create,omitempty" description:"禁用自动文档"`
-	EnableMultipleProcess bool                  `json:"enable_multiple_process,omitempty" description:"开启多进程"`
-	DisableBaseRoutes     bool                  `json:"disable_base_routes,omitempty" description:"禁用基础路由"`
-	Debug                 bool                  `json:"debug,omitempty" description:"调试模式"`
+	UserSvc               UserService  `json:"-" description:"自定义服务依赖"`
+	Logger                logger.Iface `json:"-" description:"日志"`
+	Version               string       `json:"version,omitempty" description:"APP版本号"`
+	Description           string       `json:"description,omitempty" description:"APP描述"`
+	Title                 string       `json:"title,omitempty" description:"APP标题,也是日志文件名"`
+	ShutdownTimeout       int          `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
+	DisableSwagAutoCreate bool         `json:"disable_swag_auto_create,omitempty" description:"禁用自动文档"`
+	Debug                 bool         `json:"debug,omitempty" description:"调试模式"`
 }
 
-// New 创建一个 FastApi 服务
-func New(confs ...Config) *FastApi {
+func cleanConfig(confs ...Config) Config {
 	conf := Config{
 		Title:                 "FastAPI",
 		Version:               "1.0.0",
@@ -430,9 +479,7 @@ func New(confs ...Config) *FastApi {
 		Description:           "FastAPI Application",
 		Logger:                nil,
 		ShutdownTimeout:       5,
-		DisableBaseRoutes:     false,
 		DisableSwagAutoCreate: false,
-		EnableMultipleProcess: false,
 	}
 	if len(confs) > 0 {
 		if confs[0].Title != "" {
@@ -448,31 +495,56 @@ func New(confs ...Config) *FastApi {
 		conf.UserSvc = confs[0].UserSvc
 		conf.Logger = confs[0].Logger
 		conf.ShutdownTimeout = confs[0].ShutdownTimeout
-		conf.DisableBaseRoutes = confs[0].DisableBaseRoutes
 		conf.DisableSwagAutoCreate = confs[0].DisableSwagAutoCreate
-		conf.EnableMultipleProcess = confs[0].EnableMultipleProcess
-		conf.ErrorHandler = confs[0].ErrorHandler
-		conf.RecoverHandler = confs[0].RecoverHandler
 	}
-	core.SetMode(conf.Debug)
-	once.Do(func() {
-		sc := &Service{userSVC: conf.UserSvc, validate: validator.New()}
-		sc.ctx, sc.cancel = context.WithCancel(context.Background())
-		sc.scheduler = cronjob.NewScheduler(sc.ctx, nil)
 
-		appEngine = &FastApi{
-			title:         conf.Title,
-			version:       conf.Version,
-			description:   conf.Title + " Micro Context",
-			service:       sc,
-			genericRoutes: make([]RouteIface, 1),
-			isStarted:     make(chan struct{}, 1),
-			afterDeps:     make([]any, 0),
-			events:        make([]*Event, 0),
-		}
+	return conf
+}
+
+// New 实例化一个默认 Wrapper, 此方法与 Create 不能同时使用
+// 与 Create 区别在于：Create 每次都会创建一个新的实例，New 多次调用获得的是同一个实例
+// 语义相当于 __new__ 实现的单例
+func New(c ...Config) *FastApi {
+	one.Do(func() {
+		conf := cleanConfig(c...)
+		wrapper = Create(conf)
 	})
 
-	app := appEngine
+	return wrapper
+}
+
+// NewWrapper 创建一个新的包装器
+func NewWrapper(c ...Config) *Wrapper {
+	return New(c...)
+}
+
+// Create 创建一个新的 Wrapper 服务
+// 其存在目的在于在同一个应用里创建多个 Wrapper 实例，并允许每个实例绑定不同的服务器实现
+//
+// getWrapper
+func Create(c Config) *FastApi {
+	conf := cleanConfig(c)
+
+	sc := &Service{userSVC: conf.UserSvc, validate: validator.New()}
+	sc.ctx, sc.cancel = context.WithCancel(context.Background())
+	sc.scheduler = cronjob.NewScheduler(sc.ctx, nil)
+
+	app := &FastApi{
+		conf: &Profile{
+			Title:           conf.Title,
+			Version:         conf.Version,
+			Description:     conf.Description,
+			Debug:           conf.Debug,
+			SwaggerDisabled: conf.DisableSwagAutoCreate,
+			ShutdownTimeout: time.Duration(conf.ShutdownTimeout) * time.Second,
+		},
+		service:       sc,
+		genericRoutes: make([]RouteIface, 1),
+		isStarted:     make(chan struct{}, 1),
+		afterDeps:     make([]any, 0),
+		events:        make([]*Event, 0),
+	}
+
 	if conf.Description != "" {
 		app.SetDescription(conf.Description)
 	}
@@ -482,33 +554,14 @@ func New(confs ...Config) *FastApi {
 	if conf.Logger != nil {
 		app.SetLogger(conf.Logger)
 	}
-	if conf.ErrorHandler != nil {
-		app.ReplaceErrorHandler(conf.ErrorHandler)
-	}
-	if conf.RecoverHandler != nil {
-		app.ReplaceRecover(conf.RecoverHandler)
-	}
 
 	if conf.ShutdownTimeout != 0 {
 		app.SetShutdownTimeout(conf.ShutdownTimeout)
-	}
-	if conf.DisableBaseRoutes {
-		app.DisableBaseRoutes()
 	}
 
 	if conf.DisableSwagAutoCreate {
 		app.DisableSwagAutoCreate()
 	}
-	if conf.EnableMultipleProcess {
-		//app.EnableMultipleProcess()
-	}
 
 	return app
-}
-
-// resetRunMode 重设运行时环境
-//
-//	@param	md	string	开发环境
-func resetRunMode(md bool) {
-	core.SetMode(md)
 }

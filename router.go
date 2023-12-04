@@ -19,12 +19,12 @@ const (
 type RouteIface interface {
 	Scanner
 	RouteType() RouteType
-	Swagger() *openapi.RouteSwagger           // 路由文档
-	ResponseBinder() ModelBindMethod          // 响应体的处理接口,响应体只有一个
-	RequestBinders() ModelBindMethod          // 请求体的处理接口,请求体也只有一个
-	QueryBinders() map[string]ModelBindMethod // 查询参数的处理接口(查询参数名:处理接口)，查询参数可有多个
-	NewRequestModel() reflect.Value           // TODO: 创建一个新的参数实例
-	Call()                                    // 调用API
+	Swagger() *openapi.RouteSwagger               // 路由文档
+	ResponseBinder() ModelBindMethod              // 响应体的处理接口,响应体只有一个
+	RequestBinders() ModelBindMethod              // 请求体的处理接口,请求体也只有一个
+	QueryBinders() map[string]ModelBindMethod     // 查询参数的处理接口(查询参数名:处理接口)，查询参数可有多个
+	NewRequestModel() reflect.Value               // TODO: 创建一个新的参数实例
+	Call(resp *Response, params ...reflect.Value) // 调用API
 	Id() string
 }
 

@@ -1,25 +1,27 @@
-package fastapi
+package basic
 
 import (
+	"github.com/Chendemo12/fastapi"
 	"github.com/Chendemo12/fastapi/pathschema"
-	"github.com/gofiber/fiber/v2"
 )
 
-func DefaultCORS(c *fiber.Ctx) error {
-	c.Set("Access-Control-Allow-Origin", "*")
-	c.Set("Access-Control-Allow-Headers", "*")
-	c.Set("Access-Control-Allow-Credentials", "false")
-	c.Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS,DELETE,PATCH")
-
-	if c.Method() == fiber.MethodOptions {
-		c.Status(fiber.StatusOK)
-		return nil
+// NewBaseRouter 用于获取后端服务基本信息的路由组
+//
+//	# Usage
+//
+//	router := NewBaseRouter("FastApi", "1.0.0", "FastApi application", false)
+//	app.IncludeRouter(router)
+func NewBaseRouter(title, version, desc string, debug bool) fastapi.GroupRouter {
+	return &BaseGroupRouter{
+		Title:   title,
+		Version: version,
+		Desc:    desc,
+		Debug:   debug,
 	}
-	return c.Next()
 }
 
 type BaseGroupRouter struct {
-	BaseRouter
+	fastapi.BaseRouter
 	Title   string
 	Version string
 	Desc    string
@@ -52,22 +54,22 @@ func (r *BaseGroupRouter) Description() map[string]string {
 	return map[string]string{}
 }
 
-func (r *BaseGroupRouter) GetTitle(c *Context) (string, error) {
+func (r *BaseGroupRouter) GetTitle(c *fastapi.Context) (string, error) {
 	return r.Title, nil
 }
 
-func (r *BaseGroupRouter) GetDescription(c *Context) (string, error) {
+func (r *BaseGroupRouter) GetDescription(c *fastapi.Context) (string, error) {
 	return r.Desc, nil
 }
 
-func (r *BaseGroupRouter) GetVersion(c *Context) (string, error) {
+func (r *BaseGroupRouter) GetVersion(c *fastapi.Context) (string, error) {
 	return r.Version, nil
 }
 
-func (r *BaseGroupRouter) GetDebug(c *Context) (bool, error) {
+func (r *BaseGroupRouter) GetDebug(c *fastapi.Context) (bool, error) {
 	return r.Debug, nil
 }
 
-func (r *BaseGroupRouter) GetHeartbeat(c *Context) (string, error) {
+func (r *BaseGroupRouter) GetHeartbeat(c *fastapi.Context) (string, error) {
 	return "pong", nil
 }

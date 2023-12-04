@@ -6,7 +6,6 @@ import (
 	"github.com/Chendemo12/fastapi-tool/logger"
 	"github.com/Chendemo12/fastapi/openapi"
 	"github.com/go-playground/validator/v10"
-	"github.com/gofiber/fiber/v2"
 	"io"
 	"net/http"
 	"time"
@@ -23,7 +22,7 @@ type Context struct {
 	PathFields  map[string]string  `json:"path_fields,omitempty"`  // 路径参数
 	QueryFields map[string]string  `json:"query_fields,omitempty"` // 查询参数
 	svc         *Service           `description:"flask-go service"`
-	ec          *fiber.Ctx         `description:"engine context"`
+	muxCtx      MuxCtx             `description:"路由器Context"`
 	route       RouteIface         `description:"用于请求体和响应体校验"`
 	routeCtx    context.Context    `description:"获取针对此次请求的唯一context"`
 	routeCancel context.CancelFunc `description:"获取针对此次请求的唯一取消函数"`
@@ -47,10 +46,8 @@ func (c *Context) Value(key any) any {
 //	@return	Service 服务依赖信息
 func (c *Context) Service() *Service { return c.svc }
 
-// EngineCtx 获取web引擎的上下文 Service
-//
-//	@return	*fiber.Ctx fiber.App 的上下文信息
-func (c *Context) EngineCtx() *fiber.Ctx { return c.ec }
+// MuxCtx 获取web引擎的上下文
+func (c *Context) MuxCtx() MuxCtx { return c.muxCtx }
 
 // UserSVC 获取自定义服务依赖
 func (c *Context) UserSVC() UserService { return c.svc.userSVC }
@@ -109,12 +106,8 @@ func (c *Context) PathField(name string, undefined ...string) string {
 }
 
 // BodyParser 序列化请求体
-//
-//	@param	c	*fiber.Ctx	fiber上下文
-//	@param	a	any			请求体指针
-//	@return	*Response 错误信息,若为nil 则序列化成功
 func (c *Context) BodyParser(a any) *Response {
-	if err := c.EngineCtx().BodyParser(a); err != nil { // 请求的表单序列化错误
+	if err := c.MuxCtx().BodyParser(a); err != nil { // 请求的表单序列化错误
 		c.Logger().Error(err)
 		return validationErrorResponse(jsoniterUnmarshalErrorToValidationError(err))
 	}
@@ -218,22 +211,7 @@ func (c *Context) HTMLResponse(statusCode int, context string) *Response {
 		Type:        HtmlResponseType,
 		StatusCode:  statusCode,
 		Content:     context,
-		ContentType: fiber.MIMETextHTML,
-	}
-	return c.response
-}
-
-// AdvancedResponse 高级返回值，允许返回一个函数，以实现任意类型的返回 (不校验返回值)
-//
-//	@param	statusCode	int				响应状态码
-//	@param	content		fiber.Handler	钩子函数
-//	@return	resp *Response response返回体
-func (c *Context) AdvancedResponse(statusCode int, content fiber.Handler) *Response {
-	c.response = &Response{
-		Type:        AdvancedResponseType,
-		StatusCode:  statusCode,
-		Content:     content,
-		ContentType: "",
+		ContentType: openapi.MIMETextHTMLCharsetUTF8,
 	}
 	return c.response
 }

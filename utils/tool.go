@@ -150,3 +150,11 @@ func isVowel(c uint8) bool {
 
 	return strings.ContainsRune(vowels, rune(c))
 }
+
+// Ternary 三元运算符
+func Ternary[T any](cond bool, ifTrue, ifFalse T) T {
+	if cond {
+		return ifTrue
+	}
+	return ifFalse
+}

@@ -291,10 +291,10 @@ func (m IPModel) SchemaDesc() string { return "IP信息" }
 
 func (f *FastApiRouter) GetAddress(c *Context) (*IPModel, error) {
 	info := &IPModel{}
-	info.Detail.IPv4Full = c.EngineCtx().Context().RemoteAddr().String()
+	info.Detail.IPv4Full = c.MuxCtx().Context().RemoteAddr().String()
 
-	fiberIP := c.EngineCtx().IP()
-	headerIP := c.EngineCtx().Get("X-Forwarded-For")
+	fiberIP := c.MuxCtx().IP()
+	headerIP := c.MuxCtx().Get("X-Forwarded-For")
 
 	if fiberIP == headerIP || headerIP == "" {
 		info.IP = fiberIP

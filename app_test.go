@@ -117,7 +117,7 @@ func TestFastApi_Description(t *testing.T) {
 	})
 	app.SetDescription("一个简单的FastApi应用程序,在启动app之前首先需要创建并替换ServiceContext,最后调用Run来运行程序")
 
-	s := app.Description()
+	s := app.Config().Description
 	if s == "" {
 		t.Errorf("get description failed: %s", s)
 	} else {
