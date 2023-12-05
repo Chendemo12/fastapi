@@ -189,72 +189,31 @@ func (r *ResponseModelRouter) PostReportMessage(c *Context, form []*Child) ([]*C
 	return form, nil
 }
 
-// ============================================================================
-
-type FastApiRouter struct {
-	BaseRouter
+type EnosDataItem struct {
+	Items []struct {
+		AssetId   string  `json:"assetId"`
+		Localtime string  `json:"localtime,omitempty"`
+		PointId   int     `json:"pointId"`
+		Timestamp float64 `json:"timestamp"`
+		Quality   int     `json:"quality,omitempty"`
+	} `json:"items"`
 }
 
-func (f *FastApiRouter) Prefix() string { return "/api/example" }
-
-// ReturnLinkInfo 反向链路参数
-type ReturnLinkInfo struct {
-	BaseModel
-	ModType     string             `json:"mod_type"`
-	FecRate     string             `json:"fec_rate"`
-	ForwardLink []*ForwardLinkInfo `json:"forward_link" description:"前向链路"`
-	IfFrequency int                `json:"if_frequency" description:"中频频点"`
-	SymbolRate  int                `json:"symbol_rate" description:"符号速率"`
+type EnosData struct {
+	Data   *EnosDataItem `json:"data"`
+	Kind   string        `json:"kind"`
+	Msg    string        `json:"msg,omitempty"`
+	Submsg string        `json:"submsg,omitempty"`
+	Code   int           `json:"code"`
 }
 
-func (m ReturnLinkInfo) SchemaDesc() string {
-	return "反向链路参数，仅当网管代理配置的参数与此匹配时才转发小站消息到NCC"
-}
-
-type ForwardLinkInfo struct {
-	BaseModel
-	ModType     string  `json:"mod_type"`
-	FecRate     string  `json:"fec_rate"`
-	FecType     string  `json:"fec_type"`
-	IfFrequency int     `json:"if_frequency" description:"中频频点"`
-	SymbolRate  int     `json:"symbol_rate" description:"符号速率"`
-	FreqOffset  int     `json:"freq_offset"`
-	TunnelNo    int     `json:"tunnel_no" validate:"required, oneof=1 0"`
-	Power       float32 `json:"power" validate:"required, gte=-100, lte=70"`
-	Reset       bool    `json:"reset"`
-}
-
-func (m *ForwardLinkInfo) SchemaDesc() string { return "前向链路参数" }
-
-func (f *FastApiRouter) SetReturnLinkPost(c *Context, req []*ReturnLinkInfo) (*ForwardLinkInfo, error) {
-	time.Sleep(time.Millisecond * 200) // 休眠200ms,模拟设置硬件时长
-
-	return req[0].ForwardLink[0], nil
-}
-
-type LogonForm struct {
-	Name   string `json:"name" description:"姓名" validate:"required"`
-	Age    string `json:"age" description:"年龄" validate:"required,gte=50"`
-	Father string `json:"father"`
-	Family string `json:"family"`
-}
-
-func (s *LogonForm) SchemaDesc() string { return "简单的登录表单" }
-
-func (f *FastApiRouter) GetTunnels(c *Context, boardId int) ([]Tunnel, error) {
-	return []Tunnel{
-		{
-			No:      boardId + 10,
-			BoardId: boardId,
-		},
-		{
-			No:      boardId + 12,
-			BoardId: boardId,
-		},
-		{
-			No:      boardId + 14,
-			BoardId: boardId,
-		},
+func (r *ResponseModelRouter) GetComplexModel(c *Context) (*EnosData, error) {
+	return &EnosData{
+		Data:   &EnosDataItem{},
+		Kind:   "",
+		Msg:    "",
+		Submsg: "",
+		Code:   0,
 	}, nil
 }
 
@@ -278,7 +237,6 @@ func routeCtxCancel(s *Context) *Response {
 }
 
 type IPModel struct {
-	BaseModel
 	IP     string `json:"ip" description:"IPv4地址"`
 	Detail struct {
 		IPv4     string `json:"IPv4" description:"IPv4地址"`
@@ -289,47 +247,7 @@ type IPModel struct {
 
 func (m IPModel) SchemaDesc() string { return "IP信息" }
 
-func (f *FastApiRouter) GetAddress(c *Context) (*IPModel, error) {
-	info := &IPModel{}
-	info.Detail.IPv4Full = c.MuxCtx().Context().RemoteAddr().String()
-
-	fiberIP := c.MuxCtx().IP()
-	headerIP := c.MuxCtx().Get("X-Forwarded-For")
-
-	if fiberIP == headerIP || headerIP == "" {
-		info.IP = fiberIP
-		info.Detail.IPv4 = fiberIP
-	} else {
-		info.IP = headerIP
-		info.Detail.IPv4 = headerIP
-	}
-
-	c.Logger().Debug("fiber think: ", fiberIP, " X-Forwarded-For: ", headerIP)
-
-	return info, nil
-}
-
-type EnosDataItem struct {
-	Items []struct {
-		AssetId   string  `json:"assetId"`
-		Localtime string  `json:"localtime,omitempty"`
-		PointId   int     `json:"pointId"`
-		Timestamp float64 `json:"timestamp"`
-		Quality   int     `json:"quality,omitempty"`
-	} `json:"items"`
-}
-
-type EnosData struct {
-	BaseModel
-	Data   *EnosDataItem `json:"data"`
-	Kind   string        `json:"kind"`
-	Msg    string        `json:"msg,omitempty"`
-	Submsg string        `json:"submsg,omitempty"`
-	Code   int           `json:"code"`
-}
-
 type DomainRecord struct {
-	BaseModel
 	Timestamp int64 `json:"timestamp" description:"时间戳"`
 	IP        struct {
 		Record *IPModel `json:"record" description:"解析记录"`
@@ -340,14 +258,8 @@ type DomainRecord struct {
 	} `json:"addresses" description:"主机地址"`
 }
 
-func (f *FastApiRouter) PostPushEnOSData(c *Context, req *EnosData) (int, error) {
-	c.Logger().Info("receive enos data: ", req.Kind)
-
-	return 200, nil
-}
-
-func (f *FastApiRouter) GetDomainRecord(c *Context) (*DomainRecord, error) {
-	r := &DomainRecord{
+func (r *ResponseModelRouter) GetMoreComplexModel(c *Context) (*DomainRecord, error) {
+	m := &DomainRecord{
 		Timestamp: 0,
 		Addresses: []struct {
 			Host string `json:"host"`
@@ -359,7 +271,7 @@ func (f *FastApiRouter) GetDomainRecord(c *Context) (*DomainRecord, error) {
 			},
 		},
 	}
-	r.IP.Record = &IPModel{
+	m.IP.Record = &IPModel{
 		IP: "",
 		Detail: struct {
 			IPv4     string `json:"IPv4" description:"IPv4地址"`
@@ -375,20 +287,18 @@ func (f *FastApiRouter) GetDomainRecord(c *Context) (*DomainRecord, error) {
 			"0:0:0:0:0",
 		}),
 	}
-	return r, nil
+	return m, nil
 }
 
 func TestNew(t *testing.T) {
 	svc := NewCtx()
 	app := New(Config{
-		UserSvc:     svc,
 		Version:     "v0.2.0",
 		Description: "",
 		Title:       "FastApi Example",
 		Debug:       true,
 	})
 
-	//app.IncludeRouter(&FastApiRouter{})
 	app.IncludeRouter(&BaseTypeRouter{}).
 		IncludeRouter(&QueryParamRouter{}).
 		IncludeRouter(&RequestBodyRouter{}).

@@ -34,31 +34,17 @@ type Event struct {
 
 // ------------------------------------------------------------------------------------
 
-// UserService 自定义服务依赖信息
-type UserService interface {
-	Config() any // 获取配置文件
-}
-
 // Service FastApi 全局服务依赖信息
 // 此对象由FastApi启动时自动创建，此对象不应被修改，组合和嵌入，
 // 但可通过 setUserSVC 接口设置自定义的上下文信息，并在每一个路由钩子函数中可得
 type Service struct {
 	logger    logger.Iface        `description:"日志对象"`
-	userSVC   UserService         `description:"自定义服务依赖"`
 	ctx       context.Context     `description:"根Context"`
 	validate  *validator.Validate `description:"请求体验证包"`
 	openApi   *openapi.OpenApi    `description:"模型文档"`
 	cancel    context.CancelFunc  `description:"取消函数"`
 	scheduler *cronjob.Scheduler  `description:"定时任务"`
 	addr      string              `description:"绑定地址"`
-}
-
-// 设置一个自定义服务信息
-//
-//	@param	service	UserService	服务依赖
-func (s *Service) setUserSVC(svc UserService) *Service {
-	s.userSVC = svc
-	return s
 }
 
 // 替换日志句柄

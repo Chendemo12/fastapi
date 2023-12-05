@@ -36,19 +36,6 @@ func NewCtx() *ServiceContext {
 	return &ServiceContext{Conf: conf, Logger: logger.NewDefaultLogger()}
 }
 
-func TestContext_UserSVC(t *testing.T) {
-	ctx := &Context{svc: &Service{}}
-	ctx.svc.setUserSVC(NewCtx())
-
-	conf, ok := ctx.UserSVC().Config().(*Configuration)
-	if ok {
-		t.Logf("http host: %s", conf.HTTP.Host)
-		t.Logf("http port: %s", conf.HTTP.Port)
-	} else {
-		t.Errorf("conv to config failed")
-	}
-}
-
 // Clock 定时任务
 type Clock struct {
 	cronjob.Job
@@ -64,7 +51,6 @@ func (c *Clock) Do(_ context.Context) error {
 func TestFastApi_AddCronjob(t *testing.T) {
 	svc := NewCtx()
 	app := New(Config{
-		UserSvc:     svc,
 		Version:     "1.0.0",
 		Description: "",
 		Title:       "FastApi Example",
@@ -84,7 +70,6 @@ func TestFastApi_DumpPID(t *testing.T) {
 	svc := NewCtx()
 	svc.Conf.HTTP.Port = "8089"
 	app := New(Config{
-		UserSvc:     svc,
 		Version:     "1.0.0",
 		Description: "",
 		Title:       "FastApi Example",
@@ -107,9 +92,7 @@ func TestFastApi_DumpPID(t *testing.T) {
 }
 
 func TestFastApi_Description(t *testing.T) {
-	svc := NewCtx()
 	app := New(Config{
-		UserSvc:     svc,
 		Version:     "1.0.0",
 		Description: "",
 		Title:       "FastApi Example",
@@ -128,7 +111,6 @@ func TestFastApi_Description(t *testing.T) {
 func TestFastApi_OnEvent(t *testing.T) {
 	svc := NewCtx()
 	app := New(Config{
-		UserSvc:     svc,
 		Version:     "1.0.0",
 		Description: "",
 		Title:       "FastApi Example",

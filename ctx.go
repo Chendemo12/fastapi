@@ -13,32 +13,39 @@ import (
 
 // Context 路由上下文信息, 也是钩子函数的操作句柄
 //
-// 此结构体内包含了相应体 response 以减少在路由处理过程中的内存分配和复制
+// 此结构体内包含了响应体 Response 以减少在路由处理过程中的内存分配和复制
 //
-//	注意: 当一个路由被执行完毕时, 路由函数 HandlerFunc 中的 Context 将被立刻释放回收, 因此在return之后对
-//
-// Context 的任何引用都是不对的, 若需在return之后监听 Context.DisposableCtx() 则应该显式的复制或派生
+//	注意: 当一个路由被执行完毕时, 路由函数中的 Context 将被立刻释放回收, 因此在return之后对
+//	Context 的任何引用都是不对的, 若需在return之后监听 Context.DisposableCtx() 则应该显式的复制或派生
 type Context struct {
 	PathFields  map[string]string  `json:"path_fields,omitempty"`  // 路径参数
 	QueryFields map[string]string  `json:"query_fields,omitempty"` // 查询参数
 	svc         *Service           `description:"flask-go service"`
 	muxCtx      MuxCtx             `description:"路由器Context"`
-	route       RouteIface         `description:"用于请求体和响应体校验"`
 	routeCtx    context.Context    `description:"获取针对此次请求的唯一context"`
 	routeCancel context.CancelFunc `description:"获取针对此次请求的唯一取消函数"`
 	response    *Response          `description:"返回值,以减少函数间复制的开销"`
 }
 
 func (c *Context) Deadline() (deadline time.Time, ok bool) {
-	return c.routeCtx.Deadline()
+	if c.routeCtx != nil {
+		return c.routeCtx.Deadline()
+	}
+	return time.Time{}, false
 }
 
 func (c *Context) Err() error {
-	return c.routeCtx.Err()
+	if c.routeCtx != nil {
+		return c.routeCtx.Err()
+	}
+	return nil
 }
 
 func (c *Context) Value(key any) any {
-	return c.routeCtx.Value(key)
+	if c.routeCtx != nil {
+		return c.routeCtx.Value(key)
+	}
+	return nil
 }
 
 // Service 获取 FastApi 的 Service 服务依赖信息
@@ -49,10 +56,8 @@ func (c *Context) Service() *Service { return c.svc }
 // MuxCtx 获取web引擎的上下文
 func (c *Context) MuxCtx() MuxCtx { return c.muxCtx }
 
-// UserSVC 获取自定义服务依赖
-func (c *Context) UserSVC() UserService { return c.svc.userSVC }
-
 // DisposableCtx 针对此次请求的唯一context, 当路由执行完毕返回时,将会自动关闭
+// 为每一个请求创建一个新的 context.Context 其代价是非常高的，因此允许通过设置关闭此功能
 //
 //	@return	context.Context 唯一context
 func (c *Context) DisposableCtx() context.Context { return c.routeCtx }
@@ -123,8 +128,8 @@ func (c *Context) ShouldBindJSON(stc any) *Response {
 	if resp := c.Validate(stc, whereClientError); resp != nil {
 		return resp
 	}
-	return nil
 
+	return nil
 }
 
 // StringResponse 返回值为字符串对象 (校验返回值)

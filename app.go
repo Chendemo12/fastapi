@@ -42,14 +42,15 @@ type FastApi struct {
 }
 
 type Profile struct {
-	Host            string        `json:"host,omitempty" description:"运行地址"`
-	Port            string        `json:"port,omitempty" description:"运行端口"`
-	Title           string        `json:"title,omitempty" description:"程序名,同时作为日志文件名"`
-	Version         string        `json:"version,omitempty" description:"程序版本号"`
-	Description     string        `json:"description,omitempty" description:"程序描述"`
-	Debug           bool          `json:"debug,omitempty" description:"调试开关"`
-	SwaggerDisabled bool          `json:"swaggerDisabled,omitempty" description:"禁用自动文档"`
-	ShutdownTimeout time.Duration `json:"shutdownTimeout,omitempty" description:"平滑关机,单位秒"`
+	Host                               string        `json:"host,omitempty" description:"运行地址"`
+	Port                               string        `json:"port,omitempty" description:"运行端口"`
+	Title                              string        `json:"title,omitempty" description:"程序名,同时作为日志文件名"`
+	Version                            string        `json:"version,omitempty" description:"程序版本号"`
+	Description                        string        `json:"description,omitempty" description:"程序描述"`
+	Debug                              bool          `json:"debug,omitempty" description:"调试开关"`
+	SwaggerDisabled                    bool          `json:"swaggerDisabled,omitempty" description:"禁用自动文档"`
+	ShutdownTimeout                    time.Duration `json:"shutdownTimeout,omitempty" description:"平滑关机,单位秒"`
+	ContextAutomaticDerivationDisabled bool          `json:"contextAutomaticDerivationDisabled,omitempty" description:"禁用context自动派生"`
 }
 
 func (f *FastApi) initService() *FastApi {
@@ -71,26 +72,18 @@ func (f *FastApi) initService() *FastApi {
 			return c
 		},
 	}
-	f.service.setLogger(f.service.Logger())
 
 	return f
 }
 
-func (f *FastApi) initMux() *FastApi {
-	if f.mux == nil {
-		panic("mux is not initialized")
-	}
-	return f
-}
-
-// 初始化路由
+// 初始化路由, 必须在路由添加完成，swagger注册之前调用
 func (f *FastApi) initRoutes() *FastApi {
-	// 反射路由数据，必须在路由添加完成，swagger注册之前调用
 	var err error
+	// 解析路由组路由
 	for _, group := range f.groupRouters {
 		err = group.Init()
 		if err != nil {
-			panic(fmt.Errorf("swagger created failld, %v", err))
+			panic(fmt.Errorf("group-router: '%s' created failld, %v", group.String(), err))
 		}
 	}
 
@@ -100,35 +93,6 @@ func (f *FastApi) initRoutes() *FastApi {
 	}
 
 	// 构造参数的验证器
-	f.scanRouteBinders()
-
-	// 挂载路由到路由器上
-	for _, group := range f.groupRouters {
-		for _, route := range group.Routes() {
-			err = f.mux.BindRoute(route.Swagger().Method, route.Swagger().Url, f.Handler)
-			if err != nil {
-				// 此时日志已初始化完毕
-				f.Service().Logger().Error(fmt.Sprintf(
-					"route: '%s:%s' bind failed, %v", route.Swagger().Method, route.Swagger().Url, err,
-				))
-			}
-		}
-	}
-
-	for _, route := range f.genericRoutes {
-		err = f.mux.BindRoute(route.Swagger().Method, route.Swagger().Url, f.Handler)
-		if err != nil {
-			// 此时日志已初始化完毕
-			f.Service().Logger().Error(fmt.Sprintf(
-				"route: '%s:%s' bind failed, %v", route.Swagger().Method, route.Swagger().Url, err,
-			))
-		}
-	}
-
-	return f
-}
-
-func (f *FastApi) scanRouteBinders() *FastApi {
 	// TODO: not finished
 	for _, group := range f.groupRouters {
 		for index, route := range group.Routes() {
@@ -146,14 +110,15 @@ func (f *FastApi) scanRouteBinders() *FastApi {
 	return f
 }
 
+// 记录全部的路由对象, 包含路由组路由和泛型路由
 func (f *FastApi) initFinder() *FastApi {
-	// 记录全部的路由对象, 包含路由组路由和泛型路由
 	routes := make([]RouteIface, 0)
 	for _, group := range f.groupRouters {
 		for _, r := range group.Routes() {
 			routes = append(routes, r)
 		}
 	}
+
 	// 处理并记录泛型路由
 	for _, r := range f.genericRoutes {
 		routes = append(routes, r)
@@ -175,19 +140,29 @@ func (f *FastApi) initSwagger() *FastApi {
 	return f
 }
 
+func (f *FastApi) initMux() *FastApi {
+	if f.mux == nil {
+		panic("mux is not initialized")
+	}
+
+	f.Wrap(f.mux)
+	return f
+}
+
 // 初始化FastApi,并完成服务依赖的建立
 // FastApi启动前，必须显式的初始化FastApi的基本配置，若初始化中发生异常则panic
 func (f *FastApi) initialize() *FastApi {
 	helper.SetJsonEngine(jsoniter.ConfigCompatibleWithStandardLibrary)
 
 	f.initService()
-	f.initMux()
 	f.initRoutes()
 	f.initFinder()
 	f.initSwagger()
+	f.initMux()
 
-	f.service.Logger().Debug("Run at: " +
-		utils.Ternary[string](f.conf.Debug, "Development", "Production"))
+	f.service.Logger().Debug(
+		"Run at: " + utils.Ternary[string](f.conf.Debug, "Development", "Production"),
+	)
 	return f
 }
 
@@ -196,8 +171,10 @@ func (f *FastApi) acquireCtx(ctx MuxCtx) *Context {
 	c := f.pool.Get().(*Context)
 	// 初始化各种参数
 	c.muxCtx = ctx
-	// TODO Future: 允许不启用此功能
-	c.routeCtx, c.routeCancel = context.WithCancel(f.service.ctx) // 为每一个路由创建一个独立的ctx
+	// 为每一个路由创建一个独立的ctx, 允许不启用此功能
+	if !f.conf.ContextAutomaticDerivationDisabled {
+		c.routeCtx, c.routeCancel = context.WithCancel(f.service.ctx)
+	}
 	c.PathFields = map[string]string{}
 	c.QueryFields = map[string]string{}
 
@@ -207,7 +184,6 @@ func (f *FastApi) acquireCtx(ctx MuxCtx) *Context {
 // 释放并归还 Context
 func (f *FastApi) releaseCtx(ctx *Context) {
 	ctx.muxCtx = nil
-	ctx.route = nil
 	ctx.routeCtx = nil
 	ctx.routeCancel = nil
 	ctx.response = nil // 释放内存
@@ -235,20 +211,20 @@ func (f *FastApi) resetRunMode(md bool) {
 //  2. 之后会校验并绑定路由参数（包含路径参数和查询参数）是否正确，如果错误则直接返回422错误，反之会继续序列化并绑定请求体（如果存在）序列化成功之后会校验请求参数正确性，
 //  3. 校验通过后会调用 RouteIface.Call 并将返回值绑定在 Context 内的 Response 上
 //  4. 校验返回值，并返回422或将返回值写入到实际的 response
-func (f *FastApi) Handler(ctx MuxCtx) *Response {
+func (f *FastApi) Handler(ctx MuxCtx) error {
 	route, exist := f.finder.Get(openapi.CreateRouteIdentify(ctx.Method(), ctx.Path()))
 	if !exist {
+		// 正常来说，通过 Wrapper 注册的路由，不会走到这个分支
 		return nil
 	}
 
-	// 发现定义的路由信息
+	// 找到定义的路由信息
 	wrapperCtx := f.acquireCtx(ctx)
-	wrapperCtx.route = route
 	defer f.releaseCtx(wrapperCtx)
 
 	// TODO Future: 校验前中间件
-	// 路由前的校验
-	wrapperCtx.workflow()
+	// 路由前的校验,此校验会就地修改 Context.Response
+	wrapperCtx.workflow(route)
 
 	if wrapperCtx.response != nil {
 		// 校验工作流不通过, 中断执行
@@ -260,10 +236,43 @@ func (f *FastApi) Handler(ctx MuxCtx) *Response {
 	//
 	// 全部校验完成，执行处理函数并获取返回值
 	route.Call(wrapperCtx.response) // TODO: call method
-	// 路由返回值校验
-	wrapperCtx.responseBodyValidate() // TODO: 修改验证方式，由 ModelBindMethod 实现
-	return wrapperCtx.write()         // 返回消息流
+
+	// 路由返回值校验, 校验不通过则会就地修改 Response
+	wrapperCtx.responseValidate(route)
+
+	return wrapperCtx.write() // 返回消息流
 }
+
+// Wrap 绑定数据到路由器上
+func (f *FastApi) Wrap(mux EngineMux) *FastApi {
+	var err error
+	// 挂载路由到路由器上
+	for _, group := range f.groupRouters {
+		for _, route := range group.Routes() {
+			err = mux.BindRoute(route.Swagger().Method, route.Swagger().Url, f.Handler)
+			if err != nil {
+				// 此时日志已初始化完毕
+				f.Service().Logger().Error(fmt.Sprintf(
+					"route: '%s:%s' bind failed, %v", route.Swagger().Method, route.Swagger().Url, err,
+				))
+			}
+		}
+	}
+
+	for _, route := range f.genericRoutes {
+		err = mux.BindRoute(route.Swagger().Method, route.Swagger().Url, f.Handler)
+		if err != nil {
+			// 此时日志已初始化完毕
+			f.Service().Logger().Error(fmt.Sprintf(
+				"route: '%s:%s' bind failed, %v", route.Swagger().Method, route.Swagger().Url, err,
+			))
+		}
+	}
+
+	return f
+}
+
+// ================================ Api ================================
 
 func (f *FastApi) Config() *Profile { return f.conf }
 
@@ -297,14 +306,6 @@ func (f *FastApi) OnEvent(kind EventKind, fc func()) *FastApi {
 		})
 	default:
 	}
-	return f
-}
-
-// SetUserSVC 设置一个自定义服务依赖
-//
-//	@param	service	UserService	服务依赖
-func (f *FastApi) SetUserSVC(svc UserService) *FastApi {
-	f.service.setUserSVC(svc)
 	return f
 }
 
@@ -460,7 +461,6 @@ func (f *FastApi) Run(host, port string) {
 }
 
 type Config struct {
-	UserSvc               UserService  `json:"-" description:"自定义服务依赖"`
 	Logger                logger.Iface `json:"-" description:"日志"`
 	Version               string       `json:"version,omitempty" description:"APP版本号"`
 	Description           string       `json:"description,omitempty" description:"APP描述"`
@@ -475,7 +475,6 @@ func cleanConfig(confs ...Config) Config {
 		Title:                 "FastAPI",
 		Version:               "1.0.0",
 		Debug:                 false,
-		UserSvc:               nil,
 		Description:           "FastAPI Application",
 		Logger:                nil,
 		ShutdownTimeout:       5,
@@ -492,7 +491,6 @@ func cleanConfig(confs ...Config) Config {
 			conf.Description = confs[0].Description
 		}
 		conf.Debug = confs[0].Debug
-		conf.UserSvc = confs[0].UserSvc
 		conf.Logger = confs[0].Logger
 		conf.ShutdownTimeout = confs[0].ShutdownTimeout
 		conf.DisableSwagAutoCreate = confs[0].DisableSwagAutoCreate
@@ -525,7 +523,7 @@ func NewWrapper(c ...Config) *Wrapper {
 func Create(c Config) *FastApi {
 	conf := cleanConfig(c)
 
-	sc := &Service{userSVC: conf.UserSvc, validate: validator.New()}
+	sc := &Service{validate: validator.New()}
 	sc.ctx, sc.cancel = context.WithCancel(context.Background())
 	sc.scheduler = cronjob.NewScheduler(sc.ctx, nil)
 
@@ -548,9 +546,7 @@ func Create(c Config) *FastApi {
 	if conf.Description != "" {
 		app.SetDescription(conf.Description)
 	}
-	if conf.UserSvc != nil {
-		app.SetUserSVC(conf.UserSvc)
-	}
+
 	if conf.Logger != nil {
 		app.SetLogger(conf.Logger)
 	}

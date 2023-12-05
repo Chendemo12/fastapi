@@ -2,27 +2,15 @@ package fastapi
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/Chendemo12/fastapi/utils"
-	"io"
 	"net/http"
 	"reflect"
 	"strings"
 
 	"github.com/Chendemo12/fastapi-tool/helper"
 	"github.com/Chendemo12/fastapi/openapi"
-	"github.com/gofiber/fiber/v2"
-	fiberu "github.com/gofiber/fiber/v2/utils"
 )
-
-// HandlerFunc 路由处理函数
-type HandlerFunc = func(c *Context) *Response
-
-// Deprecated:RouteModelValidateHandlerFunc 返回值校验方法
-//
-//	@param	resp	any					响应体
-//	@param	meta	*openapi.BaseModelMeta	模型元数据
-//	@return	*Response 响应体
-type RouteModelValidateHandlerFunc func(resp any, meta *openapi.BaseModelMeta) *Response
 
 // 将jsoniter 的反序列化错误转换成 接口错误类型
 func jsoniterUnmarshalErrorToValidationError(err error) *openapi.ValidationError {
@@ -60,26 +48,10 @@ func jsoniterUnmarshalErrorToValidationError(err error) *openapi.ValidationError
 	return ve
 }
 
-// 查找注册的路由，校验的基础
-func (c *Context) findRoute() RouteIface {
-	// TODO Future:
-	// Route().Path 获取注册的路径，
-	id := openapi.CreateRouteIdentify(c.ec.Method(), c.ec.Route().Path)
-	item, ok := wrapper.finder.Get(id)
-	if !ok {
-		return nil
-	}
-	route, ok := item.(*GroupRoute)
-	if !ok {
-		return nil
-	}
-	return route
-}
-
 // 路径参数校验
 //
 //	@return	*Response 校验结果, 若为nil则校验通过
-func (c *Context) pathParamsValidate() {
+func (c *Context) pathParamsValidate(route RouteIface) {
 	// 路径参数校验
 	//for _, p := range c.route.PathFields {
 	//	value := c.ec.Params(p.SchemaTitle())
@@ -100,9 +72,9 @@ func (c *Context) pathParamsValidate() {
 // 查询参数校验
 //
 //	@return	*Response 校验结果, 若为nil则校验通过
-func (c *Context) queryParamsValidate() {
-	for _, q := range c.route.Swagger().QueryFields {
-		value := c.ec.Query(q.SchemaPkg())
+func (c *Context) queryParamsValidate(route RouteIface) {
+	for _, q := range route.Swagger().QueryFields {
+		value := c.muxCtx.Query(q.SchemaPkg())
 		if q.IsRequired() && value == "" {
 			// 但是此查询参数设置为必选
 			c.response = validationErrorResponse(&openapi.ValidationError{
@@ -119,7 +91,7 @@ func (c *Context) queryParamsValidate() {
 // 请求体校验
 //
 //	@return	*Response 校验结果, 若为nil则校验通过
-func (c *Context) requestBodyValidate() {
+func (c *Context) requestBodyValidate(route RouteIface) {
 	//resp = requestBodyMarshal(userSVC, route) // 请求体序列化
 	//if resp != nil {
 	//	return c.Status(resp.StatusCode).JSON(resp.Content)
@@ -132,16 +104,15 @@ func (c *Context) requestBodyValidate() {
 }
 
 // 执行用户自定义钩子函数前的工作流
-func (c *Context) workflow() {
-	links := []func(){
-		// 路径参数和查询参数校验
-		c.pathParamsValidate,  // 路由参数校验
+func (c *Context) workflow(route RouteIface) {
+	links := []func(route RouteIface){
+		c.pathParamsValidate,  // 路径参数校验
 		c.queryParamsValidate, // 查询参数校验
 		c.requestBodyValidate, // 请求体自动校验
 	}
 
 	for _, link := range links {
-		link()
+		link(route)
 		if c.response != nil {
 			return // 当任意环节校验失败时,即终止下文环节
 		}
@@ -153,7 +124,8 @@ func (c *Context) workflow() {
 // 返回值校验root入口
 //
 //	@return	*Response 校验结果, 若校验不通过则修改 Response.StatusCode 和 Response.Content
-func (c *Context) responseBodyValidate() {
+func (c *Context) responseValidate(route RouteIface) {
+	// TODO: 修改验证方式，由 ModelBindMethod 实现
 	// 仅校验 JSONResponse 和 StringResponse
 	if c.response.Type != JsonResponseType && c.response.Type != StringResponseType {
 		return
@@ -173,67 +145,17 @@ func (c *Context) responseBodyValidate() {
 // ----------------------------------------	路由后的响应体校验工作 ----------------------------------------
 
 // 写入响应体到响应字节流
-func (c *Context) write() *Response {
+func (c *Context) write() error {
 	defer c.routeCancel() // 当路由执行完毕时立刻关闭
-	if c.response == nil {
-		// 自定义函数无任何返回值
-		return c.ec.Status(fiber.StatusOK).SendString(fiberu.StatusMessage(fiber.StatusOK))
+
+	err := c.muxCtx.Write(c.response)
+	if err != nil {
+		c.Logger().Warn(fmt.Sprintf(
+			"write response failed, method: '%s', url: '%s', statusCode: '%d', err: %v",
+			c.muxCtx.Method(), c.muxCtx.Path(), c.response.StatusCode, err,
+		))
 	}
-
-	// 自定义函数存在返回值
-	c.ec.Status(c.response.StatusCode) // 设置一下响应头
-
-	if c.response.StatusCode == http.StatusUnprocessableEntity {
-		return c.ec.JSON(c.response.Content)
-	}
-
-	switch c.response.Type {
-
-	case JsonResponseType: // Json类型
-		return c.ec.JSON(c.response.Content)
-
-	case StringResponseType:
-		return c.ec.SendString(c.response.Content.(string))
-
-	case HtmlResponseType: // 返回HTML页面
-		// 设置返回类型
-		c.ec.Set(fiber.HeaderContentType, c.response.ContentType)
-		return c.ec.SendString(c.response.Content.(string))
-
-	case ErrResponseType:
-		return c.ec.JSON(c.response.Content)
-
-	case StreamResponseType: // 返回字节流
-		return c.ec.SendStream(c.response.Content.(io.Reader))
-
-	case FileResponseType: // 返回一个文件
-		return c.ec.Download(c.response.Content.(string))
-
-	case AdvancedResponseType:
-		return c.response.Content.(fiber.Handler)(c.ec)
-
-	case CustomResponseType:
-		c.ec.Set(fiber.HeaderContentType, c.response.ContentType)
-		switch c.response.ContentType {
-
-		case fiber.MIMETextHTML, fiber.MIMETextHTMLCharsetUTF8:
-			return c.ec.SendString(c.response.Content.(string))
-		case fiber.MIMEApplicationJSON, fiber.MIMEApplicationJSONCharsetUTF8:
-			return c.ec.JSON(c.response.Content)
-		case fiber.MIMETextXML, fiber.MIMEApplicationXML, fiber.MIMETextXMLCharsetUTF8, fiber.MIMEApplicationXMLCharsetUTF8:
-			return c.ec.XML(c.response.Content)
-		case fiber.MIMETextPlain, fiber.MIMETextPlainCharsetUTF8:
-			return c.ec.SendString(c.response.Content.(string))
-		//case fiber.MIMETextJavaScript, fiber.MIMETextJavaScriptCharsetUTF8:
-		//case fiber.MIMEApplicationForm:
-		//case fiber.MIMEOctetStream:
-		//case fiber.MIMEMultipartForm:
-		default:
-			return c.ec.JSON(c.response.Content)
-		}
-	default:
-		return c.ec.JSON(c.response.Content)
-	}
+	return err
 }
 
 // 未定义返回值或关闭了返回值校验

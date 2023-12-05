@@ -2,8 +2,12 @@ package fiberEngine
 
 import (
 	"fmt"
+	"github.com/Chendemo12/fastapi"
 	"github.com/Chendemo12/fastapi-tool/helper"
 	"github.com/gofiber/fiber/v2"
+	fiberu "github.com/gofiber/fiber/v2/utils"
+	"io"
+	"net/http"
 	"runtime"
 )
 
@@ -38,6 +42,74 @@ func (f *FiberMux) SetErrorHandler(handler any) {
 func (f *FiberMux) SetRecoverHandler(handler any) {
 	//TODO implement me
 	panic("implement me")
+}
+
+func (f *FiberMux) Handle() {}
+
+type FiberContext struct {
+	c fiber.Ctx
+}
+
+func (f *FiberContext) Write(data *fastapi.Response) error {
+	if data == nil {
+		// 自定义函数无任何返回值
+		return c.muxCtx.Status(fiber.StatusOK).SendString(fiberu.StatusMessage(fiber.StatusOK))
+	}
+
+	// 自定义函数存在返回值
+	c.ec.Status(c.response.StatusCode) // 设置一下响应头
+
+	if c.response.StatusCode == http.StatusUnprocessableEntity {
+		return c.ec.JSON(c.response.Content)
+	}
+
+	switch c.response.Type {
+
+	case JsonResponseType: // Json类型
+		return c.ec.JSON(c.response.Content)
+
+	case StringResponseType:
+		return c.ec.SendString(c.response.Content.(string))
+
+	case HtmlResponseType: // 返回HTML页面
+		// 设置返回类型
+		c.ec.Set(fiber.HeaderContentType, c.response.ContentType)
+		return c.ec.SendString(c.response.Content.(string))
+
+	case ErrResponseType:
+		return c.ec.JSON(c.response.Content)
+
+	case StreamResponseType: // 返回字节流
+		return c.ec.SendStream(c.response.Content.(io.Reader))
+
+	case FileResponseType: // 返回一个文件
+		return c.ec.Download(c.response.Content.(string))
+
+	case AdvancedResponseType:
+		return c.response.Content.(fiber.Handler)(c.ec)
+
+	case CustomResponseType:
+		c.ec.Set(fiber.HeaderContentType, c.response.ContentType)
+		switch c.response.ContentType {
+
+		case fiber.MIMETextHTML, fiber.MIMETextHTMLCharsetUTF8:
+			return c.ec.SendString(c.response.Content.(string))
+		case fiber.MIMEApplicationJSON, fiber.MIMEApplicationJSONCharsetUTF8:
+			return c.ec.JSON(c.response.Content)
+		case fiber.MIMETextXML, fiber.MIMEApplicationXML, fiber.MIMETextXMLCharsetUTF8, fiber.MIMEApplicationXMLCharsetUTF8:
+			return c.ec.XML(c.response.Content)
+		case fiber.MIMETextPlain, fiber.MIMETextPlainCharsetUTF8:
+			return c.ec.SendString(c.response.Content.(string))
+		//case fiber.MIMETextJavaScript, fiber.MIMETextJavaScriptCharsetUTF8:
+		//case fiber.MIMEApplicationForm:
+		//case fiber.MIMEOctetStream:
+		//case fiber.MIMEMultipartForm:
+		default:
+			return c.ec.JSON(c.response.Content)
+		}
+	default:
+		return c.ec.JSON(c.response.Content)
+	}
 }
 
 func New(title, version string) *FiberMux { return &FiberMux{} }

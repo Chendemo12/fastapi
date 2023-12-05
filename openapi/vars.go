@@ -19,7 +19,6 @@ type dict map[string]any
 
 // ValidationError 参数校验错误
 type ValidationError struct {
-	ModelSchema
 	Ctx  map[string]any `json:"service" description:"Service"`
 	Msg  string         `json:"msg" description:"Message" binding:"required"`
 	Type string         `json:"type" description:"Error Type" binding:"required"`
@@ -68,7 +67,6 @@ func (v *ValidationError) Error() string {
 }
 
 type HTTPValidationError struct {
-	ModelSchema
 	Detail []*ValidationError `json:"detail" description:"Detail" binding:"required"`
 }
 

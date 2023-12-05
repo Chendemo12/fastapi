@@ -147,7 +147,7 @@ func (r *GroupRouterMeta) Init() (err error) {
 	return
 }
 
-func (r *GroupRouterMeta) Id() string { return r.pkg }
+func (r *GroupRouterMeta) String() string { return r.pkg }
 
 func (r *GroupRouterMeta) Scan() (err error) {
 	obj := reflect.TypeOf(r.router)
