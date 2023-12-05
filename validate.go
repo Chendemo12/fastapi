@@ -1,10 +1,13 @@
 package fastapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/Chendemo12/fastapi/openapi"
+	"github.com/Chendemo12/fastapi/utils"
+	"net/http"
 	"reflect"
 )
 
@@ -173,4 +176,75 @@ func SignedIntegerMaximumV[T SignedInteger](minimum T, eq bool) func(obj any) er
 
 		return nil
 	}
+}
+
+func boolResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
+	rt := utils.ReflectObjectType(content)
+	if rt.Kind() != reflect.Bool {
+		// 校验不通过, 修改 Response.StatusCode 和 Response.Content
+		return modelCannotBeBoolResponse(meta.Name())
+	}
+
+	return nil
+}
+
+func stringResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
+	// TODO: 对于字符串类型，减少内存复制
+	if meta.SchemaType() != openapi.StringType {
+		return modelCannotBeStringResponse(meta.Name())
+	}
+
+	return nil
+}
+
+func integerResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
+	rt := utils.ReflectObjectType(content)
+	if openapi.ReflectKindToType(rt.Kind()) != openapi.IntegerType {
+		return modelCannotBeIntegerResponse(meta.Name())
+	}
+
+	return nil
+}
+
+func numberResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
+	rt := utils.ReflectObjectType(content)
+	if openapi.ReflectKindToType(rt.Kind()) != openapi.NumberType {
+		return modelCannotBeNumberResponse(meta.Name())
+	}
+
+	return nil
+}
+
+func arrayResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
+	rt := utils.ReflectObjectType(content)
+	if openapi.ReflectKindToType(rt.Kind()) != openapi.ArrayType {
+		// TODO: notImplemented 暂不校验子元素
+		return modelCannotBeArrayResponse("Array")
+	} else {
+		if rt.Elem().Kind() == reflect.Uint8 { // 对于字节流对象, 覆盖以响应正确的数值
+			return &Response{
+				StatusCode:  http.StatusOK,
+				Content:     bytes.NewReader(content.([]byte)),
+				Type:        StreamResponseType,
+				ContentType: openapi.MIMETextPlain,
+			}
+		}
+	}
+
+	return nil
+}
+
+func structResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
+	// 类型校验
+	//rt := openapi.ReflectObjectType(content)
+	//if rt.Kind() != reflect.Struct && meta.String() != rt.String() {
+	//	return objectModelNotMatchResponse(meta.String(), rt.String())
+	//}
+	// 字段类型校验, 字段的值需符合tag要求
+	resp := wrapper.service.Validate(content, whereServerError)
+	if resp != nil {
+		return resp
+	}
+
+	return nil
 }

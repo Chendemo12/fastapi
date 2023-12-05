@@ -1,11 +1,8 @@
 package fastapi
 
 import (
-	"bytes"
 	"fmt"
-	"github.com/Chendemo12/fastapi/utils"
 	"net/http"
-	"reflect"
 	"strings"
 
 	"github.com/Chendemo12/fastapi-tool/helper"
@@ -23,7 +20,7 @@ func jsoniterUnmarshalErrorToValidationError(err error) *openapi.ValidationError
 	//
 	// 	err.Error():
 	//
-	// 	main.SimpleForm.name: ReadString: expects " or n, but found 2, error found in #10 byte of ...| "name": 23,
+	// 	main.SimpleForm.name: ReadString: expmuxCtxts " or n, but found 2, error found in #10 byte of ...| "name": 23,
 	//		"a|..., bigger context ...|{
 	//		"name": 23,
 	//		"age": "23",
@@ -54,7 +51,7 @@ func jsoniterUnmarshalErrorToValidationError(err error) *openapi.ValidationError
 func (c *Context) pathParamsValidate(route RouteIface) {
 	// 路径参数校验
 	//for _, p := range c.route.PathFields {
-	//	value := c.ec.Params(p.SchemaTitle())
+	//	value := c.muxCtx.Params(p.SchemaTitle())
 	//	if p.IsRequired() && value == "" {
 	//		// 不存在此路径参数, 但是此路径参数设置为必选
 	//		c.response = validationErrorResponse(&openapi.ValidationError{
@@ -146,9 +143,74 @@ func (c *Context) responseValidate(route RouteIface) {
 
 // 写入响应体到响应字节流
 func (c *Context) write() error {
-	defer c.routeCancel() // 当路由执行完毕时立刻关闭
+	defer func() {
+		if c.routeCancel != nil {
+			c.routeCancel() // 当路由执行完毕时立刻关闭
+		}
+	}()
 
-	err := c.muxCtx.Write(c.response)
+	if c.response == nil {
+		// 自定义函数无任何返回值
+		return c.muxCtx.SendString("OK")
+	}
+
+	// 自定义函数存在返回值
+	c.muxCtx.Status(c.response.StatusCode) // 设置一下响应头
+
+	if c.response.StatusCode == http.StatusUnprocessableEntity {
+		// 校验不通过，无需进一步解析
+		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
+	}
+
+	switch c.response.Type {
+
+	case JsonResponseType: // Json类型
+		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
+
+	case StringResponseType:
+		return c.muxCtx.SendString(c.response.Content.(string))
+
+	case HtmlResponseType: // 返回HTML页面
+		// 设置返回类型
+		c.muxCtx.SetHeader(openapi.HeaderContentType, c.response.ContentType)
+		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content.(string))
+
+	case ErrResponseType:
+		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
+
+	case StreamResponseType: // 返回字节流
+		_, err := c.muxCtx.Write(c.response.Content.([]byte))
+		return err
+
+	case FileResponseType: // 返回一个文件
+		//return c.muxCtx.Download(c.response.Content.(string))
+
+	case AdvancedResponseType:
+		//return c.response.Content.(openapi.Handler)(c.muxCtx)
+
+	case CustomResponseType:
+		c.muxCtx.SetHeader(openapi.HeaderContentType, c.response.ContentType)
+		switch c.response.ContentType {
+
+		case openapi.MIMETextHTML, openapi.MIMETextHTMLCharsetUTF8:
+			return c.muxCtx.SendString(c.response.Content.(string))
+		case openapi.MIMEApplicationJSON, openapi.MIMEApplicationJSONCharsetUTF8:
+			return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
+		case openapi.MIMETextXML, openapi.MIMEApplicationXML, openapi.MIMETextXMLCharsetUTF8, openapi.MIMEApplicationXMLCharsetUTF8:
+			return c.muxCtx.XML(c.response.Content)
+		case openapi.MIMETextPlain, openapi.MIMETextPlainCharsetUTF8:
+			return c.muxCtx.SendString(c.response.Content.(string))
+		//case openapi.MIMETextJavaScript, openapi.MIMETextJavaScriptCharsetUTF8:
+		//case openapi.MIMEApplicationForm:
+		//case openapi.MIMEOctetStream:
+		//case openapi.MIMEMultipartForm:
+		default:
+			return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
+		}
+	default:
+		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
+	}
+	err := c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
 	if err != nil {
 		c.Logger().Warn(fmt.Sprintf(
 			"write response failed, method: '%s', url: '%s', statusCode: '%d', err: %v",
@@ -156,80 +218,4 @@ func (c *Context) write() error {
 		))
 	}
 	return err
-}
-
-// 未定义返回值或关闭了返回值校验
-func routeModelDoNothing(content any, meta *openapi.BaseModelMeta) *Response {
-	return nil
-}
-
-func boolResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
-	rt := utils.ReflectObjectType(content)
-	if rt.Kind() != reflect.Bool {
-		// 校验不通过, 修改 Response.StatusCode 和 Response.Content
-		return modelCannotBeBoolResponse(meta.Name())
-	}
-
-	return nil
-}
-
-func stringResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
-	// TODO: 对于字符串类型，减少内存复制
-	if meta.SchemaType() != openapi.StringType {
-		return modelCannotBeStringResponse(meta.Name())
-	}
-
-	return nil
-}
-
-func integerResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
-	rt := utils.ReflectObjectType(content)
-	if openapi.ReflectKindToType(rt.Kind()) != openapi.IntegerType {
-		return modelCannotBeIntegerResponse(meta.Name())
-	}
-
-	return nil
-}
-
-func numberResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
-	rt := utils.ReflectObjectType(content)
-	if openapi.ReflectKindToType(rt.Kind()) != openapi.NumberType {
-		return modelCannotBeNumberResponse(meta.Name())
-	}
-
-	return nil
-}
-
-func arrayResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
-	rt := utils.ReflectObjectType(content)
-	if openapi.ReflectKindToType(rt.Kind()) != openapi.ArrayType {
-		// TODO: notImplemented 暂不校验子元素
-		return modelCannotBeArrayResponse("Array")
-	} else {
-		if rt.Elem().Kind() == reflect.Uint8 { // 对于字节流对象, 覆盖以响应正确的数值
-			return &Response{
-				StatusCode:  http.StatusOK,
-				Content:     bytes.NewReader(content.([]byte)),
-				Type:        StreamResponseType,
-				ContentType: openapi.MIMETextPlain,
-			}
-		}
-	}
-
-	return nil
-}
-
-func structResponseValidation(content any, meta *openapi.BaseModelMeta) *Response {
-	// 类型校验
-	//rt := openapi.ReflectObjectType(content)
-	//if rt.Kind() != reflect.Struct && meta.String() != rt.String() {
-	//	return objectModelNotMatchResponse(meta.String(), rt.String())
-	//}
-	// 字段类型校验, 字段的值需符合tag要求
-	resp := wrapper.service.Validate(content, whereServerError)
-	if resp != nil {
-		return resp
-	}
-
-	return nil
 }

@@ -357,16 +357,20 @@ func (f *FastApi) ActivateHotSwitch(s ...int) *FastApi {
 	signal.Notify(swt, syscall.Signal(st))
 
 	go func() {
-		for range swt {
-			if f.conf.Debug {
-				f.resetRunMode(false)
-			} else {
-				f.resetRunMode(true)
+		for {
+			select {
+			case <-f.Service().Done():
+				return
+			case <-swt:
+				if f.conf.Debug {
+					f.resetRunMode(false)
+				} else {
+					f.resetRunMode(true)
+				}
+				f.service.Logger().Debug(
+					"Hot-switch received, convert to: ", utils.Ternary[string](f.conf.Debug, "Development", "Production"),
+				)
 			}
-			f.service.Logger().Debug(
-				"Hot-switch received, convert to:",
-				utils.Ternary[string](f.conf.Debug, "Development", "Production"),
-			)
 		}
 	}()
 
@@ -411,14 +415,14 @@ func (f *FastApi) Shutdown() {
 	}
 
 	go func() {
-		err := f.mux.Shutdown()
+		err := f.mux.ShutdownWithTimeout(f.conf.ShutdownTimeout)
 		if err != nil {
 			fmt.Println(err.Error())
 		}
 	}()
 	// Engine().Shutdown() 执行成功后将会直接退出进程，以下代码段仅当超时未关闭时执行到。
 	// Shutdown() 不会关闭设置了 keepalive 的连接，除非设置了 ReadTimeout ，因此设置以下内容以确保关闭.
-	<-time.After(time.Duration(f.conf.ShutdownTimeout) * time.Second)
+	<-time.After(f.conf.ShutdownTimeout * time.Second)
 	// 此处避免因logger关闭引发错误
 	fmt.Println("Forced shutdown.") // 仅当超时时会到达此行
 }
