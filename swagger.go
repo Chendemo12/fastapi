@@ -1,20 +1,12 @@
 package fastapi
 
 import (
-	"bytes"
+	"fmt"
 	"github.com/Chendemo12/fastapi/openapi"
-	"github.com/gofiber/fiber/v2"
+	"net/http"
 )
 
 const staticPrefix = "internal/static/"
-
-// 创建openapi文档
-func (f *FastApi) createOpenApiDoc() *FastApi {
-	f.service.openApi = openapi.NewOpenApi(f.Config().Title, f.Config().Version, f.Config().Description)
-	f.registerRouteDoc().registerRouteHandle()
-
-	return f
-}
 
 // 生成模型定义
 func (f *FastApi) registerRouteDoc() *FastApi {
@@ -30,97 +22,122 @@ func (f *FastApi) registerRouteDoc() *FastApi {
 
 // 注册 swagger 的文档路由
 func (f *FastApi) registerRouteHandle() *FastApi {
-	// openapi 获取路由定义
-	f.engine.Get("/openapi.json", func(c *fiber.Ctx) error {
-		c.Set(openapi.HeaderContentType, openapi.MIMEApplicationJSONCharsetUTF8)
-		return c.SendStream(bytes.NewReader(f.service.openApi.Schema()))
-	})
+	// =========== docs 在线调试页面
+	err := f.Mux().BindRoute(http.MethodGet, openapi.DocumentUrl,
+		func(ctx MuxCtx) error {
+			ctx.Header(openapi.HeaderContentType, openapi.MIMETextHTMLCharsetUTF8)
+			return ctx.SendString(openapi.MakeSwaggerUiHtml(
+				f.Config().Title,
+				openapi.JsonUrl,
+				openapi.SwaggerJsName,
+				openapi.SwaggerCssName,
+				openapi.FaviconName,
+			))
+		},
+	)
+	if err != nil {
+		panic(fmt.Sprintf("bind openapi failed, method: 'GET', path: '%s', error: %v", openapi.DocumentUrl, err))
+	}
 
-	// docs 在线调试页面
-	f.engine.Get("/docs", func(c *fiber.Ctx) error {
-		c.Set(openapi.HeaderContentType, openapi.MIMETextHTMLCharsetUTF8)
-		return c.SendString(openapi.MakeSwaggerUiHtml(
-			f.Config().Title,
-			openapi.JsonUrl,
-			openapi.SwaggerJsName,
-			openapi.SwaggerCssName,
-			openapi.FaviconName,
-		))
-	})
+	// =========== openapi 获取路由定义
+	err = f.Mux().BindRoute(http.MethodGet, openapi.JsonUrl,
+		func(ctx MuxCtx) error {
+			ctx.Header(openapi.HeaderContentType, openapi.MIMEApplicationJSONCharsetUTF8)
+			_, err := ctx.Write(f.service.openApi.Schema())
+			return err
+		},
+	)
+	if err != nil {
+		panic(fmt.Sprintf("bind openapi failed, method: 'GET', path: '%s', error: %v", openapi.JsonUrl, err))
+	}
 
-	// redoc 纯文档页面
-	f.engine.Get("/redoc", func(c *fiber.Ctx) error {
-		c.Set(openapi.HeaderContentType, openapi.MIMETextHTMLCharsetUTF8)
-		return c.SendString(openapi.MakeRedocUiHtml(
-			f.Config().Title,
-			openapi.JsonUrl,
-			openapi.RedocJsName,
-			openapi.FaviconName,
-		))
-	})
+	// =========== redoc 纯文档页面
+	err = f.Mux().BindRoute(http.MethodGet, openapi.ReDocumentUrl,
+		func(ctx MuxCtx) error {
+			ctx.Header(openapi.HeaderContentType, openapi.MIMETextHTMLCharsetUTF8)
+			return ctx.SendString(openapi.MakeRedocUiHtml(
+				f.Config().Title,
+				openapi.JsonUrl,
+				openapi.RedocJsName,
+				openapi.FaviconName,
+			))
+		},
+	)
+	if err != nil {
+		panic(fmt.Sprintf("bind openapi failed, method: 'GET', path: '%s', error: %v", openapi.ReDocumentUrl, err))
+	}
 
-	// 创建静态资源文件
-	f.engine.Get(openapi.FaviconIcoName, querySwaggerFaviconIco)
-	f.engine.Get(openapi.FaviconName, querySwaggerFaviconPng)
-
-	f.engine.Get(openapi.SwaggerCssName, queryDocsUiCSS)
-	f.engine.Get(openapi.SwaggerJsName, queryDocsUiJS)
-
-	f.engine.Get(openapi.RedocJsName, queryRedocUiJS)
+	// =========== 创建静态资源文件
+	err = f.Mux().BindRoute(http.MethodGet, openapi.FaviconIcoName, querySwaggerFaviconIco)
+	err = f.Mux().BindRoute(http.MethodGet, openapi.FaviconName, querySwaggerFaviconPng)
+	err = f.Mux().BindRoute(http.MethodGet, openapi.SwaggerCssName, queryDocsUiCSS)
+	err = f.Mux().BindRoute(http.MethodGet, openapi.SwaggerJsName, queryDocsUiJS)
+	err = f.Mux().BindRoute(http.MethodGet, openapi.RedocJsName, queryRedocUiJS)
 
 	return f
 }
 
 // 挂载 png 图标资源
-func querySwaggerFaviconPng(c *fiber.Ctx) error {
+func querySwaggerFaviconPng(c MuxCtx) error {
 	b, err := openapi.Asset(staticPrefix + openapi.FaviconName)
 	if err != nil {
-		return c.Redirect(openapi.SwaggerFaviconUrl) // 加载错误，重定向
+		return c.Redirect(http.StatusFound, openapi.SwaggerFaviconUrl) // 加载错误，重定向
 	}
 
 	// use asset data
-	return c.SendStream(bytes.NewReader(b))
+	_, err = c.Write(b)
+	return err
 }
 
 // 挂载 ico 图标资源
-func querySwaggerFaviconIco(c *fiber.Ctx) error {
+func querySwaggerFaviconIco(c MuxCtx) error {
 	b, err := openapi.Asset(staticPrefix + openapi.FaviconIcoName)
 	if err != nil {
-		return c.Redirect(openapi.SwaggerFaviconUrl)
+		return c.Redirect(http.StatusFound, openapi.SwaggerFaviconUrl)
 	}
 
-	return c.SendStream(bytes.NewReader(b))
+	_, err = c.Write(b)
+	return err
 }
 
 // 挂载 docs/css 资源
-func queryDocsUiCSS(c *fiber.Ctx) error {
+func queryDocsUiCSS(c MuxCtx) error {
 	b, err := openapi.Asset(staticPrefix + openapi.SwaggerCssName)
 	if err != nil {
-		return c.Redirect(openapi.SwaggerCssUrl)
+		return c.Redirect(http.StatusFound, openapi.SwaggerCssUrl)
 	}
 
-	c.Status(200).Set(openapi.HeaderContentType, openapi.MIMETextCSSCharsetUTF8)
-	return c.SendStream(bytes.NewReader(b))
+	c.Status(http.StatusOK)
+	c.Header(openapi.HeaderContentType, openapi.MIMETextCSSCharsetUTF8)
+
+	_, err = c.Write(b)
+	return err
 }
 
 // 挂载 docs/js 资源
-func queryDocsUiJS(c *fiber.Ctx) error {
+func queryDocsUiJS(c MuxCtx) error {
 	b, err := openapi.Asset(staticPrefix + openapi.SwaggerJsName)
 	if err != nil {
-		return c.Redirect(openapi.SwaggerJsUrl)
+		return c.Redirect(http.StatusFound, openapi.SwaggerJsUrl)
 	}
 
-	c.Status(200).Set(openapi.HeaderContentType, openapi.MIMETextJavaScriptCharsetUTF8)
-	return c.SendStream(bytes.NewReader(b))
+	c.Status(http.StatusOK)
+	c.Header(openapi.HeaderContentType, openapi.MIMETextJavaScriptCharsetUTF8)
+
+	_, err = c.Write(b)
+	return err
 }
 
 // 挂载 redoc/js 资源
-func queryRedocUiJS(c *fiber.Ctx) error {
+func queryRedocUiJS(c MuxCtx) error {
 	b, err := openapi.Asset(staticPrefix + openapi.RedocJsName)
 	if err != nil {
-		return c.Redirect(openapi.RedocJsUrl)
+		return c.Redirect(http.StatusFound, openapi.RedocJsUrl)
 	}
 
-	c.Status(200).Set(openapi.HeaderContentType, openapi.MIMETextJavaScriptCharsetUTF8)
-	return c.SendStream(bytes.NewReader(b))
+	c.Status(http.StatusOK)
+	c.Header(openapi.HeaderContentType, openapi.MIMETextJavaScriptCharsetUTF8)
+
+	_, err = c.Write(b)
+	return err
 }

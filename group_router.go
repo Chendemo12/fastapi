@@ -359,12 +359,13 @@ type GroupRoute struct {
 	method  reflect.Method // 路由方法所属的结构体方法, 用于API调用
 	index   int            // 当前方法所属的结构体方法的偏移量
 	// 路由函数入参数量, 入参数量可以不固定,但第一个必须是 Context
-	// 如果>1:则最后一个视为请求体(Post/Patch/Post)或查询参数(Get/Delete)
-	handlerInNum   int
+	handlerInNum   int                   // 如果>1:则最后一个视为请求体(Post/Patch/Post)或查询参数(Get/Delete)
 	handlerOutNum  int                   // 路由函数出参数量, 出参数量始终为2,最后一个必须是 error
 	inParams       []*openapi.RouteParam // 不包含第一个 Context, 因此 handlerInNum - len(inParams) = 1
 	outParams      *openapi.RouteParam   // 不包含最后一个 error, 因此只有一个出参
-	responseBinder ModelBindMethod
+	paramBinder    ModelBindMethod       // 查询参数，路径参数的校验器，不存在参数则为 NothingBindMethod
+	requestBinder  ModelBindMethod       // 请求题校验器，不存在请求题则为 NothingBindMethod
+	responseBinder ModelBindMethod       // 响应体校验器，响应体肯定存在 ModelBindMethod
 }
 
 func (r *GroupRoute) Id() string { return r.swagger.Id() }
@@ -375,6 +376,10 @@ func NewGroupRoute(swagger *openapi.RouteSwagger, method reflect.Method, group *
 	r.swagger = swagger
 	r.group = group
 	r.index = method.Index
+
+	r.paramBinder = r.paramValidate()
+	r.requestBinder = &NothingBindMethod{}
+	r.responseBinder = &NothingBindMethod{}
 
 	return r
 }
@@ -496,6 +501,11 @@ func (r *GroupRoute) scanOutParams() (err error) {
 	return err
 }
 
+// 查询参数路径参数校验
+func (r *GroupRoute) paramValidate() ModelBindMethod {
+	return &NothingBindMethod{}
+}
+
 func (r *GroupRoute) RouteType() RouteType { return GroupRouteType }
 
 func (r *GroupRoute) Swagger() *openapi.RouteSwagger {
@@ -533,7 +543,7 @@ func (r *GroupRoute) NewRequestModel() reflect.Value {
 	return reflect.Value{}
 }
 
-func (r *GroupRoute) Call(resp *Response, params ...reflect.Value) {
+func (r *GroupRoute) Call(ctx *Context) {
 	//TODO implement me
 	// result := method.Func.Call([]reflect.Value{reflect.ValueOf(newValue)})
 	panic("implement me")

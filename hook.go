@@ -9,6 +9,8 @@ import (
 	"github.com/Chendemo12/fastapi/openapi"
 )
 
+type MiddlewareHandle func() // 中间件函数
+
 // 将jsoniter 的反序列化错误转换成 接口错误类型
 func jsoniterUnmarshalErrorToValidationError(err error) *openapi.ValidationError {
 	// jsoniter 的反序列化错误格式：
@@ -101,11 +103,25 @@ func (c *Context) requestBodyValidate(route RouteIface) {
 }
 
 // 执行用户自定义钩子函数前的工作流
-func (c *Context) workflow(route RouteIface) {
+func (c *Context) beforeWorkflow(route RouteIface) {
 	links := []func(route RouteIface){
 		c.pathParamsValidate,  // 路径参数校验
 		c.queryParamsValidate, // 查询参数校验
 		c.requestBodyValidate, // 请求体自动校验
+	}
+
+	for _, link := range links {
+		link(route)
+		if c.response != nil {
+			return // 当任意环节校验失败时,即终止下文环节
+		}
+	}
+}
+
+// 主要是对响应体是否符合tag约束的校验，
+func (c *Context) afterWorkflow(route RouteIface) {
+	links := []func(route RouteIface){
+		c.responseValidate, // 路由返回值校验
 	}
 
 	for _, link := range links {

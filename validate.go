@@ -24,33 +24,6 @@ type ModelBindMethod interface {
 	New() any                                     // 创建一个新实例
 }
 
-// NothingBindMethod 空实现，用于什么也不做
-type NothingBindMethod struct{}
-
-func (m *NothingBindMethod) Name() string {
-	return "NothingBindMethod"
-}
-
-func (m *NothingBindMethod) ContentType() string {
-	return openapi.MIMEApplicationJSONCharsetUTF8
-}
-
-func (m *NothingBindMethod) Validate(obj any) (err error) {
-	return
-}
-
-func (m *NothingBindMethod) Marshal(obj any) ([]byte, error) {
-	return []byte{}, nil
-}
-
-func (m *NothingBindMethod) Unmarshal(stream []byte, obj any) (err error) {
-	return
-}
-
-func (m *NothingBindMethod) New() any {
-	return nil
-}
-
 type JsonBindMethod struct {
 	validates []ValidateMethod
 	rType     reflect.Type
@@ -246,5 +219,32 @@ func structResponseValidation(content any, meta *openapi.BaseModelMeta) *Respons
 		return resp
 	}
 
+	return nil
+}
+
+// NothingBindMethod 空实现，用于什么也不做
+type NothingBindMethod struct{}
+
+func (m *NothingBindMethod) Name() string {
+	return "NothingBindMethod"
+}
+
+func (m *NothingBindMethod) ContentType() string {
+	return openapi.MIMEApplicationJSONCharsetUTF8
+}
+
+func (m *NothingBindMethod) Validate(obj any) (err error) {
+	return
+}
+
+func (m *NothingBindMethod) Marshal(obj any) ([]byte, error) {
+	return []byte{}, nil
+}
+
+func (m *NothingBindMethod) Unmarshal(stream []byte, obj any) (err error) {
+	return
+}
+
+func (m *NothingBindMethod) New() any {
 	return nil
 }

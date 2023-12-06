@@ -8,12 +8,15 @@ import (
 	"github.com/gofiber/fiber/v2"
 	echo "github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"net"
 	"net/http"
 	"runtime"
+	"sync"
 	"time"
 )
 
 type FiberMux struct {
+	one     *sync.Once
 	App     *fiber.App
 	Title   string
 	Version string
@@ -26,6 +29,7 @@ type FiberMux struct {
 // New 创建App实例
 func New(title, version string) *FiberMux {
 	return &FiberMux{
+		one:                   &sync.Once{},
 		Title:                 title,
 		Version:               version,
 		ErrorHandler:          customFiberErrorHandler,
@@ -34,35 +38,7 @@ func New(title, version string) *FiberMux {
 }
 
 func (m *FiberMux) Listen(addr string) error {
-	app := fiber.New(fiber.Config{
-		Prefork:       false,                      // core.MultipleProcessEnabled, // 多进程模式
-		CaseSensitive: true,                       // 区分路由大小写
-		StrictRouting: true,                       // 严格路由
-		ServerHeader:  m.Title,                    // 服务器头
-		AppName:       m.Title + " v" + m.Version, // 设置为 Response.Header.Server 属性
-		ColorScheme:   fiber.DefaultColors,        // 彩色输出
-		JSONEncoder:   helper.JsonMarshal,         // json序列化器
-		JSONDecoder:   helper.JsonUnmarshal,       // json解码器
-		ErrorHandler:  m.ErrorHandler,             // 设置自定义错误处理
-	})
-
-	// 输出API访问日志
-	echoConfig := echo.ConfigDefault
-	echoConfig.TimeFormat = time.DateTime
-	echoConfig.Format = "${time}    ${method}\t${path} ${status}\n"
-	app.Use(echo.New(echoConfig))
-
-	// 自定义全局 recover 方法
-	app.Use(recover.New(recover.Config{
-		EnableStackTrace: true,
-		// StackTraceHandler: 处理堆栈跟踪的函数, 若留空，则默认将整个错误堆栈输出到控制台,
-		// 并在处理完成后将错误流转到 fiber.ErrorHandler
-		StackTraceHandler: m.StackTraceHandlerFunc,
-	}))
-
-	m.App = app
-
-	return app.Listen(addr)
+	return m.App.Listen(addr)
 }
 
 func (m *FiberMux) ShutdownWithTimeout(timeout time.Duration) error {
@@ -83,6 +59,36 @@ func (m *FiberMux) SetRecoverHandler(handler any) {
 }
 
 func (m *FiberMux) BindRoute(method, path string, handler func(ctx fastapi.MuxCtx) error) error {
+	m.one.Do(func() {
+		app := fiber.New(fiber.Config{
+			Prefork:       false,                      // core.MultipleProcessEnabled, // 多进程模式
+			CaseSensitive: true,                       // 区分路由大小写
+			StrictRouting: true,                       // 严格路由
+			ServerHeader:  m.Title,                    // 服务器头
+			AppName:       m.Title + " v" + m.Version, // 设置为 Response.Header.Server 属性
+			ColorScheme:   fiber.DefaultColors,        // 彩色输出
+			JSONEncoder:   helper.JsonMarshal,         // json序列化器
+			JSONDecoder:   helper.JsonUnmarshal,       // json解码器
+			ErrorHandler:  m.ErrorHandler,             // 设置自定义错误处理
+		})
+
+		// 输出API访问日志
+		echoConfig := echo.ConfigDefault
+		echoConfig.TimeFormat = time.DateTime
+		echoConfig.Format = "${time}    ${method}\t${path} ${status}\n"
+		app.Use(echo.New(echoConfig))
+
+		// 自定义全局 recover 方法
+		app.Use(recover.New(recover.Config{
+			EnableStackTrace: true,
+			// StackTraceHandler: 处理堆栈跟踪的函数, 若留空，则默认将整个错误堆栈输出到控制台,
+			// 并在处理完成后将错误流转到 fiber.ErrorHandler
+			StackTraceHandler: m.StackTraceHandlerFunc,
+		}))
+
+		m.App = app
+	})
+
 	switch method {
 	case http.MethodGet:
 		m.App.Get(path, func(ctx *fiber.Ctx) error {
@@ -111,6 +117,41 @@ func (m *FiberMux) BindRoute(method, path string, handler func(ctx fastapi.MuxCt
 
 type FiberContext struct {
 	ctx *fiber.Ctx
+}
+
+func (c *FiberContext) Header(key, value string) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *FiberContext) Redirect(code int, location string) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *FiberContext) JSONP(code int, data any) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *FiberContext) File(filepath string) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *FiberContext) FileAttachment(filepath, filename string) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *FiberContext) RemoteAddr() net.Addr {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *FiberContext) Set(key string, value any) {
+	//TODO implement me
+	panic("implement me")
 }
 
 func (c *FiberContext) XML(content any) error {

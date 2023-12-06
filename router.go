@@ -2,10 +2,9 @@ package fastapi
 
 import (
 	"github.com/Chendemo12/fastapi/openapi"
+	"github.com/Chendemo12/fastapi/pathschema"
 	"reflect"
 )
-
-const ReminderWhenResponseModelIsNil = " `| 路由未明确定义返回值，文档处缺省为map类型，实际可以是任意类型`"
 
 type RouteType string
 
@@ -19,12 +18,12 @@ const (
 type RouteIface interface {
 	Scanner
 	RouteType() RouteType
-	Swagger() *openapi.RouteSwagger               // 路由文档
-	ResponseBinder() ModelBindMethod              // 响应体的处理接口,响应体只有一个
-	RequestBinders() ModelBindMethod              // 请求体的处理接口,请求体也只有一个
-	QueryBinders() map[string]ModelBindMethod     // 查询参数的处理接口(查询参数名:处理接口)，查询参数可有多个
-	NewRequestModel() reflect.Value               // TODO: 创建一个新的参数实例
-	Call(resp *Response, params ...reflect.Value) // 调用API
+	Swagger() *openapi.RouteSwagger           // 路由文档
+	ResponseBinder() ModelBindMethod          // 响应体的处理接口,响应体只有一个
+	RequestBinders() ModelBindMethod          // 请求体的处理接口,请求体也只有一个
+	QueryBinders() map[string]ModelBindMethod // 查询参数的处理接口(查询参数名:处理接口)，查询参数可有多个
+	NewRequestModel() reflect.Value           // TODO: 创建一个新的参数实例
+	Call(ctx *Context)                        // 调用API, 需要将响应结果写入 Response 内
 	Id() string
 }
 
@@ -40,3 +39,74 @@ func (b *BaseModel) SchemaDesc() string { return openapi.InnerModelsName[0] }
 func (b *BaseModel) SchemaType() openapi.DataType { return openapi.ObjectType }
 
 func (b *BaseModel) IsRequired() bool { return true }
+
+// ====================
+
+// NewBaseRouter 用于获取后端服务基本信息的路由组
+//
+//	# Usage
+//
+//	router := NewBaseRouter("FastApi", "1.0.0", "FastApi application", false)
+//	app.IncludeRouter(router)
+func NewBaseRouter(title, version, desc string, debug bool) GroupRouter {
+	return &BaseGroupRouter{
+		Title:   title,
+		Version: version,
+		Desc:    desc,
+		Debug:   debug,
+	}
+}
+
+type BaseGroupRouter struct {
+	BaseRouter
+	Title   string
+	Version string
+	Desc    string
+	Debug   bool
+}
+
+func (r *BaseGroupRouter) Prefix() string {
+	return "/api"
+}
+
+func (r *BaseGroupRouter) Tags() []string {
+	return []string{"Base"}
+}
+
+func (r *BaseGroupRouter) PathSchema() pathschema.RoutePathSchema {
+	return pathschema.Default()
+}
+
+func (r *BaseGroupRouter) Summary() map[string]string {
+	return map[string]string{
+		"GetTitle":       "获取软件名",
+		"GetDescription": "获取软件描述信息",
+		"GetVersion":     "获取软件版本号",
+		"GetDebug":       "获取调试开关",
+		"GetHeartbeat":   "心跳检测",
+	}
+}
+
+func (r *BaseGroupRouter) Description() map[string]string {
+	return map[string]string{}
+}
+
+func (r *BaseGroupRouter) GetTitle(c *Context) (string, error) {
+	return r.Title, nil
+}
+
+func (r *BaseGroupRouter) GetDescription(c *Context) (string, error) {
+	return r.Desc, nil
+}
+
+func (r *BaseGroupRouter) GetVersion(c *Context) (string, error) {
+	return r.Version, nil
+}
+
+func (r *BaseGroupRouter) GetDebug(c *Context) (bool, error) {
+	return r.Debug, nil
+}
+
+func (r *BaseGroupRouter) GetHeartbeat(c *Context) (string, error) {
+	return "pong", nil
+}

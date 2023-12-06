@@ -81,7 +81,7 @@ func (r *GenericRoute[T]) NewRequestModel() reflect.Value {
 	panic("implement me")
 }
 
-func (r *GenericRoute[T]) Call(resp *Response, params ...reflect.Value) {
+func (r *GenericRoute[T]) Call(ctx *Context) {
 	//TODO implement me
 	panic("implement me")
 }

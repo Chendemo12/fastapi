@@ -26,7 +26,7 @@ type Wrapper = FastApi
 var one = &sync.Once{}
 var wrapper *FastApi = nil // 默认实例
 
-// FastApi 服务器对象，本质是一个包装器
+// FastApi 服务对象，本质是一个包装器
 type FastApi struct {
 	conf          *Profile           `description:"配置项"`
 	service       *Service           `description:"全局服务依赖"`
@@ -37,8 +37,8 @@ type FastApi struct {
 	genericRoutes []RouteIface       `description:"泛型路由对象"`
 	events        []*Event           `description:"启动和关闭事件"`
 	finder        Finder[RouteIface] `description:"路由对象查找器"`
-	previousDeps  []any              `description:"在接口参数校验前执行的中间件"` // TODO Future-231126.4: 路由前后中间件
-	afterDeps     []any              `description:"在接口参数校验成功后执行的中间件"`
+	previousDeps  []MiddlewareHandle `description:"在接口参数校验前执行的中间件"` // TODO Future-231126.4: 路由前后中间件
+	afterDeps     []MiddlewareHandle `description:"在接口参数校验成功后执行的中间件"`
 }
 
 type Profile struct {
@@ -93,12 +93,18 @@ func (f *FastApi) initRoutes() *FastApi {
 	}
 
 	// 构造参数的验证器
-	// TODO: not finished
 	for _, group := range f.groupRouters {
 		for index, route := range group.Routes() {
+			// TODO: not finished
 			switch route.Swagger().ResponseModel.SchemaType() {
 			case openapi.ObjectType:
-				group.routes[index].responseBinder = &JsonBindMethod{}
+				group.routes[index].responseBinder = &NothingBindMethod{}
+			default:
+				group.routes[index].responseBinder = &NothingBindMethod{}
+			}
+			switch route.Swagger().ResponseModel.SchemaType() {
+			default:
+				group.routes[index].requestBinder = &NothingBindMethod{}
 			}
 		}
 	}
@@ -125,7 +131,7 @@ func (f *FastApi) initFinder() *FastApi {
 	}
 
 	// 初始化finder
-	f.finder = &SimpleFinder[RouteIface]{}
+	f.finder = DefaultFinder()
 	f.finder.Init(routes)
 
 	return f
@@ -133,8 +139,10 @@ func (f *FastApi) initFinder() *FastApi {
 
 // 创建 OpenApi Swagger 文档, 必须等上层注册完路由之后才能调用
 func (f *FastApi) initSwagger() *FastApi {
+	f.service.openApi = openapi.NewOpenApi(f.Config().Title, f.Config().Version, f.Config().Description)
 	if !f.conf.SwaggerDisabled || f.conf.Debug {
-		f.createOpenApiDoc()
+		f.registerRouteDoc()
+		f.registerRouteHandle()
 	}
 
 	return f
@@ -223,9 +231,8 @@ func (f *FastApi) Handler(ctx MuxCtx) error {
 	defer f.releaseCtx(wrapperCtx)
 
 	// TODO Future: 校验前中间件
-	// 路由前的校验,此校验会就地修改 Context.Response
-	wrapperCtx.workflow(route)
-
+	// 路由前的校验,此校验会就地修改 Context.response
+	wrapperCtx.beforeWorkflow(route)
 	if wrapperCtx.response != nil {
 		// 校验工作流不通过, 中断执行
 		return wrapperCtx.write()
@@ -234,11 +241,11 @@ func (f *FastApi) Handler(ctx MuxCtx) error {
 	// TODO Future: 执行校验后中间件
 
 	//
-	// 全部校验完成，执行处理函数并获取返回值
-	route.Call(wrapperCtx.response) // TODO: call method
+	// 全部校验完成，执行处理函数并获取返回值, 此处已经完成全部请求参数的校验，调用失败也存在返回值
+	route.Call(wrapperCtx)
 
-	// 路由返回值校验, 校验不通过则会就地修改 Response
-	wrapperCtx.responseValidate(route)
+	// 路由后的校验，校验失败就地修改 Response
+	wrapperCtx.afterWorkflow(route)
 
 	return wrapperCtx.write() // 返回消息流
 }
@@ -333,10 +340,21 @@ func (f *FastApi) IncludeRouter(router GroupRouter) *FastApi {
 	return f
 }
 
-// UseAfter 添加一个校验后中间件
-func (f *FastApi) UseAfter(middleware ...any) *FastApi {
+// UsePrevious 添加一个校验前中间件，此中间件会在：请求参数校验前调用
+func (f *FastApi) UsePrevious(middleware ...MiddlewareHandle) *FastApi {
+	f.previousDeps = append(f.previousDeps, middleware...)
+	return f
+}
+
+// UseAfter 添加一个校验后中间件, 此中间件会在：请求参数校验后-路由函数调用前执行
+func (f *FastApi) UseAfter(middleware ...MiddlewareHandle) *FastApi {
 	f.afterDeps = append(f.afterDeps, middleware...)
 	return f
+}
+
+// Use 添加一个中间件, 数据校验后中间件
+func (f *FastApi) Use(middleware ...MiddlewareHandle) *FastApi {
+	return f.UseAfter(middleware...)
 }
 
 // AddCronjob 添加定时任务(循环调度任务)
@@ -543,7 +561,8 @@ func Create(c Config) *FastApi {
 		service:       sc,
 		genericRoutes: make([]RouteIface, 1),
 		isStarted:     make(chan struct{}, 1),
-		afterDeps:     make([]any, 0),
+		previousDeps:  make([]MiddlewareHandle, 0),
+		afterDeps:     make([]MiddlewareHandle, 0),
 		events:        make([]*Event, 0),
 	}
 

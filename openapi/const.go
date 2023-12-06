@@ -45,6 +45,8 @@ const (
 	SwaggerJsName     = "swagger-ui-bundle.js"
 	RedocJsName       = "redoc.standalone.js"
 	JsonUrl           = "openapi.json"
+	DocumentUrl       = "/docs"
+	ReDocumentUrl     = "/redoc"
 	SwaggerFaviconUrl = "https://fastapi.tiangolo.com/img/" + FaviconName
 	SwaggerCssUrl     = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/" + SwaggerCssName
 	SwaggerJsUrl      = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/" + SwaggerJsName
@@ -60,6 +62,8 @@ const (
 
 // AnonymousModelNameConnector 为匿名结构体生成一个名称, 连接符
 const AnonymousModelNameConnector = "_"
+
+const ReminderWhenResponseModelIsNil = " `| 路由未明确定义返回值，文档处缺省为map类型，实际可以是任意类型`"
 
 // InnerModelsName 特殊的内部模型名称
 var InnerModelsName = []string{
