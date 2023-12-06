@@ -8,6 +8,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	echo "github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"io"
 	"net"
 	"net/http"
 	"runtime"
@@ -24,6 +25,7 @@ type FiberMux struct {
 	ErrorHandler fiber.ErrorHandler
 	// StackTraceHandlerFunc 错误堆栈处理函数, 即 recover 方法
 	StackTraceHandlerFunc func(c *fiber.Ctx, e any)
+	pool                  *sync.Pool
 }
 
 // New 创建App实例
@@ -34,7 +36,20 @@ func New(title, version string) *FiberMux {
 		Version:               version,
 		ErrorHandler:          customFiberErrorHandler,
 		StackTraceHandlerFunc: customRecoverHandler,
+		pool:                  &sync.Pool{New: func() any { return &FiberContext{} }},
 	}
+}
+
+func (m *FiberMux) AcquireCtx(c *fiber.Ctx) *FiberContext {
+	obj := m.pool.Get().(*FiberContext)
+	obj.ctx = c
+
+	return obj
+}
+
+func (m *FiberMux) ReleaseCtx(c *FiberContext) {
+	c.ctx = nil
+	m.pool.Put(c)
 }
 
 func (m *FiberMux) Listen(addr string) error {
@@ -58,7 +73,7 @@ func (m *FiberMux) SetRecoverHandler(handler any) {
 	}
 }
 
-func (m *FiberMux) BindRoute(method, path string, handler func(ctx fastapi.MuxCtx) error) error {
+func (m *FiberMux) BindRoute(method, path string, handler func(ctx fastapi.MuxContext) error) error {
 	m.one.Do(func() {
 		app := fiber.New(fiber.Config{
 			Prefork:       false,                      // core.MultipleProcessEnabled, // 多进程模式
@@ -110,28 +125,67 @@ func (m *FiberMux) BindRoute(method, path string, handler func(ctx fastapi.MuxCt
 		m.App.Put(path, func(ctx *fiber.Ctx) error {
 			return handler(&FiberContext{ctx: ctx})
 		})
+	default:
+		return errors.New(fmt.Sprintf("unknow method:'%s' for path: '%s'", method, path))
 	}
 
-	return errors.New(fmt.Sprintf("unknow method:'%s' for path: '%s'", method, path))
+	return nil
 }
 
 type FiberContext struct {
 	ctx *fiber.Ctx
 }
 
-func (c *FiberContext) Header(key, value string) {
+func (c *FiberContext) SetCookie(cookie *http.Cookie) {
 	//TODO implement me
 	panic("implement me")
+}
+
+func (c *FiberContext) Cookie(name string) (string, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *FiberContext) Get(key string, defaultValue ...string) string {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *FiberContext) ClientIP() string {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *FiberContext) SendStream(stream io.Reader, size ...int) error {
+	return c.ctx.SendStream(stream, size...)
+}
+
+func (c *FiberContext) Render(name string, bind interface{}, layouts ...string) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *FiberContext) YAML(code int, obj any) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *FiberContext) TOML(code int, obj any) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *FiberContext) Header(key, value string) {
+	c.ctx.Set(key, value)
 }
 
 func (c *FiberContext) Redirect(code int, location string) error {
-	//TODO implement me
-	panic("implement me")
+	return c.ctx.Redirect(location, code)
 }
 
 func (c *FiberContext) JSONP(code int, data any) error {
-	//TODO implement me
-	panic("implement me")
+	c.Status(code)
+	return c.ctx.JSONP(data)
 }
 
 func (c *FiberContext) File(filepath string) error {
@@ -154,16 +208,13 @@ func (c *FiberContext) Set(key string, value any) {
 	panic("implement me")
 }
 
-func (c *FiberContext) XML(content any) error {
+func (c *FiberContext) XML(code int, content any) error {
+	c.Status(code)
 	return c.ctx.XML(content)
 }
 
 func (c *FiberContext) SendString(s string) error {
 	return c.ctx.SendString(s)
-}
-
-func (c *FiberContext) SetHeader(key, value string) {
-	c.ctx.Set(key, value)
 }
 
 func (c *FiberContext) Method() string {

@@ -165,8 +165,9 @@ func (f *FastApi) initialize() *FastApi {
 	f.initService()
 	f.initRoutes()
 	f.initFinder()
-	f.initSwagger()
 	f.initMux()
+	f.initSwagger() // === 必须最后调用
+	f.Wrap(f.mux)
 
 	f.service.Logger().Debug(
 		"Run at: " + utils.Ternary[string](f.conf.Debug, "Development", "Production"),
@@ -175,7 +176,7 @@ func (f *FastApi) initialize() *FastApi {
 }
 
 // 申请一个 Context 并初始化
-func (f *FastApi) acquireCtx(ctx MuxCtx) *Context {
+func (f *FastApi) acquireCtx(ctx MuxContext) *Context {
 	c := f.pool.Get().(*Context)
 	// 初始化各种参数
 	c.muxCtx = ctx
@@ -219,7 +220,7 @@ func (f *FastApi) resetRunMode(md bool) {
 //  2. 之后会校验并绑定路由参数（包含路径参数和查询参数）是否正确，如果错误则直接返回422错误，反之会继续序列化并绑定请求体（如果存在）序列化成功之后会校验请求参数正确性，
 //  3. 校验通过后会调用 RouteIface.Call 并将返回值绑定在 Context 内的 Response 上
 //  4. 校验返回值，并返回422或将返回值写入到实际的 response
-func (f *FastApi) Handler(ctx MuxCtx) error {
+func (f *FastApi) Handler(ctx MuxContext) error {
 	route, exist := f.finder.Get(openapi.CreateRouteIdentify(ctx.Method(), ctx.Path()))
 	if !exist {
 		// 正常来说，通过 Wrapper 注册的路由，不会走到这个分支
@@ -559,7 +560,8 @@ func Create(c Config) *FastApi {
 			ShutdownTimeout: time.Duration(conf.ShutdownTimeout) * time.Second,
 		},
 		service:       sc,
-		genericRoutes: make([]RouteIface, 1),
+		genericRoutes: make([]RouteIface, 0),
+		groupRouters:  make([]*GroupRouterMeta, 0),
 		isStarted:     make(chan struct{}, 1),
 		previousDeps:  make([]MiddlewareHandle, 0),
 		afterDeps:     make([]MiddlewareHandle, 0),

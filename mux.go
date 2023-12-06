@@ -1,7 +1,9 @@
 package fastapi
 
 import (
+	"io"
 	"net"
+	"net/http"
 	"time"
 )
 
@@ -16,25 +18,36 @@ type EngineMux interface {
 	// SetRecoverHandler 设置全局recovery方法
 	SetRecoverHandler(handler any)
 	// BindRoute 注册路由
-	BindRoute(method, path string, handler func(ctx MuxCtx) error) error
+	BindRoute(method, path string, handler func(ctx MuxContext) error) error
 }
 
-// MuxCtx Web引擎的 Context，例如 fiber.Ctx, gin.Context
-type MuxCtx interface {
-	Method() string                           // 获得当前请求方法，取为为 http.MethodGet, http.MethodPost 等
-	Path() string                             // 获的当前请求的路由模式，而非请求Url
-	Header(key, value string)                 // 添加响应头
-	Redirect(code int, location string) error // 重定向
-	BodyParser(model any) error               // 解析请求体
-	Query(key string) string                  // 解析查询参数
-	Status(code int)                          // 设置响应状态码
-	Write(p []byte) (int, error)              // 写入响应字节流,当此方法执行完毕时应中断后续流程
-	JSON(code int, data any) error
-	JSONP(code int, data any) error
-	XML(content any) error
-	SendString(s string) error // 写入json响应体,当此方法执行完毕时应中断后续流程
-	File(filepath string) error
-	FileAttachment(filepath, filename string) error
-	RemoteAddr() net.Addr
-	Set(key string, value any)
+// MuxContext Web引擎的 Context，例如 fiber.Ctx, gin.Context
+type MuxContext interface {
+	Method() string                     // [重要方法]获得当前请求方法，取为为 http.MethodGet, http.MethodPost 等
+	Path() string                       // [重要方法]获的当前请求的路由模式，而非请求Url
+	Header(key, value string)           // 添加响应头
+	SetCookie(cookie *http.Cookie)      // 添加cookie
+	Cookie(name string) (string, error) // 读取cookie
+	Query(key string) string            // 解析查询参数
+
+	Set(key string, value any)                     // Set用于存储专门用于此上下文的新键/值对，如果以前没有使用c.Keys，它也会延迟初始化它
+	Get(key string, defaultValue ...string) string // 从上下文中读取键/值对
+	Redirect(code int, location string) error      // 重定向
+
+	BodyParser(model any) error // 解析请求体
+	RemoteAddr() net.Addr       // RemoteIP解析来自Request的IP。RemoteAddr，规范化并返回IP(不带端口)。
+	ClientIP() string           // ClientIP实现了一个最佳努力算法来返回真实的客户端IP。
+
+	Status(code int)                                               // 设置响应状态码
+	Write(p []byte) (int, error)                                   // 写入响应字节流,当此方法执行完毕时应中断后续流程
+	SendString(s string) error                                     // 写字符串到响应体,当此方法执行完毕时应中断后续流程
+	SendStream(stream io.Reader, size ...int) error                // 写入消息流到响应体
+	JSON(code int, data any) error                                 // 写入json响应体
+	JSONP(code int, data any) error                                // JSONP 支持
+	Render(name string, bind interface{}, layouts ...string) error // 用于返回HTML
+	XML(code int, obj any) error                                   // 写入XML
+	YAML(code int, obj any) error                                  // 写入YAML
+	TOML(code int, obj any) error                                  // 写入TOML
+	File(filepath string) error                                    // 返回文件
+	FileAttachment(filepath, filename string) error                // 将指定的文件以有效的方式写入主体流, 在客户端，文件通常会以给定的文件名下载
 }

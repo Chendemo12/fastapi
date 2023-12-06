@@ -24,7 +24,7 @@ func (f *FastApi) registerRouteDoc() *FastApi {
 func (f *FastApi) registerRouteHandle() *FastApi {
 	// =========== docs 在线调试页面
 	err := f.Mux().BindRoute(http.MethodGet, openapi.DocumentUrl,
-		func(ctx MuxCtx) error {
+		func(ctx MuxContext) error {
 			ctx.Header(openapi.HeaderContentType, openapi.MIMETextHTMLCharsetUTF8)
 			return ctx.SendString(openapi.MakeSwaggerUiHtml(
 				f.Config().Title,
@@ -41,7 +41,7 @@ func (f *FastApi) registerRouteHandle() *FastApi {
 
 	// =========== openapi 获取路由定义
 	err = f.Mux().BindRoute(http.MethodGet, openapi.JsonUrl,
-		func(ctx MuxCtx) error {
+		func(ctx MuxContext) error {
 			ctx.Header(openapi.HeaderContentType, openapi.MIMEApplicationJSONCharsetUTF8)
 			_, err := ctx.Write(f.service.openApi.Schema())
 			return err
@@ -53,7 +53,7 @@ func (f *FastApi) registerRouteHandle() *FastApi {
 
 	// =========== redoc 纯文档页面
 	err = f.Mux().BindRoute(http.MethodGet, openapi.ReDocumentUrl,
-		func(ctx MuxCtx) error {
+		func(ctx MuxContext) error {
 			ctx.Header(openapi.HeaderContentType, openapi.MIMETextHTMLCharsetUTF8)
 			return ctx.SendString(openapi.MakeRedocUiHtml(
 				f.Config().Title,
@@ -78,7 +78,7 @@ func (f *FastApi) registerRouteHandle() *FastApi {
 }
 
 // 挂载 png 图标资源
-func querySwaggerFaviconPng(c MuxCtx) error {
+func querySwaggerFaviconPng(c MuxContext) error {
 	b, err := openapi.Asset(staticPrefix + openapi.FaviconName)
 	if err != nil {
 		return c.Redirect(http.StatusFound, openapi.SwaggerFaviconUrl) // 加载错误，重定向
@@ -90,7 +90,7 @@ func querySwaggerFaviconPng(c MuxCtx) error {
 }
 
 // 挂载 ico 图标资源
-func querySwaggerFaviconIco(c MuxCtx) error {
+func querySwaggerFaviconIco(c MuxContext) error {
 	b, err := openapi.Asset(staticPrefix + openapi.FaviconIcoName)
 	if err != nil {
 		return c.Redirect(http.StatusFound, openapi.SwaggerFaviconUrl)
@@ -101,7 +101,7 @@ func querySwaggerFaviconIco(c MuxCtx) error {
 }
 
 // 挂载 docs/css 资源
-func queryDocsUiCSS(c MuxCtx) error {
+func queryDocsUiCSS(c MuxContext) error {
 	b, err := openapi.Asset(staticPrefix + openapi.SwaggerCssName)
 	if err != nil {
 		return c.Redirect(http.StatusFound, openapi.SwaggerCssUrl)
@@ -115,7 +115,7 @@ func queryDocsUiCSS(c MuxCtx) error {
 }
 
 // 挂载 docs/js 资源
-func queryDocsUiJS(c MuxCtx) error {
+func queryDocsUiJS(c MuxContext) error {
 	b, err := openapi.Asset(staticPrefix + openapi.SwaggerJsName)
 	if err != nil {
 		return c.Redirect(http.StatusFound, openapi.SwaggerJsUrl)
@@ -129,7 +129,7 @@ func queryDocsUiJS(c MuxCtx) error {
 }
 
 // 挂载 redoc/js 资源
-func queryRedocUiJS(c MuxCtx) error {
+func queryRedocUiJS(c MuxContext) error {
 	b, err := openapi.Asset(staticPrefix + openapi.RedocJsName)
 	if err != nil {
 		return c.Redirect(http.StatusFound, openapi.RedocJsUrl)

@@ -29,17 +29,25 @@ const (
 	SchemaTypeMethodName string = "SchemaType"
 )
 
+// ReflectCallSchemaDesc 反射调用结构体的 SchemaDesc 方法
 func ReflectCallSchemaDesc(re reflect.Type) string {
 	method, found := re.MethodByName(SchemaDescMethodName)
 	if found {
 		// 创建一个的实例
 		var rt = re
+		var desc string
 		if rt.Kind() == reflect.Ptr {
 			rt = rt.Elem()
+			// 指针类型
+			newValue := reflect.New(rt).Interface()
+			result := method.Func.Call([]reflect.Value{reflect.ValueOf(newValue)})
+			desc = result[0].String()
+		} else {
+			newValue := reflect.New(rt).Interface()
+			result := method.Func.Call([]reflect.Value{reflect.ValueOf(newValue).Elem()})
+			desc = result[0].String()
 		}
-		newValue := reflect.New(rt).Interface()
-		result := method.Func.Call([]reflect.Value{reflect.ValueOf(newValue)})
-		desc := result[0].String()
+
 		return desc
 	} else {
 		return ""

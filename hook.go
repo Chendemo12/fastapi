@@ -1,7 +1,7 @@
 package fastapi
 
 import (
-	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -10,6 +10,8 @@ import (
 )
 
 type MiddlewareHandle func() // 中间件函数
+
+// ----------------------------------------	路由前的各种校验工作 ----------------------------------------
 
 // 将jsoniter 的反序列化错误转换成 接口错误类型
 func jsoniterUnmarshalErrorToValidationError(err error) *openapi.ValidationError {
@@ -132,30 +134,26 @@ func (c *Context) afterWorkflow(route RouteIface) {
 	}
 }
 
-// ----------------------------------------	路由前的各种校验工作 ----------------------------------------
+// ----------------------------------------	路由后的响应体校验工作 ----------------------------------------
 
 // 返回值校验root入口
 //
 //	@return	*Response 校验结果, 若校验不通过则修改 Response.StatusCode 和 Response.Content
 func (c *Context) responseValidate(route RouteIface) {
-	// TODO: 修改验证方式，由 ModelBindMethod 实现
-	// 仅校验 JSONResponse 和 StringResponse
-	if c.response.Type != JsonResponseType && c.response.Type != StringResponseType {
-		return
+	// 仅校验“非422的JSONResponse”
+	if c.response.Type == JsonResponseType {
+		// 内部返回的 422 也不再校验
+		if c.response.StatusCode != http.StatusUnprocessableEntity {
+			httpv := route.ResponseBinder().Validate(nil)
+			if httpv != nil && len(httpv.Detail) > 0 {
+				//校验不通过, 修改 Response.StatusCode 和 Response.Content
+				c.response.StatusCode = http.StatusUnprocessableEntity
+				c.response.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
+				c.response.Content = httpv
+			}
+		}
 	}
-
-	// 返回值校验，若响应体为nil或关闭了参数校验，则返回原内容
-	//resp := c.route.responseValidate(c.response.Content, c.route.Swagger().ResponseModel)
-
-	// 校验不通过, 修改 Response.StatusCode 和 Response.Content
-	//if resp != nil {
-	//	c.response.StatusCode = resp.StatusCode
-	//	c.response.Content = resp.Content
-	//	c.Logger().Warn(c.response.Content)
-	//}
 }
-
-// ----------------------------------------	路由后的响应体校验工作 ----------------------------------------
 
 // 写入响应体到响应字节流
 func (c *Context) write() error {
@@ -167,6 +165,7 @@ func (c *Context) write() error {
 
 	if c.response == nil {
 		// 自定义函数无任何返回值
+		c.muxCtx.Status(http.StatusOK)
 		return c.muxCtx.SendString("OK")
 	}
 
@@ -174,8 +173,8 @@ func (c *Context) write() error {
 	c.muxCtx.Status(c.response.StatusCode) // 设置一下响应头
 
 	if c.response.StatusCode == http.StatusUnprocessableEntity {
-		// 校验不通过，无需进一步解析
-		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
+		// 校验不通过，直接返回错误信息
+		return c.muxCtx.JSON(http.StatusUnprocessableEntity, c.response.Content)
 	}
 
 	switch c.response.Type {
@@ -188,50 +187,29 @@ func (c *Context) write() error {
 
 	case HtmlResponseType: // 返回HTML页面
 		// 设置返回类型
-		c.muxCtx.SetHeader(openapi.HeaderContentType, c.response.ContentType)
-		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content.(string))
+		c.muxCtx.Header(openapi.HeaderContentType, openapi.MIMETextHTMLCharsetUTF8)
+		//return c.muxCtx.Render(c.response.StatusCode, bytes.NewReader(c.response.Content.(string)))
+		return nil
 
 	case ErrResponseType:
 		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
 
 	case StreamResponseType: // 返回字节流
-		_, err := c.muxCtx.Write(c.response.Content.([]byte))
-		return err
+		return c.muxCtx.SendStream(c.response.Content.(io.Reader))
 
 	case FileResponseType: // 返回一个文件
-		//return c.muxCtx.Download(c.response.Content.(string))
+		return c.muxCtx.File(c.response.Content.(string))
 
 	case AdvancedResponseType:
 		//return c.response.Content.(openapi.Handler)(c.muxCtx)
+		return nil
 
 	case CustomResponseType:
-		c.muxCtx.SetHeader(openapi.HeaderContentType, c.response.ContentType)
-		switch c.response.ContentType {
+		c.muxCtx.Header(openapi.HeaderContentType, c.response.ContentType)
+		_, err := c.muxCtx.Write(c.response.Content.([]byte))
+		return err
 
-		case openapi.MIMETextHTML, openapi.MIMETextHTMLCharsetUTF8:
-			return c.muxCtx.SendString(c.response.Content.(string))
-		case openapi.MIMEApplicationJSON, openapi.MIMEApplicationJSONCharsetUTF8:
-			return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
-		case openapi.MIMETextXML, openapi.MIMEApplicationXML, openapi.MIMETextXMLCharsetUTF8, openapi.MIMEApplicationXMLCharsetUTF8:
-			return c.muxCtx.XML(c.response.Content)
-		case openapi.MIMETextPlain, openapi.MIMETextPlainCharsetUTF8:
-			return c.muxCtx.SendString(c.response.Content.(string))
-		//case openapi.MIMETextJavaScript, openapi.MIMETextJavaScriptCharsetUTF8:
-		//case openapi.MIMEApplicationForm:
-		//case openapi.MIMEOctetStream:
-		//case openapi.MIMEMultipartForm:
-		default:
-			return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
-		}
 	default:
 		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
 	}
-	err := c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
-	if err != nil {
-		c.Logger().Warn(fmt.Sprintf(
-			"write response failed, method: '%s', url: '%s', statusCode: '%d', err: %v",
-			c.muxCtx.Method(), c.muxCtx.Path(), c.response.StatusCode, err,
-		))
-	}
-	return err
 }

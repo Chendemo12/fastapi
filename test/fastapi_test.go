@@ -1,6 +1,8 @@
-package fastapi
+package test
 
 import (
+	"github.com/Chendemo12/fastapi"
+	"github.com/Chendemo12/fastapi/middleware/fiberEngine"
 	"testing"
 	"time"
 )
@@ -8,48 +10,48 @@ import (
 // ============================================================================
 
 type BaseTypeRouter struct {
-	BaseRouter
+	fastapi.BaseRouter
 }
 
 func (r *BaseTypeRouter) Prefix() string { return "/api/base-type" }
 
-func (r *BaseTypeRouter) ReturnStringGet(c *Context) (string, error) {
+func (r *BaseTypeRouter) ReturnStringGet(c *fastapi.Context) (string, error) {
 	return "hello", nil
 }
 
-func (r *BaseTypeRouter) ReturnBoolGet(c *Context) (bool, error) {
+func (r *BaseTypeRouter) ReturnBoolGet(c *fastapi.Context) (bool, error) {
 	return true, nil
 }
 
-func (r *BaseTypeRouter) ReturnIntGet(c *Context) (int, error) {
+func (r *BaseTypeRouter) ReturnIntGet(c *fastapi.Context) (int, error) {
 	return 1, nil
 }
 
-func (r *BaseTypeRouter) ReturnUint16Get(c *Context) (uint16, error) {
+func (r *BaseTypeRouter) ReturnUint16Get(c *fastapi.Context) (uint16, error) {
 	return 65535, nil
 }
 
-func (r *BaseTypeRouter) ReturnFloatGet(c *Context) (float32, error) {
+func (r *BaseTypeRouter) ReturnFloatGet(c *fastapi.Context) (float32, error) {
 	return 3.14, nil
 }
 
 // ============================================================================
 
 type QueryParamRouter struct {
-	BaseRouter
+	fastapi.BaseRouter
 }
 
 func (r *QueryParamRouter) Prefix() string { return "/api/query-param" }
 
-func (r *QueryParamRouter) IntQueryParamGet(c *Context, age int) (int, error) {
+func (r *QueryParamRouter) IntQueryParamGet(c *fastapi.Context, age int) (int, error) {
 	return age, nil
 }
 
-func (r *QueryParamRouter) FloatQueryParamGet(c *Context, source float64) (float64, error) {
+func (r *QueryParamRouter) FloatQueryParamGet(c *fastapi.Context, source float64) (float64, error) {
 	return source, nil
 }
 
-func (r *QueryParamRouter) ManyQueryParamGet(c *Context, age int, name string, graduate bool, source float64) (float64, error) {
+func (r *QueryParamRouter) ManyQueryParamGet(c *fastapi.Context, age int, name string, graduate bool, source float64) (float64, error) {
 	return source, nil
 }
 
@@ -58,14 +60,14 @@ type Name struct {
 	Name   string `query:"name" description:"姓名"`                       // 可选查询参数
 }
 
-func (r *QueryParamRouter) StructQueryParamDelete(c *Context, param *Name) (string, error) {
+func (r *QueryParamRouter) StructQueryParamDelete(c *fastapi.Context, param *Name) (string, error) {
 	return param.Father + " " + param.Name, nil
 }
 
 // ============================================================================
 
 type RequestBodyRouter struct {
-	BaseRouter
+	fastapi.BaseRouter
 }
 
 func (r *RequestBodyRouter) Prefix() string { return "/api/request" }
@@ -80,15 +82,15 @@ type RegisterForm struct {
 
 func (r *RegisterForm) SchemaDesc() string { return "注册表单" }
 
-func (r *RequestBodyRouter) RegisterPost(c *Context, location string, form *RegisterForm) (string, error) {
+func (r *RequestBodyRouter) RegisterPost(c *fastapi.Context, location string, form *RegisterForm) (string, error) {
 	return "123456789", nil
 }
 
-func (r *RequestBodyRouter) RegisterWithParamPost(c *Context, name *Name, form *RegisterForm) (string, error) {
+func (r *RequestBodyRouter) RegisterWithParamPost(c *fastapi.Context, name *Name, form *RegisterForm) (string, error) {
 	return "123456789", nil
 }
 
-func (r *RequestBodyRouter) StringQueryParamPatch(c *Context, name string) (string, error) {
+func (r *RequestBodyRouter) StringQueryParamPatch(c *fastapi.Context, name string) (string, error) {
 	return name, nil
 }
 
@@ -101,7 +103,7 @@ func (r *RequestBodyRouter) Path() map[string]string {
 // ============================================================================
 
 type ResponseModelRouter struct {
-	BaseRouter
+	fastapi.BaseRouter
 }
 
 func (r *ResponseModelRouter) Prefix() string { return "/api/response" }
@@ -115,7 +117,7 @@ type ServerValidateErrorModel struct {
 
 func (s *ServerValidateErrorModel) SchemaDesc() string { return "服务器内部模型示例" }
 
-func (r *ResponseModelRouter) ReturnSimpleStructGet(c *Context) (*ServerValidateErrorModel, error) {
+func (r *ResponseModelRouter) ReturnSimpleStructGet(c *fastapi.Context) (*ServerValidateErrorModel, error) {
 	return &ServerValidateErrorModel{
 		ServerName: "FastApi",
 		Version:    "v0.2.0",
@@ -141,7 +143,7 @@ type BoardCard struct {
 	Tunnels   []*Tunnel `json:"tunnels" description:"通道信息"`
 }
 
-func (r *ResponseModelRouter) ReturnNormalStructGet(c *Context) (*BoardCard, error) {
+func (r *ResponseModelRouter) ReturnNormalStructGet(c *fastapi.Context) (*BoardCard, error) {
 	return &BoardCard{
 		Serial:    "0x987654321",
 		PcieSlots: 2,
@@ -158,7 +160,7 @@ func (r *ResponseModelRouter) ReturnNormalStructGet(c *Context) (*BoardCard, err
 	}, nil
 }
 
-func (r *ResponseModelRouter) GetTunnels(c *Context) ([]*Tunnel, error) {
+func (r *ResponseModelRouter) GetTunnels(c *fastapi.Context) ([]*Tunnel, error) {
 	return []*Tunnel{
 		{
 			No:      10,
@@ -176,7 +178,7 @@ type Child struct {
 	Name string
 }
 
-func (r *ResponseModelRouter) GetChildren(c *Context) ([]*Child, error) {
+func (r *ResponseModelRouter) GetChildren(c *fastapi.Context) ([]*Child, error) {
 	return []*Child{
 		{
 			Age:  10,
@@ -185,7 +187,7 @@ func (r *ResponseModelRouter) GetChildren(c *Context) ([]*Child, error) {
 	}, nil
 }
 
-func (r *ResponseModelRouter) PostReportMessage(c *Context, form []*Child) ([]*Child, error) {
+func (r *ResponseModelRouter) PostReportMessage(c *fastapi.Context, form []*Child) ([]*Child, error) {
 	return form, nil
 }
 
@@ -207,7 +209,7 @@ type EnosData struct {
 	Code   int           `json:"code"`
 }
 
-func (r *ResponseModelRouter) GetComplexModel(c *Context) (*EnosData, error) {
+func (r *ResponseModelRouter) GetComplexModel(c *fastapi.Context) (*EnosData, error) {
 	return &EnosData{
 		Data:   &EnosDataItem{},
 		Kind:   "",
@@ -217,7 +219,7 @@ func (r *ResponseModelRouter) GetComplexModel(c *Context) (*EnosData, error) {
 	}, nil
 }
 
-func routeCtxCancel(s *Context) *Response {
+func routeCtxCancel(s *fastapi.Context) *fastapi.Response {
 	cl := s.Logger() // 当路由执行完毕退出时, ctx将被释放
 	ctx := s.DisposableCtx()
 
@@ -258,7 +260,7 @@ type DomainRecord struct {
 	} `json:"addresses" description:"主机地址"`
 }
 
-func (r *ResponseModelRouter) GetMoreComplexModel(c *Context) (*DomainRecord, error) {
+func (r *ResponseModelRouter) GetMoreComplexModel(c *fastapi.Context) (*DomainRecord, error) {
 	m := &DomainRecord{
 		Timestamp: 0,
 		Addresses: []struct {
@@ -291,18 +293,19 @@ func (r *ResponseModelRouter) GetMoreComplexModel(c *Context) (*DomainRecord, er
 }
 
 func TestNew(t *testing.T) {
-	svc := NewCtx()
-	app := New(Config{
+	app := fastapi.New(fastapi.Config{
 		Version:     "v0.2.0",
 		Description: "",
 		Title:       "FastApi Example",
 		Debug:       true,
 	})
 
+	app.SetMux(fiberEngine.New(app.Config().Title, app.Config().Version))
+
 	app.IncludeRouter(&BaseTypeRouter{}).
 		IncludeRouter(&QueryParamRouter{}).
 		IncludeRouter(&RequestBodyRouter{}).
 		IncludeRouter(&ResponseModelRouter{})
 
-	app.Run(svc.Conf.HTTP.Host, svc.Conf.HTTP.Port) // 阻塞运行
+	app.Run("0.0.0.0", "8099") // 阻塞运行
 }

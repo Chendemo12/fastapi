@@ -10,12 +10,13 @@ import (
 
 // BaseModelMeta 所有数据模型 ModelSchema 的元信息
 type BaseModelMeta struct {
-	Param       *RouteParam
-	Description string            `description:"模型描述"`
-	fields      []*BaseModelField `description:"结构体字段"`
-	doc         map[string]any    `description:"模型文档"`
-	innerModels []*BaseModelField `description:"子模型, 对于未命名结构体，给其指定一个结构体名称"`
-	itemModel   *BaseModelMeta    `description:"当此模型为数组时, 记录内部元素的模型,同样可能是个数组"`
+	Param          *RouteParam
+	Description    string            `description:"模型描述"`
+	fields         []*BaseModelField `description:"结构体字段"`
+	doc            map[string]any    `description:"模型文档"`
+	innerModels    []*BaseModelField `description:"子模型, 对于未命名结构体，给其指定一个结构体名称"`
+	itemModel      *BaseModelMeta    `description:"当此模型为数组时, 记录内部元素的模型,同样可能是个数组"`
+	hasValidateTag bool              `description:"是否具有validate标签"`
 }
 
 func NewBaseModelMeta(param *RouteParam) *BaseModelMeta {
@@ -91,6 +92,9 @@ func (m *BaseModelMeta) scanObject() (err error) {
 	// 此时肯定是结构体了
 	for i := 0; i < rt.NumField(); i++ {
 		field := rt.Field(i)
+		// 只要任一个字段具有validate标签，就需要校验模型的字段取值
+		// 结构体字段有此标签，但字段本身没有，无需考虑此情况
+		m.hasValidateTag = utils.QueryFieldTag(field.Tag, DefaultValidateTagName, "") != ""
 		// 此处无需过滤字段，文档生成时会过滤
 		argsType := &ArgsType{
 			fatherType: rt,
@@ -468,6 +472,9 @@ func (m *BaseModelMeta) InnerSchema() []SchemaIface {
 
 	return ss
 }
+
+// HasValidateTag 是否定义了validate标签
+func (m *BaseModelMeta) HasValidateTag() bool { return m.hasValidateTag }
 
 // BaseModelField 模型的字段元数据
 // 基本数据模型, 此模型不可再分, 同时也是 ModelSchema 的字段类型

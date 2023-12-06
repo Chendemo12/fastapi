@@ -19,7 +19,7 @@ type dict map[string]any
 
 // ValidationError 参数校验错误
 type ValidationError struct {
-	Ctx  map[string]any `json:"service" description:"Service"`
+	Ctx  map[string]any `json:"service,omitempty" description:"Service"`
 	Msg  string         `json:"msg" description:"Message" binding:"required"`
 	Type string         `json:"type" description:"Error Type" binding:"required"`
 	Loc  []string       `json:"loc" description:"Location" binding:"required"`

@@ -48,7 +48,7 @@ func cleanOpts(opts ...Option) *Option {
 type GenericRoute[T openapi.ModelSchema] struct {
 	swagger   *openapi.RouteSwagger
 	prototype T
-	handler   func(c *Context, params T) *Response
+	handler   func(c *Context, params T) *Response // good
 }
 
 func (r *GenericRoute[T]) Id() string { return r.swagger.Id() }

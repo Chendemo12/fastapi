@@ -517,13 +517,11 @@ func (r *GroupRoute) ResponseBinder() ModelBindMethod {
 }
 
 func (r *GroupRoute) RequestBinders() ModelBindMethod {
-	//TODO implement me
-	panic("implement me")
+	return r.requestBinder
 }
 
 func (r *GroupRoute) QueryBinders() map[string]ModelBindMethod {
-	//TODO implement me
-	panic("implement me")
+	return map[string]ModelBindMethod{}
 }
 
 func (r *GroupRoute) NewRequestModel() reflect.Value {
@@ -543,10 +541,11 @@ func (r *GroupRoute) NewRequestModel() reflect.Value {
 	return reflect.Value{}
 }
 
+// Call 调用API, 并将响应结果写入 Response 内
 func (r *GroupRoute) Call(ctx *Context) {
 	//TODO implement me
 	// result := method.Func.Call([]reflect.Value{reflect.ValueOf(newValue)})
-	panic("implement me")
+	ctx.OKResponse("123456")
 }
 
 // 手动指定一个查询参数名称

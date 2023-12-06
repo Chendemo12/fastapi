@@ -3,7 +3,6 @@ package fastapi
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/Chendemo12/fastapi/openapi"
 	"github.com/Chendemo12/fastapi/utils"
@@ -11,17 +10,32 @@ import (
 	"reflect"
 )
 
+const ( // error message
+	ModelNotDefine     = "Data model is undefined"
+	ModelNotMatch      = "Value type mismatch"
+	ModelCannotString  = "The return value cannot be a string"
+	ModelCannotNumber  = "The return value cannot be a number"
+	ModelCannotInteger = "The return value cannot be a integer"
+	ModelCannotBool    = "The return value cannot be a boolean"
+	ModelCannotArray   = "The return value cannot be a array"
+	PathPsIsEmpty      = "Path must not be empty"
+	QueryPsIsEmpty     = "Query must not be empty"
+)
+
+var emptyLocList = []string{"response"}
+var whereServerError = map[string]any{"where error": "server"}
+var whereClientError = map[string]any{"where error": "client"}
+
 type ValidateMethod interface {
-	V(obj any) error
+	V(obj any) *openapi.ValidationError
 }
 
 type ModelBindMethod interface {
-	Name() string                                 // 名称
-	ContentType() string                          // MIME类型
-	Validate(obj any) (err error)                 // 校验方法，对于响应首先校验，然后在 Marshal；对于请求，首先 Unmarshal 然后再校验
-	Marshal(obj any) ([]byte, error)              // 序列化方法，通过 ContentType 确定响应体类型
-	Unmarshal(stream []byte, obj any) (err error) // 反序列化方法，通过 "http:header:Content-Type" 推断内容类型
-	New() any                                     // 创建一个新实例
+	Name() string                                   // 名称
+	Validate(data any) *openapi.HTTPValidationError // 校验方法，对于响应首先校验，然后在 Marshal；对于请求，首先 Unmarshal 然后再校验
+	Marshal(obj any) ([]byte, error)                // 序列化方法，通过 ContentType 确定响应体类型
+	Unmarshal(stream []byte, obj any) (err error)   // 反序列化方法，通过 "http:header:Content-Type" 推断内容类型
+	New() any                                       // 创建一个新实例
 }
 
 type JsonBindMethod struct {
@@ -33,31 +47,18 @@ func (m *JsonBindMethod) Name() string {
 	return "JsonBindMethod"
 }
 
-func (m *JsonBindMethod) ContentType() string {
-	return openapi.MIMEApplicationJSONCharsetUTF8
-}
+func (m *JsonBindMethod) Validate(data any) *openapi.HTTPValidationError {
+	var err *openapi.ValidationError
+	var httpv = &openapi.HTTPValidationError{}
 
-func (m *JsonBindMethod) Validate(obj any) (err error) {
 	for _, validate := range m.validates {
-		err = validate.V(obj)
+		err = validate.V(data)
 		if err != nil {
-			return err
+			httpv.Detail = append(httpv.Detail, err)
 		}
 	}
 
-	for _, f := range m.AdditionalValidates() {
-		err = f(obj)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (m *JsonBindMethod) AdditionalValidates() []func(obj any) error {
-	s := make([]func(obj any) error, 0)
-	return s
+	return httpv
 }
 
 func (m *JsonBindMethod) Marshal(obj any) ([]byte, error) {
@@ -75,7 +76,6 @@ func (m *JsonBindMethod) New() any {
 }
 
 type IntegerBindMethod struct {
-	JsonBindMethod
 	unsigned        bool // 无符号类型
 	UnsignedMaximum uint64
 	UnsignedMinimum uint64
@@ -87,15 +87,23 @@ func (m *IntegerBindMethod) Name() string {
 	return "IntegerBindMethod"
 }
 
-func (m *IntegerBindMethod) AdditionalValidates() []func(obj any) error {
-	s := make([]func(obj any) error, 0)
-	if m.unsigned {
-		s = append(s, UnsignedIntegerMaximumV[uint64](m.UnsignedMaximum, false))
-	} else {
-		s = append(s, SignedIntegerMaximumV[int64](m.SignedMaximum, false))
+func (m *IntegerBindMethod) Validate(data any) *openapi.HTTPValidationError {
+	var err *openapi.ValidationError
+	var httpv = &openapi.HTTPValidationError{}
+
+	links := []func(data any) *openapi.ValidationError{
+		UnsignedIntegerMaximumV[uint64](m.UnsignedMaximum, false),
+		SignedIntegerMaximumV[int64](m.SignedMaximum, false),
 	}
 
-	return s
+	for _, link := range links {
+		err = link(data)
+		if err != nil {
+			httpv.Detail = append(httpv.Detail, err)
+		}
+	}
+
+	return httpv
 }
 
 func (m *IntegerBindMethod) Marshal(obj any) ([]byte, error) {
@@ -122,14 +130,24 @@ type SignedInteger interface {
 }
 
 // UnsignedIntegerMaximumV 无符号最大值校验
-func UnsignedIntegerMaximumV[T UnsignedInteger](maximum T, eq bool) func(obj any) error {
-	return func(obj any) error {
+func UnsignedIntegerMaximumV[T UnsignedInteger](maximum T, eq bool) func(obj any) *openapi.ValidationError {
+	return func(obj any) *openapi.ValidationError {
 		if eq && obj.(T) > maximum {
-			return errors.New(fmt.Sprintf("value: %d not <= %d", obj, maximum))
+			return &openapi.ValidationError{
+				Ctx:  map[string]any{"where error": "client"},
+				Msg:  fmt.Sprintf("value: %d not <= %d", obj, maximum),
+				Type: string(openapi.IntegerType),
+				Loc:  []string{"param"},
+			}
 		}
 
 		if !eq && obj.(T) >= maximum {
-			return errors.New(fmt.Sprintf("value: %d not < %d", obj, maximum))
+			return &openapi.ValidationError{
+				Ctx:  map[string]any{"where error": "client"},
+				Msg:  fmt.Sprintf("value: %d not < %d", obj, maximum),
+				Type: string(openapi.IntegerType),
+				Loc:  []string{"param"},
+			}
 		}
 
 		return nil
@@ -137,14 +155,24 @@ func UnsignedIntegerMaximumV[T UnsignedInteger](maximum T, eq bool) func(obj any
 }
 
 // SignedIntegerMaximumV 有符号最大值校验
-func SignedIntegerMaximumV[T SignedInteger](minimum T, eq bool) func(obj any) error {
-	return func(obj any) error {
+func SignedIntegerMaximumV[T SignedInteger](minimum T, eq bool) func(obj any) *openapi.ValidationError {
+	return func(obj any) *openapi.ValidationError {
 		if eq && obj.(T) < minimum {
-			return errors.New(fmt.Sprintf("value: %d not <= %d", obj, minimum))
+			return &openapi.ValidationError{
+				Ctx:  map[string]any{"where error": "client"},
+				Msg:  fmt.Sprintf("value: %d not <= %d", obj, minimum),
+				Type: string(openapi.IntegerType),
+				Loc:  []string{"param"},
+			}
 		}
 
 		if !eq && obj.(T) <= minimum {
-			return errors.New(fmt.Sprintf("value: %d not < %d", obj, minimum))
+			return &openapi.ValidationError{
+				Ctx:  map[string]any{"where error": "client"},
+				Msg:  fmt.Sprintf("value: %d not < %d", obj, minimum),
+				Type: string(openapi.IntegerType),
+				Loc:  []string{"param"},
+			}
 		}
 
 		return nil
@@ -229,12 +257,8 @@ func (m *NothingBindMethod) Name() string {
 	return "NothingBindMethod"
 }
 
-func (m *NothingBindMethod) ContentType() string {
-	return openapi.MIMEApplicationJSONCharsetUTF8
-}
-
-func (m *NothingBindMethod) Validate(obj any) (err error) {
-	return
+func (m *NothingBindMethod) Validate(data any) *openapi.HTTPValidationError {
+	return nil
 }
 
 func (m *NothingBindMethod) Marshal(obj any) ([]byte, error) {
@@ -247,4 +271,134 @@ func (m *NothingBindMethod) Unmarshal(stream []byte, obj any) (err error) {
 
 func (m *NothingBindMethod) New() any {
 	return nil
+}
+
+// validationErrorResponse 参数校验错误返回值
+func validationErrorResponse(ves ...*openapi.ValidationError) *Response {
+	return &Response{
+		StatusCode: http.StatusUnprocessableEntity,
+		Content:    &openapi.HTTPValidationError{Detail: ves},
+		Type:       ErrResponseType,
+	}
+}
+
+func modelCannotBeStringResponse(name ...string) *Response {
+	vv := &openapi.ValidationError{
+		Ctx:  map[string]any{"where error": "server", "msg": ModelCannotString},
+		Msg:  ModelNotMatch,
+		Type: string(openapi.StringType),
+		Loc:  emptyLocList,
+	}
+
+	if len(name) > 0 {
+		vv.Ctx["msg"] = fmt.Sprintf(
+			"response model should be '%s', but 'string' returned", name[0],
+		)
+	}
+
+	return &Response{
+		StatusCode: http.StatusUnprocessableEntity,
+		Content:    &openapi.HTTPValidationError{Detail: []*openapi.ValidationError{vv}},
+	}
+}
+
+func modelCannotBeNumberResponse(name ...string) *Response {
+	vv := &openapi.ValidationError{
+		Ctx:  map[string]any{"where error": "server", "msg": ModelCannotNumber},
+		Msg:  ModelNotMatch,
+		Type: string(openapi.NumberType),
+		Loc:  emptyLocList,
+	}
+	if len(name) > 0 {
+		vv.Ctx["msg"] = fmt.Sprintf(
+			"response model should be '%s', but 'string' returned", name[0],
+		)
+	}
+
+	return &Response{
+		StatusCode: http.StatusUnprocessableEntity,
+		Content:    &openapi.HTTPValidationError{Detail: []*openapi.ValidationError{vv}},
+	}
+}
+
+func modelCannotBeBoolResponse(name ...string) *Response {
+	vv := &openapi.ValidationError{
+		Ctx:  map[string]any{"where error": "server", "msg": ModelCannotBool},
+		Msg:  ModelNotMatch,
+		Type: string(openapi.BoolType),
+		Loc:  emptyLocList,
+	}
+	if len(name) > 0 {
+		vv.Ctx["msg"] = fmt.Sprintf(
+			"response model should be '%s', but 'string' returned", name[0],
+		)
+	}
+	return &Response{
+		StatusCode: http.StatusUnprocessableEntity,
+		Content:    &openapi.HTTPValidationError{Detail: []*openapi.ValidationError{vv}},
+	}
+}
+
+func modelCannotBeIntegerResponse(name ...string) *Response {
+	vv := &openapi.ValidationError{
+		Ctx:  map[string]any{"where error": "server", "msg": ModelCannotInteger},
+		Msg:  ModelNotMatch,
+		Type: string(openapi.IntegerType),
+		Loc:  emptyLocList,
+	}
+	if len(name) > 0 {
+		vv.Ctx["msg"] = fmt.Sprintf(
+			"response model should be '%s', but 'string' returned", name[0],
+		)
+	}
+	return &Response{
+		StatusCode: http.StatusUnprocessableEntity,
+		Content:    &openapi.HTTPValidationError{Detail: []*openapi.ValidationError{vv}},
+	}
+}
+
+func modelCannotBeArrayResponse(name ...string) *Response {
+	vv := &openapi.ValidationError{
+		Ctx:  map[string]any{"where error": "server", "msg": ModelCannotArray},
+		Msg:  ModelNotMatch,
+		Type: string(openapi.ArrayType),
+		Loc:  emptyLocList,
+	}
+	if len(name) > 0 {
+		vv.Ctx["msg"] = fmt.Sprintf(
+			"response model should be '%s', but 'string' returned", name[0],
+		)
+	}
+
+	return &Response{
+		StatusCode: http.StatusUnprocessableEntity,
+		Content:    &openapi.HTTPValidationError{Detail: []*openapi.ValidationError{vv}},
+	}
+}
+
+// objectModelNotMatchResponse 结构体不匹配的错误返回体
+//
+//	@param	name	...string	注册的返回体,实际的返回体
+func objectModelNotMatchResponse(name ...string) *Response {
+	vv := &openapi.ValidationError{
+		Ctx: map[string]any{
+			"where error": "server",
+			"msg": fmt.Sprintf(
+				"response model should be '%s', but '%s' returned", name[0], name[1],
+			),
+		},
+		Msg:  ModelNotMatch,
+		Type: string(openapi.ObjectType),
+		Loc:  []string{"response", name[0]},
+	}
+	if len(name) > 0 {
+		vv.Ctx["msg"] = fmt.Sprintf(
+			"response model should be '%s', but 'string' returned", name[0],
+		)
+	}
+
+	return &Response{
+		StatusCode: http.StatusUnprocessableEntity,
+		Content:    &openapi.HTTPValidationError{Detail: []*openapi.ValidationError{vv}},
+	}
 }

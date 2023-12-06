@@ -21,7 +21,7 @@ type Context struct {
 	PathFields  map[string]string  `json:"path_fields,omitempty"`  // 路径参数
 	QueryFields map[string]string  `json:"query_fields,omitempty"` // 查询参数
 	svc         *Service           `description:"flask-go service"`
-	muxCtx      MuxCtx             `description:"路由器Context"`
+	muxCtx      MuxContext         `description:"路由器Context"`
 	routeCtx    context.Context    `description:"获取针对此次请求的唯一context"`
 	routeCancel context.CancelFunc `description:"获取针对此次请求的唯一取消函数"`
 	response    *Response          `description:"返回值,以减少函数间复制的开销"`
@@ -53,8 +53,8 @@ func (c *Context) Value(key any) any {
 //	@return	Service 服务依赖信息
 func (c *Context) Service() *Service { return c.svc }
 
-// MuxCtx 获取web引擎的上下文
-func (c *Context) MuxCtx() MuxCtx { return c.muxCtx }
+// MuxContext 获取web引擎的上下文
+func (c *Context) MuxContext() MuxContext { return c.muxCtx }
 
 // DisposableCtx 针对此次请求的唯一context, 当路由执行完毕返回时,将会自动关闭
 // 为每一个请求创建一个新的 context.Context 其代价是非常高的，因此允许通过设置关闭此功能
@@ -112,7 +112,7 @@ func (c *Context) PathField(name string, undefined ...string) string {
 
 // BodyParser 序列化请求体
 func (c *Context) BodyParser(a any) *Response {
-	if err := c.MuxCtx().BodyParser(a); err != nil { // 请求的表单序列化错误
+	if err := c.muxCtx.BodyParser(a); err != nil { // 请求的表单序列化错误
 		c.Logger().Error(err)
 		return validationErrorResponse(jsoniterUnmarshalErrorToValidationError(err))
 	}
@@ -132,23 +132,10 @@ func (c *Context) ShouldBindJSON(stc any) *Response {
 	return nil
 }
 
-// StringResponse 返回值为字符串对象 (校验返回值)
-//
-//	@param	content	string	字符串文本
-//	@return	resp *Response response返回体
-func (c *Context) StringResponse(content string) *Response {
-	c.response = &Response{
-		StatusCode: http.StatusOK, Content: content, Type: StringResponseType,
-	}
-
-	return c.response
-}
-
 // JSONResponse 仅支持可以json序列化的响应体 (校验返回值)
 //
 // 对于结构体类型: 其返回值为序列化后的json
 // 对于基本数据类型: 其返回值为实际数值
-// 对于数组类型: 若其子元素为Uint8,则自动转换为 StreamResponse 以避免转义错误,但应显式的返回 StreamResponse
 //
 //	@param	statusCode	int	响应状态码
 //	@param	content		any	可以json序列化的类型
@@ -167,6 +154,18 @@ func (c *Context) JSONResponse(statusCode int, content any) *Response {
 //	@param	content	any	可以json序列化的类型
 //	@return	resp *Response response返回体
 func (c *Context) OKResponse(content any) *Response { return c.JSONResponse(http.StatusOK, content) }
+
+// StringResponse 返回值为字符串对象 (不校验返回值)
+//
+//	@param	content	string	字符串文本
+//	@return	resp *Response response返回体
+func (c *Context) StringResponse(content string) *Response {
+	c.response = &Response{
+		StatusCode: http.StatusOK, Content: content, Type: StringResponseType,
+	}
+
+	return c.response
+}
 
 // StreamResponse 返回值为字节流对象 (不校验返回值)
 //
@@ -211,7 +210,7 @@ func (c *Context) ErrorResponse(content any) *Response {
 //	@param	statusCode	int		响应状态码
 //	@param	content		string	HTML文本字符串
 //	@return	resp *Response response返回体
-func (c *Context) HTMLResponse(statusCode int, context string) *Response {
+func (c *Context) HTMLResponse(statusCode int, context []byte) *Response {
 	c.response = &Response{
 		Type:        HtmlResponseType,
 		StatusCode:  statusCode,
