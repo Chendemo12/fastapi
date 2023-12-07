@@ -1,4 +1,4 @@
-package ginEngine
+package ginWrapper
 
 import (
 	"github.com/gin-gonic/gin"

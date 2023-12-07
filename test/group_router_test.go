@@ -3,7 +3,7 @@ package test
 import (
 	"errors"
 	"github.com/Chendemo12/fastapi"
-	"github.com/Chendemo12/fastapi/middleware/fiberEngine"
+	"github.com/Chendemo12/fastapi/middleware/fiberWrapper"
 	"testing"
 	"time"
 )
@@ -310,7 +310,7 @@ func TestNew(t *testing.T) {
 		Debug:       true,
 	})
 
-	app.SetMux(fiberEngine.Default())
+	app.SetMux(fiberWrapper.Default())
 
 	app.IncludeRouter(&BaseTypeRouter{}).
 		IncludeRouter(&QueryParamRouter{}).
