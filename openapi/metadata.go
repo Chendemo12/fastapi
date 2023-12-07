@@ -325,8 +325,8 @@ func (m *BaseModelMeta) scanBaseSwagger() (err error) {
 	default:
 	}
 
-	m.doc[DefaultParamRequiredLabel] = m.IsRequired()
-	m.doc[DescriptionTagName] = m.SchemaDesc()
+	m.doc["required"] = m.IsRequired()
+	m.doc["description"] = m.SchemaDesc()
 
 	return
 }
@@ -343,9 +343,9 @@ func (m *BaseModelMeta) scanObjectSwagger() (err error) {
 
 	// 组合出模型文档
 	schema := dict{
-		"title":            m.SchemaTitle(), // 模型标题排除包名
-		"type":             m.SchemaType(),
-		DescriptionTagName: m.SchemaDesc(),
+		"title":       m.SchemaTitle(), // 模型标题排除包名
+		"type":        m.SchemaType(),
+		"description": m.SchemaDesc(),
 	}
 
 	required := make([]string, 0, len(m.fields))
@@ -364,7 +364,7 @@ func (m *BaseModelMeta) scanObjectSwagger() (err error) {
 		}
 	}
 
-	schema[DefaultParamRequiredLabel], schema["properties"] = required, properties
+	schema["required"], schema["properties"] = required, properties
 
 	m.doc = schema
 
@@ -398,7 +398,7 @@ func (m *BaseModelMeta) scanArraySwagger() (err error) {
 		}
 	}
 
-	m.doc[DescriptionTagName] = m.SchemaDesc()
+	m.doc["description"] = m.SchemaDesc()
 	m.doc["type"] = ArrayType
 
 	return
@@ -456,6 +456,11 @@ func (m *BaseModelMeta) InnerSchema() []SchemaIface {
 			// 仍然是个模型，继续反射
 			param := NewRouteParam(inner.rType, 0)
 			err := param.Init()
+			if param.Prototype.Name() == "" {
+				// NOTICE: 匿名字段，只能从外部自行分配名称
+				param.Rename(inner.Pkg, inner.Name)
+			}
+
 			if err != nil { // 应该输出日志
 				fmt.Println(fmt.Sprintf("model: '%s' document create faild, %v", param.Pkg, err))
 				continue

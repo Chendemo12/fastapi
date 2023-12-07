@@ -159,12 +159,20 @@ func (r *RouteParam) Init() (err error) {
 		ss := strings.Split(elem.String(), ".")
 		r.Pkg = strings.Join(ss[:len(ss)-1], "") + "." + utils.Pluralize(elem.Name())
 	}
+	if strings.HasPrefix(r.Pkg, "struct {") || r.Prototype.Name() == "" {
+		// 对于匿名字段, 此处无法重命名，只能由外部重命名, 通过 Rename 方法重命名
+	}
 	return nil
 }
 
 func (r *RouteParam) Scan() (err error) { return }
 
 func (r *RouteParam) ScanInner() (err error) { return }
+
+func (r *RouteParam) Rename(pkg, name string) {
+	r.Pkg = pkg
+	r.Name = name
+}
 
 // CopyPrototype 将原始模型的 reflect.Type 拷贝一份
 func (r *RouteParam) CopyPrototype() reflect.Type {
