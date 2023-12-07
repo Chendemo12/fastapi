@@ -117,6 +117,7 @@ func (c *Context) Status(code int) {
 // 由于路由组路由函数 GroupRouteHandler 签名的限制；其返回ContentType默认为"application/json; charset=utf-8"
 // 允许通过此方法进行修改
 func (c *Context) ContentType(contentType string) {
+	// TODO：目前无法生效
 	c.response.ContentType = contentType
 }
 

@@ -127,10 +127,11 @@ type Scanner interface {
 
 // GroupRouterMeta 反射构建路由组的元信息
 type GroupRouterMeta struct {
-	router GroupRouter
-	routes []*GroupRoute
-	pkg    string // 包名.结构体名
-	tags   []string
+	router      GroupRouter
+	routerValue reflect.Value
+	routes      []*GroupRoute
+	pkg         string // 包名.结构体名
+	tags        []string
 }
 
 // NewGroupRouteMeta 构建一个路由组的主入口
@@ -153,6 +154,7 @@ func (r *GroupRouterMeta) Init() (err error) {
 func (r *GroupRouterMeta) String() string { return r.pkg }
 
 func (r *GroupRouterMeta) Scan() (err error) {
+	r.routerValue = reflect.ValueOf(r.router)
 	obj := reflect.TypeOf(r.router)
 
 	// 路由组必须是结构体实现
@@ -527,29 +529,34 @@ func (r *GroupRoute) QueryBinders() map[string]ModelBindMethod {
 	return map[string]ModelBindMethod{}
 }
 
-func (r *GroupRoute) NewRequestModel() reflect.Value {
-	if r.swagger.RequestModel != nil {
-		req := r.inParams[r.handlerInNum-1]
-		var rt reflect.Type
-		if req.IsPtr {
-			rt = req.CopyPrototype().Elem()
-		} else {
-			rt = req.CopyPrototype()
-		}
-		newValue := reflect.New(rt).Interface()
-		reqParam := reflect.ValueOf(newValue)
+func (r *GroupRoute) NewInParams(ctx *Context) []reflect.Value {
+	params := make([]reflect.Value, len(r.inParams)+2)
+	params[0] = r.group.routerValue
+	params[1] = reflect.ValueOf(ctx)
 
-		return reqParam
+	for i := 2; i < len(r.inParams); i++ {
+		params[i] = r.inParams[i].New()
 	}
-	return reflect.Value{}
+
+	// TODO: 绑定赋值
+
+	return params
 }
 
 // Call 调用API, 并将响应结果写入 Response 内
 func (r *GroupRoute) Call(ctx *Context) {
-	//TODO implement me
-	// result := method.Func.Call([]reflect.Value{reflect.ValueOf(newValue)})
-	// error
-	ctx.response.Content = "123456"
+	result := r.method.Func.Call(r.NewInParams(ctx))
+	if last := result[LastOutParamOffset]; !last.IsValid() || last.IsNil() {
+		// err=nil, 函数没有返回错误
+		ctx.response.Content = result[FirstOutParamOffset].Interface()
+	} else {
+		err := last.Interface().(error)
+		if ctx.response.StatusCode == http.StatusOK {
+			// 上层没有自定义响应状态码，err!=nil的情况，状态码不允许为200
+			ctx.response.StatusCode = http.StatusInternalServerError
+		}
+		ctx.response.Content = err.Error()
+	}
 }
 
 // 手动指定一个查询参数名称

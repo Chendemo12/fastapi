@@ -193,6 +193,17 @@ func (r *RouteParam) InnerSchema() []SchemaIface {
 	return m
 }
 
+// New 通过反射创建一个新的参数实例
+func (r *RouteParam) New() (v reflect.Value) {
+	if r.IsPtr {
+		v = reflect.New(r.Prototype.Elem())
+	} else {
+		v = reflect.New(r.Prototype)
+	}
+
+	return v
+}
+
 // CreateRouteIdentify 获得一个路由对象的唯一标识
 func CreateRouteIdentify(method, url string) string {
 	return helper.CombineStrings(method, RouteMethodSeparator, url)

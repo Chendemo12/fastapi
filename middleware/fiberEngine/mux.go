@@ -23,22 +23,16 @@ type FiberMux struct {
 }
 
 // NewWrapper 创建App实例
-func NewWrapper(app ...*fiber.App) *FiberMux {
-	var ap *fiber.App
-	if len(app) > 0 {
-		ap = app[0]
-	} else {
-		ap = DefaultFiberApp()
-	}
+func NewWrapper(app *fiber.App) *FiberMux {
 	return &FiberMux{
 		one:  &sync.Once{},
-		App:  ap,
+		App:  app,
 		pool: &sync.Pool{New: func() any { return &FiberContext{} }},
 	}
 }
 
-// DefaultFiberApp 默认的fiber，已做好基本的参数配置
-func DefaultFiberApp() *fiber.App {
+// Default 默认的fiber.App，已做好基本的参数配置
+func Default() *FiberMux {
 	app := fiber.New(fiber.Config{
 		Prefork:       false,                   // core.MultipleProcessEnabled, // 多进程模式
 		CaseSensitive: true,                    // 区分路由大小写
@@ -54,7 +48,7 @@ func DefaultFiberApp() *fiber.App {
 	// 输出API访问日志
 	echoConfig := echo.ConfigDefault
 	echoConfig.TimeFormat = time.DateTime
-	echoConfig.Format = "${time}    ${method}\t${path} ${status}\n"
+	echoConfig.Format = "${time}    ${method}\t${path}    ${status}\n"
 	app.Use(echo.New(echoConfig))
 
 	// 自定义全局 recover 方法
@@ -65,7 +59,7 @@ func DefaultFiberApp() *fiber.App {
 		StackTraceHandler: customRecoverHandler,
 	}))
 
-	return app
+	return NewWrapper(app)
 }
 
 func (m *FiberMux) AcquireCtx(c *fiber.Ctx) *FiberContext {

@@ -79,7 +79,7 @@ func (r *GenericRoute[T]) QueryBinders() map[string]ModelBindMethod {
 	panic("implement me")
 }
 
-func (r *GenericRoute[T]) NewRequestModel() reflect.Value {
+func (r *GenericRoute[T]) NewInParams(ctx *Context) []reflect.Value {
 	//TODO implement me
 	panic("implement me")
 }

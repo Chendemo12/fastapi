@@ -1,6 +1,7 @@
 package test
 
 import (
+	"errors"
 	"github.com/Chendemo12/fastapi"
 	"github.com/Chendemo12/fastapi/middleware/fiberEngine"
 	"testing"
@@ -33,6 +34,15 @@ func (r *BaseTypeRouter) ReturnUint16Get(c *fastapi.Context) (uint16, error) {
 
 func (r *BaseTypeRouter) ReturnFloatGet(c *fastapi.Context) (float32, error) {
 	return 3.14, nil
+}
+
+func (r *BaseTypeRouter) ReturnErrorGet(c *fastapi.Context) (string, error) {
+	return "", errors.New("return error, default StatusCode: 500")
+}
+
+func (r *BaseTypeRouter) ReturnErrorBadGet(c *fastapi.Context) (string, error) {
+	c.Status(400)
+	return "", errors.New("return error, custom StatusCode: 400")
 }
 
 // ============================================================================
@@ -300,7 +310,7 @@ func TestNew(t *testing.T) {
 		Debug:       true,
 	})
 
-	app.SetMux(fiberEngine.NewWrapper(fiberEngine.DefaultFiberApp()))
+	app.SetMux(fiberEngine.Default())
 
 	app.IncludeRouter(&BaseTypeRouter{}).
 		IncludeRouter(&QueryParamRouter{}).
