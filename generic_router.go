@@ -6,6 +6,9 @@ import (
 	"reflect"
 )
 
+// GenericRouteHandler 泛型路由函数定义，其中 param 定义为实际的泛型类型
+type GenericRouteHandler func(c *Context, param any) *Response
+
 // Option 泛型接口定义可选项
 // NOTICE: 231126 暂不可用
 type Option struct {

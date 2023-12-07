@@ -9,7 +9,7 @@ import (
 const staticPrefix = "internal/static/"
 
 // 生成模型定义
-func (f *FastApi) registerRouteDoc() *FastApi {
+func (f *Wrapper) registerRouteDoc() *Wrapper {
 	// 注册路由组数据模型
 	for _, group := range f.groupRouters {
 		for _, route := range group.Routes() {
@@ -21,7 +21,7 @@ func (f *FastApi) registerRouteDoc() *FastApi {
 }
 
 // 注册 swagger 的文档路由
-func (f *FastApi) registerRouteHandle() *FastApi {
+func (f *Wrapper) registerRouteHandle() *Wrapper {
 	// =========== docs 在线调试页面
 	err := f.Mux().BindRoute(http.MethodGet, openapi.DocumentUrl,
 		func(ctx MuxContext) error {

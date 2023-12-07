@@ -300,7 +300,7 @@ func TestNew(t *testing.T) {
 		Debug:       true,
 	})
 
-	app.SetMux(fiberEngine.New(app.Config().Title, app.Config().Version))
+	app.SetMux(fiberEngine.NewWrapper(fiberEngine.DefaultFiberApp()))
 
 	app.IncludeRouter(&BaseTypeRouter{}).
 		IncludeRouter(&QueryParamRouter{}).

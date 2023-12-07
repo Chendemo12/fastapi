@@ -34,8 +34,8 @@ type Event struct {
 
 // ------------------------------------------------------------------------------------
 
-// Service FastApi 全局服务依赖信息
-// 此对象由FastApi启动时自动创建，此对象不应被修改，组合和嵌入，
+// Service Wrapper 全局服务依赖信息
+// 此对象由Wrapper启动时自动创建，此对象不应被修改，组合和嵌入，
 // 但可通过 setUserSVC 接口设置自定义的上下文信息，并在每一个路由钩子函数中可得
 type Service struct {
 	logger    logger.Iface        `description:"日志对象"`
@@ -85,7 +85,7 @@ func (s *Service) Validate(stc any, ctx ...map[string]any) *Response {
 		err, _ := err.(validator.ValidationErrors) // validator的校验错误信息
 
 		if nums := len(err); nums == 0 {
-			return validationErrorResponse()
+			return nil // TODO: error
 		} else {
 			ves := make([]*openapi.ValidationError, nums) // 自定义的错误信息
 			for i := 0; i < nums; i++ {
@@ -98,7 +98,7 @@ func (s *Service) Validate(stc any, ctx ...map[string]any) *Response {
 					ves[i].Ctx = ctx[0]
 				}
 			}
-			return validationErrorResponse(ves...)
+			return nil // TODO: error
 		}
 	}
 

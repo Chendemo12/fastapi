@@ -11,6 +11,49 @@ import (
 
 type MiddlewareHandle func() // 中间件函数
 
+// MuxHandler 路由函数，实现逻辑类似于中间件
+//
+// 路由处理方法(装饰器实现)，用于请求体校验和返回体序列化，同时注入全局服务依赖,
+// 此方法接收一个业务层面的路由钩子方法 RouteIface.Call
+//
+// MuxHandler 方法首先会查找路由元信息，如果找不到则直接跳过验证环节，由路由器返回404
+// 反之：
+//
+//  1. 申请一个 Context, 并初始化请求体、路由参数等
+//  2. 之后会校验并绑定路由参数（包含路径参数和查询参数）是否正确，如果错误则直接返回422错误，反之会继续序列化并绑定请求体（如果存在）序列化成功之后会校验请求参数正确性，
+//  3. 校验通过后会调用 RouteIface.Call 并将返回值绑定在 Context 内的 Response 上
+//  4. 校验返回值，并返回422或将返回值写入到实际的 response
+func (f *Wrapper) Handler(ctx MuxContext) error {
+	route, exist := f.finder.Get(openapi.CreateRouteIdentify(ctx.Method(), ctx.Path()))
+	if !exist {
+		// 正常来说，通过 Wrapper 注册的路由，不会走到这个分支
+		return nil
+	}
+
+	// 找到定义的路由信息
+	wrapperCtx := f.acquireCtx(ctx)
+	defer f.releaseCtx(wrapperCtx)
+
+	// TODO Future: 校验前中间件
+	// 路由前的校验,此校验会就地修改 Context.response
+	wrapperCtx.beforeWorkflow(route)
+	if wrapperCtx.response.Content != nil {
+		// 校验工作流不通过, 中断执行
+		return wrapperCtx.write()
+	}
+
+	// TODO Future: 执行校验后中间件
+
+	//
+	// 全部校验完成，执行处理函数并获取返回值, 此处已经完成全部请求参数的校验，调用失败也存在返回值
+	route.Call(wrapperCtx)
+
+	// 路由后的校验，校验失败就地修改 Response
+	wrapperCtx.afterWorkflow(route)
+
+	return wrapperCtx.write() // 返回消息流
+}
+
 // ----------------------------------------	路由前的各种校验工作 ----------------------------------------
 
 // 将jsoniter 的反序列化错误转换成 接口错误类型
@@ -54,7 +97,7 @@ func jsoniterUnmarshalErrorToValidationError(err error) *openapi.ValidationError
 //	@return	*Response 校验结果, 若为nil则校验通过
 func (c *Context) pathParamsValidate(route RouteIface) {
 	// 路径参数校验
-	//for _, p := range c.route.PathFields {
+	//for _, p := range c.route.pathFields {
 	//	value := c.muxCtx.Params(p.SchemaTitle())
 	//	if p.IsRequired() && value == "" {
 	//		// 不存在此路径参数, 但是此路径参数设置为必选
@@ -66,7 +109,7 @@ func (c *Context) pathParamsValidate(route RouteIface) {
 	//		})
 	//	}
 	//
-	//	c.PathFields[p.SchemaPkg()] = value
+	//	c.pathFields[p.SchemaPkg()] = value
 	//}
 }
 
@@ -78,14 +121,18 @@ func (c *Context) queryParamsValidate(route RouteIface) {
 		value := c.muxCtx.Query(q.SchemaPkg())
 		if q.IsRequired() && value == "" {
 			// 但是此查询参数设置为必选
-			c.response = validationErrorResponse(&openapi.ValidationError{
-				Loc:  []string{"query", q.SchemaPkg()},
-				Msg:  QueryPsIsEmpty,
-				Type: "string",
-				Ctx:  whereClientError,
-			})
+			c.response.StatusCode = http.StatusUnprocessableEntity
+			c.response.Content = &openapi.HTTPValidationError{Detail: []*openapi.ValidationError{
+				{
+					Loc:  []string{"query", q.SchemaPkg()},
+					Msg:  QueryPsIsEmpty,
+					Type: "string",
+					Ctx:  whereClientError,
+				},
+			}}
+			c.response.Type = ErrResponseType
 		}
-		c.QueryFields[q.SchemaPkg()] = value
+		c.queryFields[q.SchemaPkg()] = value
 	}
 }
 
@@ -201,7 +248,7 @@ func (c *Context) write() error {
 		return c.muxCtx.File(c.response.Content.(string))
 
 	case AdvancedResponseType:
-		//return c.response.Content.(openapi.Handler)(c.muxCtx)
+		//return c.response.Content.(openapi.MuxHandler)(c.muxCtx)
 		return nil
 
 	case CustomResponseType:

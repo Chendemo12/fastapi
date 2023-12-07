@@ -48,7 +48,7 @@ func (c *Clock) Do(_ context.Context) error {
 	return nil
 }
 
-func TestFastApi_AddCronjob(t *testing.T) {
+func TestWrapper_AddCronjob(t *testing.T) {
 	svc := NewCtx()
 	app := New(Config{
 		Version:     "1.0.0",
@@ -66,7 +66,7 @@ func TestFastApi_AddCronjob(t *testing.T) {
 	app.Run(svc.Conf.HTTP.Host, svc.Conf.HTTP.Port) // 阻塞运行
 }
 
-func TestFastApi_DumpPID(t *testing.T) {
+func TestWrapper_DumpPID(t *testing.T) {
 	svc := NewCtx()
 	svc.Conf.HTTP.Port = "8089"
 	app := New(Config{
@@ -91,7 +91,7 @@ func TestFastApi_DumpPID(t *testing.T) {
 	app.Run(svc.Conf.HTTP.Host, svc.Conf.HTTP.Port) // 阻塞运行
 }
 
-func TestFastApi_Description(t *testing.T) {
+func TestWrapper_Description(t *testing.T) {
 	app := New(Config{
 		Version:     "1.0.0",
 		Description: "",
@@ -108,7 +108,7 @@ func TestFastApi_Description(t *testing.T) {
 	}
 }
 
-func TestFastApi_OnEvent(t *testing.T) {
+func TestWrapper_OnEvent(t *testing.T) {
 	svc := NewCtx()
 	app := New(Config{
 		Version:     "1.0.0",

@@ -20,18 +20,17 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-// Wrapper 包装器对象
-type Wrapper = FastApi
-
 var one = &sync.Once{}
-var wrapper *FastApi = nil // 默认实例
+var wrapper *Wrapper = nil // 默认实例
 
-// FastApi 服务对象，本质是一个包装器
-type FastApi struct {
+type FastApi = Wrapper
+
+// Wrapper 服务对象，本质是一个包装器
+type Wrapper struct {
 	conf          *Profile           `description:"配置项"`
 	service       *Service           `description:"全局服务依赖"`
-	pool          *sync.Pool         `description:"FastApi.Context资源池"`
-	mux           EngineMux          `description:"后端路由器"`
+	pool          *sync.Pool         `description:"Wrapper.Context资源池"`
+	mux           MuxWrapper         `description:"后端路由器"`
 	isStarted     chan struct{}      `description:"标记程序是否完成启动"`
 	groupRouters  []*GroupRouterMeta `description:"路由组对象"`
 	genericRoutes []RouteIface       `description:"泛型路由对象"`
@@ -53,7 +52,7 @@ type Profile struct {
 	ContextAutomaticDerivationDisabled bool          `json:"contextAutomaticDerivationDisabled,omitempty" description:"禁用context自动派生"`
 }
 
-func (f *FastApi) initService() *FastApi {
+func (f *Wrapper) initService() *Wrapper {
 	f.service.addr = net.JoinHostPort(f.conf.Host, f.conf.Port)
 
 	if f.conf.Version == "" {
@@ -77,7 +76,7 @@ func (f *FastApi) initService() *FastApi {
 }
 
 // 初始化路由, 必须在路由添加完成，swagger注册之前调用
-func (f *FastApi) initRoutes() *FastApi {
+func (f *Wrapper) initRoutes() *Wrapper {
 	var err error
 	// 解析路由组路由
 	for _, group := range f.groupRouters {
@@ -117,7 +116,7 @@ func (f *FastApi) initRoutes() *FastApi {
 }
 
 // 记录全部的路由对象, 包含路由组路由和泛型路由
-func (f *FastApi) initFinder() *FastApi {
+func (f *Wrapper) initFinder() *Wrapper {
 	routes := make([]RouteIface, 0)
 	for _, group := range f.groupRouters {
 		for _, r := range group.Routes() {
@@ -138,7 +137,7 @@ func (f *FastApi) initFinder() *FastApi {
 }
 
 // 创建 OpenApi Swagger 文档, 必须等上层注册完路由之后才能调用
-func (f *FastApi) initSwagger() *FastApi {
+func (f *Wrapper) initSwagger() *Wrapper {
 	f.service.openApi = openapi.NewOpenApi(f.Config().Title, f.Config().Version, f.Config().Description)
 	if !f.conf.SwaggerDisabled || f.conf.Debug {
 		f.registerRouteDoc()
@@ -148,7 +147,7 @@ func (f *FastApi) initSwagger() *FastApi {
 	return f
 }
 
-func (f *FastApi) initMux() *FastApi {
+func (f *Wrapper) initMux() *Wrapper {
 	if f.mux == nil {
 		panic("mux is not initialized")
 	}
@@ -157,9 +156,9 @@ func (f *FastApi) initMux() *FastApi {
 	return f
 }
 
-// 初始化FastApi,并完成服务依赖的建立
-// FastApi启动前，必须显式的初始化FastApi的基本配置，若初始化中发生异常则panic
-func (f *FastApi) initialize() *FastApi {
+// 初始化Wrapper,并完成服务依赖的建立
+// 启动前，必须显式的初始化Wrapper的基本配置，若初始化中发生异常则panic
+func (f *Wrapper) initialize() *Wrapper {
 	helper.SetJsonEngine(jsoniter.ConfigCompatibleWithStandardLibrary)
 
 	f.initService()
@@ -176,83 +175,42 @@ func (f *FastApi) initialize() *FastApi {
 }
 
 // 申请一个 Context 并初始化
-func (f *FastApi) acquireCtx(ctx MuxContext) *Context {
+func (f *Wrapper) acquireCtx(ctx MuxContext) *Context {
 	c := f.pool.Get().(*Context)
 	// 初始化各种参数
 	c.muxCtx = ctx
+	c.response = AcquireResponse()
 	// 为每一个路由创建一个独立的ctx, 允许不启用此功能
 	if !f.conf.ContextAutomaticDerivationDisabled {
 		c.routeCtx, c.routeCancel = context.WithCancel(f.service.ctx)
 	}
-	c.PathFields = map[string]string{}
-	c.QueryFields = map[string]string{}
+	c.pathFields = map[string]string{}
+	c.queryFields = map[string]string{}
 
 	return c
 }
 
 // 释放并归还 Context
-func (f *FastApi) releaseCtx(ctx *Context) {
+func (f *Wrapper) releaseCtx(ctx *Context) {
+	ReleaseResponse(ctx.response)
 	ctx.muxCtx = nil
 	ctx.routeCtx = nil
 	ctx.routeCancel = nil
 	ctx.response = nil // 释放内存
 
-	ctx.PathFields = nil
-	ctx.QueryFields = nil
+	ctx.pathFields = nil
+	ctx.queryFields = nil
 
 	f.pool.Put(ctx)
 }
 
 // ResetRunMode 重设运行时环境
-func (f *FastApi) resetRunMode(md bool) {
+func (f *Wrapper) resetRunMode(md bool) {
 	f.conf.Debug = md
 }
 
-// Handler 路由函数，实现逻辑类似于中间件
-//
-// 路由处理方法(装饰器实现)，用于请求体校验和返回体序列化，同时注入全局服务依赖,
-// 此方法接收一个业务层面的路由钩子方法 RouteIface.Call
-//
-// Handler 方法首先会查找路由元信息，如果找不到则直接跳过验证环节，由路由器返回404
-// 反之：
-//
-//  1. 申请一个 Context, 并初始化请求体、路由参数等
-//  2. 之后会校验并绑定路由参数（包含路径参数和查询参数）是否正确，如果错误则直接返回422错误，反之会继续序列化并绑定请求体（如果存在）序列化成功之后会校验请求参数正确性，
-//  3. 校验通过后会调用 RouteIface.Call 并将返回值绑定在 Context 内的 Response 上
-//  4. 校验返回值，并返回422或将返回值写入到实际的 response
-func (f *FastApi) Handler(ctx MuxContext) error {
-	route, exist := f.finder.Get(openapi.CreateRouteIdentify(ctx.Method(), ctx.Path()))
-	if !exist {
-		// 正常来说，通过 Wrapper 注册的路由，不会走到这个分支
-		return nil
-	}
-
-	// 找到定义的路由信息
-	wrapperCtx := f.acquireCtx(ctx)
-	defer f.releaseCtx(wrapperCtx)
-
-	// TODO Future: 校验前中间件
-	// 路由前的校验,此校验会就地修改 Context.response
-	wrapperCtx.beforeWorkflow(route)
-	if wrapperCtx.response != nil {
-		// 校验工作流不通过, 中断执行
-		return wrapperCtx.write()
-	}
-
-	// TODO Future: 执行校验后中间件
-
-	//
-	// 全部校验完成，执行处理函数并获取返回值, 此处已经完成全部请求参数的校验，调用失败也存在返回值
-	route.Call(wrapperCtx)
-
-	// 路由后的校验，校验失败就地修改 Response
-	wrapperCtx.afterWorkflow(route)
-
-	return wrapperCtx.write() // 返回消息流
-}
-
 // Wrap 绑定数据到路由器上
-func (f *FastApi) Wrap(mux EngineMux) *FastApi {
+func (f *Wrapper) Wrap(mux MuxWrapper) *Wrapper {
 	var err error
 	// 挂载路由到路由器上
 	for _, group := range f.groupRouters {
@@ -282,16 +240,16 @@ func (f *FastApi) Wrap(mux EngineMux) *FastApi {
 
 // ================================ Api ================================
 
-func (f *FastApi) Config() *Profile { return f.conf }
+func (f *Wrapper) Config() *Profile { return f.conf }
 
-// Service 获取FastApi全局服务依赖
-func (f *FastApi) Service() *Service { return f.service }
+// Service 获取Wrapper全局服务依赖
+func (f *Wrapper) Service() *Service { return f.service }
 
 // Mux 获取路由器
-func (f *FastApi) Mux() EngineMux { return f.mux }
+func (f *Wrapper) Mux() MuxWrapper { return f.mux }
 
 // SetMux 设置路由器，必须在启动之前设置
-func (f *FastApi) SetMux(mux EngineMux) *FastApi {
+func (f *Wrapper) SetMux(mux MuxWrapper) *Wrapper {
 	f.mux = mux
 	return f
 }
@@ -300,7 +258,7 @@ func (f *FastApi) SetMux(mux EngineMux) *FastApi {
 //
 //	@param	kind	事件类型，取值需为	"startup"/"shutdown"
 //	@param	fs		func()		事件
-func (f *FastApi) OnEvent(kind EventKind, fc func()) *FastApi {
+func (f *Wrapper) OnEvent(kind EventKind, fc func()) *Wrapper {
 	switch kind {
 	case StartupEvent:
 		f.events = append(f.events, &Event{
@@ -320,7 +278,7 @@ func (f *FastApi) OnEvent(kind EventKind, fc func()) *FastApi {
 // SetLogger 替换日志句柄，此操作必须在run之前进行
 //
 //	@param	logger	logger.Iface	日志句柄
-func (f *FastApi) SetLogger(logger logger.Iface) *FastApi {
+func (f *Wrapper) SetLogger(logger logger.Iface) *Wrapper {
 	f.service.setLogger(logger)
 	return f
 }
@@ -328,7 +286,7 @@ func (f *FastApi) SetLogger(logger logger.Iface) *FastApi {
 // SetDescription 设置APP的详细描述信息
 //
 //	@param	Description	string	详细描述信息
-func (f *FastApi) SetDescription(description string) *FastApi {
+func (f *Wrapper) SetDescription(description string) *Wrapper {
 	f.conf.Description = description
 	return f
 }
@@ -336,37 +294,37 @@ func (f *FastApi) SetDescription(description string) *FastApi {
 // IncludeRouter 注册一个路由组
 //
 //	@param	router	*Router	路由组
-func (f *FastApi) IncludeRouter(router GroupRouter) *FastApi {
+func (f *Wrapper) IncludeRouter(router GroupRouter) *Wrapper {
 	f.groupRouters = append(f.groupRouters, NewGroupRouteMeta(router))
 	return f
 }
 
 // UsePrevious 添加一个校验前中间件，此中间件会在：请求参数校验前调用
-func (f *FastApi) UsePrevious(middleware ...MiddlewareHandle) *FastApi {
+func (f *Wrapper) UsePrevious(middleware ...MiddlewareHandle) *Wrapper {
 	f.previousDeps = append(f.previousDeps, middleware...)
 	return f
 }
 
 // UseAfter 添加一个校验后中间件, 此中间件会在：请求参数校验后-路由函数调用前执行
-func (f *FastApi) UseAfter(middleware ...MiddlewareHandle) *FastApi {
+func (f *Wrapper) UseAfter(middleware ...MiddlewareHandle) *Wrapper {
 	f.afterDeps = append(f.afterDeps, middleware...)
 	return f
 }
 
 // Use 添加一个中间件, 数据校验后中间件
-func (f *FastApi) Use(middleware ...MiddlewareHandle) *FastApi {
+func (f *Wrapper) Use(middleware ...MiddlewareHandle) *Wrapper {
 	return f.UseAfter(middleware...)
 }
 
 // AddCronjob 添加定时任务(循环调度任务)
 // 此任务会在各种初始化及启动事件全部执行完成之后触发
-func (f *FastApi) AddCronjob(jobs ...cronjob.CronJob) *FastApi {
+func (f *Wrapper) AddCronjob(jobs ...cronjob.CronJob) *Wrapper {
 	f.service.scheduler.Add(jobs...)
 	return f
 }
 
 // ActivateHotSwitch 创建一个热开关，监听信号量(默认值：30)，用来改变程序调试开关状态
-func (f *FastApi) ActivateHotSwitch(s ...int) *FastApi {
+func (f *Wrapper) ActivateHotSwitch(s ...int) *Wrapper {
 	var st = HotSwitchSigint
 	if len(s) > 0 {
 		st = s[0]
@@ -396,34 +354,22 @@ func (f *FastApi) ActivateHotSwitch(s ...int) *FastApi {
 	return f
 }
 
-// ReplaceErrorHandler 替换fiber错误处理方法，即 请求错误处理方法
-func (f *FastApi) ReplaceErrorHandler(handler any) *FastApi {
-	f.mux.SetErrorHandler(handler)
-	return f
-}
-
-// ReplaceStackTraceHandler 替换错误堆栈处理函数，即 recover 方法
-func (f *FastApi) ReplaceStackTraceHandler(handler any) *FastApi {
-	f.mux.SetRecoverHandler(handler)
-	return f
-}
-
 // SetShutdownTimeout 修改关机前最大等待时间
 //
 //	@param	timeout	in	修改关机前最大等待时间,	单位秒
-func (f *FastApi) SetShutdownTimeout(timeout int) *FastApi {
+func (f *Wrapper) SetShutdownTimeout(timeout int) *Wrapper {
 	f.conf.ShutdownTimeout = time.Duration(timeout) * time.Second
 	return f
 }
 
 // DisableSwagAutoCreate 禁用文档自动生成
-func (f *FastApi) DisableSwagAutoCreate() *FastApi {
+func (f *Wrapper) DisableSwagAutoCreate() *Wrapper {
 	f.conf.SwaggerDisabled = true
 	return f
 }
 
 // Shutdown 平滑关闭
-func (f *FastApi) Shutdown() {
+func (f *Wrapper) Shutdown() {
 	f.service.cancel() // 标记结束
 
 	// 执行关机前事件
@@ -450,7 +396,7 @@ func (f *FastApi) Shutdown() {
 // 此方法已设置关闭事件和平滑关闭.
 // 当 Interrupt 信号被触发时，首先会关闭 根Context，然后逐步执行“关机事件”，最后调用平滑关闭方法，关闭服务
 // 启动前通过 SetShutdownTimeout 设置"平滑关闭异常时"的最大超时时间
-func (f *FastApi) Run(host, port string) {
+func (f *Wrapper) Run(host, port string) {
 	f.conf.Host = host
 	f.conf.Port = port
 
@@ -525,7 +471,7 @@ func cleanConfig(confs ...Config) Config {
 // New 实例化一个默认 Wrapper, 此方法与 Create 不能同时使用
 // 与 Create 区别在于：Create 每次都会创建一个新的实例，New 多次调用获得的是同一个实例
 // 语义相当于 __new__ 实现的单例
-func New(c ...Config) *FastApi {
+func New(c ...Config) *Wrapper {
 	one.Do(func() {
 		conf := cleanConfig(c...)
 		wrapper = Create(conf)
@@ -534,23 +480,18 @@ func New(c ...Config) *FastApi {
 	return wrapper
 }
 
-// NewWrapper 创建一个新的包装器
-func NewWrapper(c ...Config) *Wrapper {
-	return New(c...)
-}
-
 // Create 创建一个新的 Wrapper 服务
 // 其存在目的在于在同一个应用里创建多个 Wrapper 实例，并允许每个实例绑定不同的服务器实现
 //
 // getWrapper
-func Create(c Config) *FastApi {
+func Create(c Config) *Wrapper {
 	conf := cleanConfig(c)
 
 	sc := &Service{validate: validator.New()}
 	sc.ctx, sc.cancel = context.WithCancel(context.Background())
 	sc.scheduler = cronjob.NewScheduler(sc.ctx, nil)
 
-	app := &FastApi{
+	app := &Wrapper{
 		conf: &Profile{
 			Title:           conf.Title,
 			Version:         conf.Version,

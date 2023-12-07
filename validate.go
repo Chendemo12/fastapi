@@ -273,15 +273,7 @@ func (m *NothingBindMethod) New() any {
 	return nil
 }
 
-// validationErrorResponse 参数校验错误返回值
-func validationErrorResponse(ves ...*openapi.ValidationError) *Response {
-	return &Response{
-		StatusCode: http.StatusUnprocessableEntity,
-		Content:    &openapi.HTTPValidationError{Detail: ves},
-		Type:       ErrResponseType,
-	}
-}
-
+// 一下不能直接返回 Response
 func modelCannotBeStringResponse(name ...string) *Response {
 	vv := &openapi.ValidationError{
 		Ctx:  map[string]any{"where error": "server", "msg": ModelCannotString},

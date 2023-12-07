@@ -18,14 +18,16 @@ import (
 //	注意: 当一个路由被执行完毕时, 路由函数中的 Context 将被立刻释放回收, 因此在return之后对
 //	Context 的任何引用都是不对的, 若需在return之后监听 Context.DisposableCtx() 则应该显式的复制或派生
 type Context struct {
-	PathFields  map[string]string  `json:"path_fields,omitempty"`  // 路径参数
-	QueryFields map[string]string  `json:"query_fields,omitempty"` // 查询参数
-	svc         *Service           `description:"flask-go service"`
+	pathFields  map[string]string  `description:"路径参数"`
+	queryFields map[string]string  `description:"查询参数"`
+	svc         *Service           `description:"service"`
 	muxCtx      MuxContext         `description:"路由器Context"`
 	routeCtx    context.Context    `description:"获取针对此次请求的唯一context"`
 	routeCancel context.CancelFunc `description:"获取针对此次请求的唯一取消函数"`
 	response    *Response          `description:"返回值,以减少函数间复制的开销"`
 }
+
+// ================================ 公共方法 ================================
 
 func (c *Context) Deadline() (deadline time.Time, ok bool) {
 	if c.routeCtx != nil {
@@ -48,7 +50,7 @@ func (c *Context) Value(key any) any {
 	return nil
 }
 
-// Service 获取 FastApi 的 Service 服务依赖信息
+// Service 获取 Wrapper 的 Service 服务依赖信息
 //
 //	@return	Service 服务依赖信息
 func (c *Context) Service() *Service { return c.svc }
@@ -57,75 +59,90 @@ func (c *Context) Service() *Service { return c.svc }
 func (c *Context) MuxContext() MuxContext { return c.muxCtx }
 
 // DisposableCtx 针对此次请求的唯一context, 当路由执行完毕返回时,将会自动关闭
+// <如果 ContextAutomaticDerivationDisabled = true 则异常>
 // 为每一个请求创建一个新的 context.Context 其代价是非常高的，因此允许通过设置关闭此功能
 //
 //	@return	context.Context 唯一context
 func (c *Context) DisposableCtx() context.Context { return c.routeCtx }
 
 // Done 监听 DisposableCtx 是否完成退出
+// <如果 ContextAutomaticDerivationDisabled = true 则异常>
 //
 //	@return	chan struct{} 是否退出
-func (c *Context) Done() <-chan struct{} { return c.routeCtx.Done() }
+func (c *Context) Done() <-chan struct{} {
+	if c.routeCtx != nil {
+		return c.routeCtx.Done()
+	} else {
+		return nil
+	}
+}
 
-// Logger 获取日志句柄
+// Logger 获取注册的日志句柄
 func (c *Context) Logger() logger.Iface { return c.svc.Logger() }
+
+// Query 获取查询参数
+// 对于已经在路由处定义的查询参数，应首先从 Context.queryFields 内部读取；
+// 对于没有定义的其他查询参数则调用低层 MuxContext 进行解析
+func (c *Context) Query(name string, undefined ...string) string {
+	v, ok := c.queryFields[name]
+	if ok {
+		return v
+	}
+
+	return c.muxCtx.Query(name, undefined...)
+}
+
+// PathField 获取路径参数
+// 对于已经在路由处定义的路径参数，应首先从 Context.pathFields 内部读取；
+// 对于没有定义的其他查询参数则调用低层 MuxContext 进行解析
+func (c *Context) PathField(name string, undefined ...string) string {
+	v, ok := c.pathFields[name]
+	if ok {
+		return v
+	}
+
+	return c.muxCtx.Query(name, undefined...)
+}
+
+// ================================ 路由组路由方法 ================================
+
+// Status 允许路由组路由函数在error=nil时修改响应状态码
+// 由于路由组路由函数 GroupRouteHandler 签名的限制；当error=nil时状态码默认为500，error!=nil时默认为200
+// 允许通过此方法进行修改
+func (c *Context) Status(code int) {
+	c.response.StatusCode = code
+}
+
+// ContentType 允许路由组路由函数修改响应MIME
+// 由于路由组路由函数 GroupRouteHandler 签名的限制；其返回ContentType默认为"application/json; charset=utf-8"
+// 允许通过此方法进行修改
+func (c *Context) ContentType(contentType string) {
+	c.response.ContentType = contentType
+}
+
+// ================================ 范型路由方法 ================================
 
 // Validator 获取请求体验证器
 func (c *Context) Validator() *validator.Validate { return c.svc.validate }
 
-// Validate 结构体验证
-//
-//	@param	stc	any	需要校验的结构体
-//	@param	ctx	any	当校验不通过时需要返回给客户端的附加信息，仅第一个有效
-//	@return
-func (c *Context) Validate(stc any, ctx ...map[string]any) *Response {
-	return c.svc.Validate(stc, ctx...)
-}
-
-// Query 获取查询参数
-func (c *Context) Query(name string, undefined ...string) string {
-	v, ok := c.QueryFields[name]
-	if ok {
-		return v
-	}
-
-	if len(undefined) > 0 {
-		return undefined[0]
-	}
-
-	return ""
-}
-
-// PathField 获取路径参数
-func (c *Context) PathField(name string, undefined ...string) string {
-	v, ok := c.PathFields[name]
-	if ok {
-		return v
-	}
-
-	if len(undefined) > 0 {
-		return undefined[0]
-	}
-
-	return ""
-}
-
-// BodyParser 序列化请求体
+// BodyParser 【范型路由可用】序列化请求体
 func (c *Context) BodyParser(a any) *Response {
 	if err := c.muxCtx.BodyParser(a); err != nil { // 请求的表单序列化错误
 		c.Logger().Error(err)
-		return validationErrorResponse(jsoniterUnmarshalErrorToValidationError(err))
+		c.response.StatusCode = http.StatusUnprocessableEntity
+		c.response.Content = &openapi.HTTPValidationError{Detail: []*openapi.ValidationError{jsoniterUnmarshalErrorToValidationError(err)}}
+		c.response.Type = ErrResponseType
 	}
 
 	return nil
 }
 
-// ShouldBindJSON 绑定并校验参数是否正确
+// ShouldBindJSON 【范型路由可用】绑定并校验参数是否正确
 func (c *Context) ShouldBindJSON(stc any) *Response {
 	if err := c.BodyParser(stc); err != nil {
 		return err
 	}
-	if resp := c.Validate(stc, whereClientError); resp != nil {
+	if resp := c.svc.Validate(stc, whereClientError); resp != nil {
 		return resp
 	}
 
@@ -141,9 +158,8 @@ func (c *Context) ShouldBindJSON(stc any) *Response {
 //	@param	content		any	可以json序列化的类型
 //	@return	resp *Response response返回体
 func (c *Context) JSONResponse(statusCode int, content any) *Response {
-	c.response = &Response{
-		StatusCode: statusCode, Content: content, Type: JsonResponseType,
-	}
+	c.response.StatusCode = statusCode
+	c.response.Content = content
 
 	// 通过校验
 	return c.response
@@ -153,16 +169,18 @@ func (c *Context) JSONResponse(statusCode int, content any) *Response {
 //
 //	@param	content	any	可以json序列化的类型
 //	@return	resp *Response response返回体
-func (c *Context) OKResponse(content any) *Response { return c.JSONResponse(http.StatusOK, content) }
+func (c *Context) OKResponse(content any) *Response {
+	c.response.Content = content
+
+	return c.response
+}
 
 // StringResponse 返回值为字符串对象 (不校验返回值)
 //
 //	@param	content	string	字符串文本
 //	@return	resp *Response response返回体
 func (c *Context) StringResponse(content string) *Response {
-	c.response = &Response{
-		StatusCode: http.StatusOK, Content: content, Type: StringResponseType,
-	}
+	c.response.Content = content
 
 	return c.response
 }
@@ -173,11 +191,13 @@ func (c *Context) StringResponse(content string) *Response {
 //	@param	mime	string		返回头媒体资源类型信息,	缺省则为	"text/plain"
 //	@return	resp *Response response返回体
 func (c *Context) StreamResponse(reader io.Reader, mime ...string) *Response {
-	c.response = &Response{
-		StatusCode: http.StatusOK, Content: reader, Type: StreamResponseType, ContentType: openapi.MIMETextPlain,
-	}
+	c.response.Content = reader
+	c.response.Type = StreamResponseType
+
 	if len(mime) > 0 {
 		c.response.ContentType = mime[0]
+	} else {
+		c.response.ContentType = openapi.MIMETextPlain
 	}
 
 	return c.response
@@ -188,9 +208,9 @@ func (c *Context) StreamResponse(reader io.Reader, mime ...string) *Response {
 //	@param	filepath	string	文件路径
 //	@return	resp *Response response返回体
 func (c *Context) FileResponse(filepath string) *Response {
-	c.response = &Response{
-		StatusCode: http.StatusOK, Content: filepath, Type: FileResponseType,
-	}
+	c.response.Content = filepath
+	c.response.Type = FileResponseType
+
 	return c.response
 }
 
@@ -199,9 +219,10 @@ func (c *Context) FileResponse(filepath string) *Response {
 //	@param	content	any	错误消息
 //	@return	resp *Response response返回体
 func (c *Context) ErrorResponse(content any) *Response {
-	c.response = &Response{
-		StatusCode: http.StatusInternalServerError, Content: content, Type: ErrResponseType,
-	}
+	c.response.StatusCode = http.StatusInternalServerError
+	c.response.Content = content
+	c.response.Type = ErrResponseType
+
 	return c.response
 }
 
@@ -210,13 +231,12 @@ func (c *Context) ErrorResponse(content any) *Response {
 //	@param	statusCode	int		响应状态码
 //	@param	content		string	HTML文本字符串
 //	@return	resp *Response response返回体
-func (c *Context) HTMLResponse(statusCode int, context []byte) *Response {
-	c.response = &Response{
-		Type:        HtmlResponseType,
-		StatusCode:  statusCode,
-		Content:     context,
-		ContentType: openapi.MIMETextHTMLCharsetUTF8,
-	}
+func (c *Context) HTMLResponse(statusCode int, content []byte) *Response {
+	c.response.StatusCode = statusCode
+	c.response.Content = content
+	c.response.ContentType = openapi.MIMETextHTMLCharsetUTF8
+	c.response.Type = HtmlResponseType
+
 	return c.response
 }
 
@@ -233,11 +253,11 @@ func (c *Context) AnyResponse(statusCode int, content any, contentType ...string
 	} else {
 		ct = openapi.MIMEApplicationJSONCharsetUTF8
 	}
+	c.response.StatusCode = statusCode
+	c.response.Content = content
+	c.response.ContentType = ct
+	c.response.Type = CustomResponseType
 
-	c.response = &Response{
-		StatusCode: statusCode, Content: content, ContentType: ct,
-		Type: CustomResponseType,
-	}
 	return c.response
 }
 

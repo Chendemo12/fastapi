@@ -7,28 +7,27 @@ import (
 	"time"
 )
 
-// EngineMux WEB服务器
-type EngineMux interface {
+type MuxHandler func(c MuxContext) error
+
+// MuxWrapper WEB服务器包装器接口
+// 为兼容不同的 server 引擎，需要对其二次包装
+type MuxWrapper interface {
 	// Listen 启动http server
 	Listen(addr string) error
 	// ShutdownWithTimeout 优雅关闭
 	ShutdownWithTimeout(timeout time.Duration) error
-	// SetErrorHandler 设置错误处理方法
-	SetErrorHandler(handler any)
-	// SetRecoverHandler 设置全局recovery方法
-	SetRecoverHandler(handler any)
 	// BindRoute 注册路由
-	BindRoute(method, path string, handler func(ctx MuxContext) error) error
+	BindRoute(method, path string, handler MuxHandler) error
 }
 
 // MuxContext Web引擎的 Context，例如 fiber.Ctx, gin.Context
 type MuxContext interface {
-	Method() string                     // [重要方法]获得当前请求方法，取为为 http.MethodGet, http.MethodPost 等
-	Path() string                       // [重要方法]获的当前请求的路由模式，而非请求Url
-	Header(key, value string)           // 添加响应头
-	SetCookie(cookie *http.Cookie)      // 添加cookie
-	Cookie(name string) (string, error) // 读取cookie
-	Query(key string) string            // 解析查询参数
+	Method() string                               // [重要方法]获得当前请求方法，取为为 http.MethodGet, http.MethodPost 等
+	Path() string                                 // [重要方法]获的当前请求的路由模式，而非请求Url
+	Header(key, value string)                     // 添加响应头
+	SetCookie(cookie *http.Cookie)                // 添加cookie
+	Cookie(name string) (string, error)           // 读取cookie
+	Query(key string, undefined ...string) string // 解析查询参数
 
 	Set(key string, value any)                     // Set用于存储专门用于此上下文的新键/值对，如果以前没有使用c.Keys，它也会延迟初始化它
 	Get(key string, defaultValue ...string) string // 从上下文中读取键/值对

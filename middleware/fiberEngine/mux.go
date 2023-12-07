@@ -17,27 +17,55 @@ import (
 )
 
 type FiberMux struct {
-	one     *sync.Once
-	App     *fiber.App
-	Title   string
-	Version string
-	// fiber自定义错误处理函数
-	ErrorHandler fiber.ErrorHandler
-	// StackTraceHandlerFunc 错误堆栈处理函数, 即 recover 方法
-	StackTraceHandlerFunc func(c *fiber.Ctx, e any)
-	pool                  *sync.Pool
+	one  *sync.Once
+	App  *fiber.App
+	pool *sync.Pool
 }
 
-// New 创建App实例
-func New(title, version string) *FiberMux {
-	return &FiberMux{
-		one:                   &sync.Once{},
-		Title:                 title,
-		Version:               version,
-		ErrorHandler:          customFiberErrorHandler,
-		StackTraceHandlerFunc: customRecoverHandler,
-		pool:                  &sync.Pool{New: func() any { return &FiberContext{} }},
+// NewWrapper 创建App实例
+func NewWrapper(app ...*fiber.App) *FiberMux {
+	var ap *fiber.App
+	if len(app) > 0 {
+		ap = app[0]
+	} else {
+		ap = DefaultFiberApp()
 	}
+	return &FiberMux{
+		one:  &sync.Once{},
+		App:  ap,
+		pool: &sync.Pool{New: func() any { return &FiberContext{} }},
+	}
+}
+
+// DefaultFiberApp 默认的fiber，已做好基本的参数配置
+func DefaultFiberApp() *fiber.App {
+	app := fiber.New(fiber.Config{
+		Prefork:       false,                   // core.MultipleProcessEnabled, // 多进程模式
+		CaseSensitive: true,                    // 区分路由大小写
+		StrictRouting: true,                    // 严格路由
+		ServerHeader:  "fiber",                 // 服务器头
+		AppName:       "fastapi.fiber",         // 设置为 Response.Header.Server 属性
+		ColorScheme:   fiber.DefaultColors,     // 彩色输出
+		JSONEncoder:   helper.JsonMarshal,      // json序列化器
+		JSONDecoder:   helper.JsonUnmarshal,    // json解码器
+		ErrorHandler:  customFiberErrorHandler, // 设置自定义错误处理
+	})
+
+	// 输出API访问日志
+	echoConfig := echo.ConfigDefault
+	echoConfig.TimeFormat = time.DateTime
+	echoConfig.Format = "${time}    ${method}\t${path} ${status}\n"
+	app.Use(echo.New(echoConfig))
+
+	// 自定义全局 recover 方法
+	app.Use(recover.New(recover.Config{
+		EnableStackTrace: true,
+		// StackTraceHandler: 处理堆栈跟踪的函数, 若留空，则默认将整个错误堆栈输出到控制台,
+		// 并在处理完成后将错误流转到 fiber.ErrorHandler
+		StackTraceHandler: customRecoverHandler,
+	}))
+
+	return app
 }
 
 func (m *FiberMux) AcquireCtx(c *fiber.Ctx) *FiberContext {
@@ -60,50 +88,7 @@ func (m *FiberMux) ShutdownWithTimeout(timeout time.Duration) error {
 	return m.App.ShutdownWithTimeout(timeout)
 }
 
-func (m *FiberMux) SetErrorHandler(handler any) {
-	m.ErrorHandler = func(ctx *fiber.Ctx, err error) error {
-		return nil
-	}
-}
-
-func (m *FiberMux) SetRecoverHandler(handler any) {
-	// TODO:
-	m.StackTraceHandlerFunc = func(c *fiber.Ctx, e any) {
-		return
-	}
-}
-
-func (m *FiberMux) BindRoute(method, path string, handler func(ctx fastapi.MuxContext) error) error {
-	m.one.Do(func() {
-		app := fiber.New(fiber.Config{
-			Prefork:       false,                      // core.MultipleProcessEnabled, // 多进程模式
-			CaseSensitive: true,                       // 区分路由大小写
-			StrictRouting: true,                       // 严格路由
-			ServerHeader:  m.Title,                    // 服务器头
-			AppName:       m.Title + " v" + m.Version, // 设置为 Response.Header.Server 属性
-			ColorScheme:   fiber.DefaultColors,        // 彩色输出
-			JSONEncoder:   helper.JsonMarshal,         // json序列化器
-			JSONDecoder:   helper.JsonUnmarshal,       // json解码器
-			ErrorHandler:  m.ErrorHandler,             // 设置自定义错误处理
-		})
-
-		// 输出API访问日志
-		echoConfig := echo.ConfigDefault
-		echoConfig.TimeFormat = time.DateTime
-		echoConfig.Format = "${time}    ${method}\t${path} ${status}\n"
-		app.Use(echo.New(echoConfig))
-
-		// 自定义全局 recover 方法
-		app.Use(recover.New(recover.Config{
-			EnableStackTrace: true,
-			// StackTraceHandler: 处理堆栈跟踪的函数, 若留空，则默认将整个错误堆栈输出到控制台,
-			// 并在处理完成后将错误流转到 fiber.ErrorHandler
-			StackTraceHandler: m.StackTraceHandlerFunc,
-		}))
-
-		m.App = app
-	})
-
+func (m *FiberMux) BindRoute(method, path string, handler fastapi.MuxHandler) error {
 	switch method {
 	case http.MethodGet:
 		m.App.Get(path, func(ctx *fiber.Ctx) error {
@@ -229,8 +214,8 @@ func (c *FiberContext) BodyParser(model any) error {
 	return c.ctx.BodyParser(model)
 }
 
-func (c *FiberContext) Query(key string) string {
-	return c.ctx.Query(key, "")
+func (c *FiberContext) Query(key string, undefined ...string) string {
+	return c.ctx.Query(key, undefined...)
 }
 
 func (c *FiberContext) Status(statusCode int) {
@@ -245,7 +230,7 @@ func (c *FiberContext) JSON(statusCode int, data any) error {
 	return c.ctx.Status(statusCode).JSON(data)
 }
 
-// customRecoverHandler 自定义 recover 错误处理函数
+// customRecoverHandler fiber自定义错误处理函数
 func customRecoverHandler(c *fiber.Ctx, e any) {
 	buf := make([]byte, 1024)
 	buf = buf[:runtime.Stack(buf, true)]

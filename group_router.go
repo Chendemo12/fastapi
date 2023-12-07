@@ -13,8 +13,11 @@ import (
 	"unicode"
 )
 
+// GroupRouteHandler 路由组路由函数签名，其中any可以是具体的类型，但不应该是 Response
+type GroupRouteHandler func(c *Context, params ...any) (any, error)
+
 // GroupRouter 结构体路由组定义
-// 用法：首先实现此接口，然后通过调用 FastApi.IncludeRoute 方法进行注册绑定
+// 用法：首先实现此接口，然后通过调用 Wrapper.IncludeRoute 方法进行注册绑定
 type GroupRouter interface {
 	// Prefix 路由组前缀，无需考虑是否以/开头或结尾
 	// 如果为空则通过 PathSchema 方案进行格式化
@@ -545,7 +548,8 @@ func (r *GroupRoute) NewRequestModel() reflect.Value {
 func (r *GroupRoute) Call(ctx *Context) {
 	//TODO implement me
 	// result := method.Func.Call([]reflect.Value{reflect.ValueOf(newValue)})
-	ctx.OKResponse("123456")
+	// error
+	ctx.response.Content = "123456"
 }
 
 // 手动指定一个查询参数名称
