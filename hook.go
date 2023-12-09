@@ -94,44 +94,20 @@ func jsoniterUnmarshalErrorToValidationError(err error) *openapi.ValidationError
 	return ve
 }
 
-// 路径参数校验
-//
-//	@return	*Response 校验结果, 若为nil则校验通过
+// 路径参数校验, 路径参数均为字符串类型，主要验证是否存在，不校验范围、值是否合理
+// 对于路径参数，如果缺少理论上不会匹配到相应的路由
 func (c *Context) pathParamsValidate(route RouteIface, stopImmediately bool) {
-	// 路径参数校验
-	//for _, p := range c.route.pathFields {
-	//	value := c.muxCtx.Params(p.SchemaTitle())
-	//	if p.IsRequired() && value == "" {
-	//		// 不存在此路径参数, 但是此路径参数设置为必选
-	//		c.response = validationErrorResponse(&openapi.ValidationError{
-	//			Loc:  []string{"path", p.SchemaPkg()},
-	//			Msg:  PathPsIsEmpty,
-	//			Type: "string",
-	//			Ctx:  whereClientError,
-	//		})
-	//	}
-	//
-	//	c.pathFields[p.SchemaPkg()] = value
-	//}
-}
-
-// 查询参数校验，校验全部参数，如果存在多个错误的字段则全部校验完成后再统一返回
-//
-//	@return	*Response 校验结果, 若为nil则校验通过
-func (c *Context) queryParamsValidate(route RouteIface, stopImmediately bool) {
 	var ves []*openapi.ValidationError
+	// 路径参数校验
+	for _, p := range route.Swagger().PathFields {
+		value := c.muxCtx.Params(p.SchemaTitle(), "")
+		c.pathFields[p.SchemaTitle()] = value // 存储路径参数，即便是空字符串
 
-	// 验证是否缺少必选参数
-	for _, q := range route.Swagger().QueryFields {
-		value := c.muxCtx.Query(q.SchemaTitle(), "")
-		// 记录传入参数值，即便是空字符串
-		c.queryFields[q.SchemaTitle()] = value
-		if q.IsRequired() && value == "" {
-			// 但是此查询参数设置为必选
+		if value == "" { // 路径参数都是必须的
 			ves = append(ves, &openapi.ValidationError{
-				Loc:  []string{"query", q.SchemaPkg()},
-				Msg:  QueryPsIsEmpty,
-				Type: string(q.Type),
+				Loc:  []string{"path", p.SchemaTitle()},
+				Msg:  PathPsIsEmpty,
+				Type: "string", // 路径参数都是字符串类型
 				Ctx:  whereClientError,
 			})
 			if stopImmediately {
@@ -143,14 +119,60 @@ func (c *Context) queryParamsValidate(route RouteIface, stopImmediately bool) {
 	if len(ves) > 0 { // 存在缺失参数
 		c.response.StatusCode = http.StatusUnprocessableEntity
 		c.response.Content = &openapi.HTTPValidationError{Detail: ves}
-		c.response.Type = ErrResponseType
+	}
+}
+
+// 查询参数校验
+//
+//	验证顺序：
+//		验证是否缺少必选参数, 缺少则break
+//		根据数据类型转换参数值, 不符合数值类型则break
+//		验证数值是否符合范围约束, 不符合则break
+//
+//	对于存在多个错误的字段:
+//		如果 stopImmediately=false, 则全部校验完成后再统一返回
+//		反之则在遇到第一个错误后就立刻返回错误消息
+//
+//	@return	*Response 校验结果, 若为nil则校验通过
+func (c *Context) queryParamsValidate(route RouteIface, stopImmediately bool) {
+	var ves []*openapi.ValidationError
+
+	// 验证是否缺少必选参数
+	for _, q := range route.Swagger().QueryFields {
+		value := c.muxCtx.Query(q.SchemaTitle(), "")
+		if value != "" {
+			// 记录传入参数值，如果是空字符串则不记录，否则会影响 Query 方法的使用
+			c.queryFields[q.SchemaTitle()] = value
+		} else {
+			if q.IsRequired() {
+				// 但是此查询参数设置为必选
+				ves = append(ves, &openapi.ValidationError{
+					Loc:  []string{"query", q.SchemaTitle()},
+					Msg:  QueryPsIsEmpty,
+					Type: string(q.Type),
+					Ctx:  whereClientError,
+				})
+				if stopImmediately {
+					break
+				}
+			}
+		}
+	}
+
+	if len(ves) > 0 { // 存在缺失参数
+		c.response.StatusCode = http.StatusUnprocessableEntity
+		c.response.Content = &openapi.HTTPValidationError{Detail: ves}
 	}
 
 	// 根据数据类型转换并校验参数值，比如: 定义为int类型，但是参数值为“abc”，虽然是存在的但是不合法
-	// 转换规则按照 Context.queryFields 进行，只有转换成功后才进行校验
+	// 转换规则按照 QModel 定义进行，只有转换成功后才进行校验
 	for _, qmodel := range route.Swagger().QueryFields {
-		v := c.queryFields[qmodel.SchemaTitle()]
+		v, ok := c.queryFields[qmodel.SchemaTitle()]
+		if !ok { // 此参数值不存在
+			continue
+		}
 		sv := v.(string)
+
 		switch qmodel.SchemaType() {
 		case openapi.IntegerType: // 如何区分有符号和无符号类型
 			atoi, err := strconv.Atoi(sv)
@@ -205,12 +227,14 @@ func (c *Context) queryParamsValidate(route RouteIface, stopImmediately bool) {
 	if len(ves) > 0 { // 存在类型不匹配参数
 		c.response.StatusCode = http.StatusUnprocessableEntity
 		c.response.Content = &openapi.HTTPValidationError{Detail: ves}
-		c.response.Type = ErrResponseType
 	}
 
 	// 验证数值是否符合范围约束
 	for _, qmodel := range route.Swagger().QueryFields {
-		v := c.queryFields[qmodel.SchemaTitle()]
+		v, ok := c.queryFields[qmodel.SchemaTitle()]
+		if !ok {
+			continue
+		}
 		//err := route.QueryBinders()[qmodel.SchemaTitle()].Validate(v)
 		//if len(err) > 0 {
 		//	ves = append(ves, err...)
@@ -220,7 +244,6 @@ func (c *Context) queryParamsValidate(route RouteIface, stopImmediately bool) {
 	if len(ves) > 0 { // 存在范围越界参数
 		c.response.StatusCode = http.StatusUnprocessableEntity
 		c.response.Content = &openapi.HTTPValidationError{Detail: ves}
-		c.response.Type = ErrResponseType
 	}
 }
 

@@ -267,7 +267,7 @@ func (m *BaseModelMeta) scanBaseSwagger() (err error) {
 	// 最基础的属性，必须
 	m.doc = map[string]any{
 		"name":  m.SchemaPkg(),
-		"title": m.Name(),
+		"title": m.SchemaTitle(),
 		"type":  m.SchemaType(),
 	}
 

@@ -8,10 +8,21 @@ import (
 
 // QModel 查询参数或路径参数元数据, 此类型会进一步转换为 openapi.Parameter
 type QModel struct {
-	Name   string            `json:"name,omitempty" description:"字段名称"` // 如果是通过结构体生成,则为json标签名称
-	Tag    reflect.StructTag `json:"tag,omitempty" description:"TAG"`   // 仅在结构体作为查询参数时有效
-	Type   DataType          `json:"otype,omitempty" description:"openapi 数据类型"`
-	InPath bool              `json:"in_path,omitempty" description:"是否是路径参数"`
+	Name     string            `json:"name,omitempty" description:"字段名称"` // 如果是通过结构体生成,则为json标签名称
+	Tag      reflect.StructTag `json:"tag,omitempty" description:"TAG"`   // 仅在结构体作为查询参数时有效
+	Type     DataType          `json:"otype,omitempty" description:"openapi 数据类型"`
+	Kind     reflect.Kind      `json:"Kind,omitempty" description:"反射类型"`
+	InPath   bool              `json:"in_path,omitempty" description:"是否是路径参数"`
+	Required bool              `json:"required,omitempty" description:"是否必须"`
+}
+
+func (q *QModel) Init() (err error) {
+	if q.InPath {
+		q.Required = true // 路径参数都是必须的
+	} else {
+		q.Required = IsFieldRequired(q.Tag)
+	}
+	return
 }
 
 func (q *QModel) SchemaTitle() string { return q.Name }
@@ -32,7 +43,7 @@ func (q *QModel) SchemaDesc() string {
 func (q *QModel) SchemaType() DataType { return q.Type }
 
 // IsRequired 是否必须
-func (q *QModel) IsRequired() bool { return IsFieldRequired(q.Tag) }
+func (q *QModel) IsRequired() bool { return q.Required }
 
 // Schema 输出为OpenAPI文档模型,字典格式
 //
@@ -92,7 +103,7 @@ func StructToQModels(rt reflect.Type) []*QModel {
 		}
 
 		m = append(m, &QModel{
-			Name: field.Name, Tag: field.Tag, Type: dataType, InPath: false,
+			Name: field.Name, Tag: field.Tag, Type: dataType, Kind: field.Type.Kind(), InPath: false,
 		})
 	}
 	return m

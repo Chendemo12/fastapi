@@ -466,9 +466,11 @@ func (r *GroupRoute) scanInParams() (err error) {
 			default:
 				// NOTICE: 此处无法获得方法的参数名，只能获得参数类型的名称
 				r.swagger.QueryFields = append(r.swagger.QueryFields, &openapi.QModel{
-					Name:   param.QueryName(), // 手动指定一个查询参数名称
-					Tag:    "",
+					Name: param.QueryName(), // 手动指定一个查询参数名称
+					Tag: reflect.StructTag(fmt.Sprintf(`json:"%s" %s:"%s"`,
+						param.QueryName(), openapi.DefaultValidateTagName, openapi.DefaultParamRequiredLabel)), // 对于函数参数类型的查询参数,全部为必选的
 					Type:   param.SchemaType(),
+					Kind:   param.PrototypeKind,
 					InPath: false,
 				})
 			}
@@ -487,9 +489,11 @@ func (r *GroupRoute) scanInParams() (err error) {
 				// TODO Future-231126.6: 查询参数考虑是否要支持数组
 			default:
 				r.swagger.QueryFields = append(r.swagger.QueryFields, &openapi.QModel{
-					Name:   lastInParam.QueryName(), // 手动指定一个查询参数名称
-					Tag:    "",
+					Name: lastInParam.QueryName(), // 手动指定一个查询参数名称
+					Tag: reflect.StructTag(fmt.Sprintf(`json:"%s" %s:"%s"`,
+						lastInParam.QueryName(), openapi.DefaultValidateTagName, openapi.DefaultParamRequiredLabel)), // 对于函数参数类型的查询参数,全部为必选的
 					Type:   lastInParam.SchemaType(),
+					Kind:   lastInParam.PrototypeKind,
 					InPath: false,
 				})
 			}
@@ -535,13 +539,15 @@ func (r *GroupRoute) NewInParams(ctx *Context) []reflect.Value {
 	params[0] = r.group.routerValue
 	params[1] = reflect.ValueOf(ctx)
 
+	// 处理查询参数
 	for i, param := range r.inParams[:r.handlerInNum-FirstCustomInParamOffset] {
 		// 匹配查询参数名称，对于最后一个参数是struct的情况，进行额外处理
 		instance := param.New(ctx.queryFields[param.QueryName()])
 		params[i+FirstCustomInParamOffset] = instance
 	}
 
-	// TODO: 绑定赋值
+	// TODO: 处理最后一个参数
+	params[r.handlerInNum-FirstInParamOffset] = r.inParams[len(r.inParams)-1].New("")
 
 	return params
 }

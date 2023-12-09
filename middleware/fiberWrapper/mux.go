@@ -212,6 +212,10 @@ func (c *FiberContext) Query(key string, undefined ...string) string {
 	return c.ctx.Query(key, undefined...)
 }
 
+func (c *FiberContext) Params(key string, undefined ...string) string {
+	return c.ctx.Params(key, undefined...)
+}
+
 func (c *FiberContext) Status(statusCode int) {
 	c.ctx.Status(statusCode)
 }

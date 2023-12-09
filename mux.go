@@ -22,12 +22,13 @@ type MuxWrapper interface {
 
 // MuxContext Web引擎的 Context，例如 fiber.Ctx, gin.Context
 type MuxContext interface {
-	Method() string                               // [重要方法]获得当前请求方法，取为为 http.MethodGet, http.MethodPost 等
-	Path() string                                 // [重要方法]获的当前请求的路由模式，而非请求Url
-	Header(key, value string)                     // 添加响应头
-	SetCookie(cookie *http.Cookie)                // 添加cookie
-	Cookie(name string) (string, error)           // 读取cookie
-	Query(key string, undefined ...string) string // 解析查询参数
+	Method() string                                // [重要方法]获得当前请求方法，取为为 http.MethodGet, http.MethodPost 等
+	Path() string                                  // [重要方法]获的当前请求的路由模式，而非请求Url
+	Header(key, value string)                      // 添加响应头
+	SetCookie(cookie *http.Cookie)                 // 添加cookie
+	Cookie(name string) (string, error)            // 读取cookie
+	Query(key string, undefined ...string) string  // 解析查询参数
+	Params(key string, undefined ...string) string // 解析路径参数
 
 	Set(key string, value any)                     // Set用于存储专门用于此上下文的新键/值对，如果以前没有使用c.Keys，它也会延迟初始化它
 	Get(key string, defaultValue ...string) string // 从上下文中读取键/值对

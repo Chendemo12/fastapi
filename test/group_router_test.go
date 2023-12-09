@@ -55,6 +55,12 @@ type QueryParamRouter struct {
 
 func (r *QueryParamRouter) Prefix() string { return "/api/query-param" }
 
+func (r *QueryParamRouter) Path() map[string]string {
+	return map[string]string{
+		"IntQueryParamGet": "int-query/:param",
+	}
+}
+
 func (r *QueryParamRouter) IntQueryParamGet(c *fastapi.Context, age int) (int, error) {
 	return age, nil
 }

@@ -50,8 +50,22 @@ func (r *RouteSwagger) Scan() (err error) {
 	return
 }
 
-// ScanInner 解析内部 BaseModelMeta 模型数据
+// ScanInner 解析内部模型数据
 func (r *RouteSwagger) ScanInner() (err error) {
+	for _, qmodel := range r.QueryFields {
+		err = qmodel.Init()
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, qmodel := range r.PathFields {
+		err = qmodel.Init()
+		if err != nil {
+			return err
+		}
+	}
+
 	if r.RequestModel != nil {
 		err = r.RequestModel.Init()
 		if err != nil {

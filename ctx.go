@@ -25,7 +25,7 @@ type Context struct {
 	// 	float 	=> float64
 	//	string 	=> string
 	// 	bool 	=> bool
-	queryFields map[string]any     `description:"查询参数"`
+	queryFields map[string]any     `description:"查询参数, 仅记录存在值的查询参数"`
 	svc         *Service           `description:"service"`
 	muxCtx      MuxContext         `description:"路由器Context"`
 	routeCtx    context.Context    `description:"获取针对此次请求的唯一context"`
