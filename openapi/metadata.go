@@ -53,13 +53,13 @@ func (m *BaseModelMeta) scanModel() (err error) {
 	m.fields = make([]*BaseModelField, 0)
 	m.innerModels = make([]*BaseModelField, 0)
 
-	if m.Param.Type.IsBaseType() {
+	if m.Param.SchemaType().IsBaseType() {
 		// 接口方法处返回了基本类型,或请求体参数为基本类型, 无需进一步解析
 		return
 	}
 
 	// 检测到数组或结构体, 解析模型信息
-	if m.Param.Type == ArrayType {
+	if m.Param.SchemaType() == ArrayType {
 		// 方法处直接返回数组, 递归处理子元素
 		param := NewRouteParam(m.Param.CopyPrototype().Elem(), 0)
 		err = param.Init()
@@ -69,7 +69,7 @@ func (m *BaseModelMeta) scanModel() (err error) {
 		m.itemModel = NewBaseModelMeta(param)
 		err = m.itemModel.Init()
 
-	} else if m.Param.Type == ObjectType {
+	} else if m.Param.SchemaType() == ObjectType {
 		// 方法处返回结构体或结构体指针
 		err = m.scanObject()
 	}
@@ -110,7 +110,7 @@ func (m *BaseModelMeta) scanObject() (err error) {
 func (m *BaseModelMeta) scanStructField(argsType *ArgsType, depth int) {
 	field := argsType.field
 	// 过滤模型基类
-	if utils.Has[string](InnerModelsName, field.Name) {
+	if utils.Has[string](InnerModelsPkg, field.Type.String()) {
 		return
 	}
 
@@ -248,7 +248,7 @@ func (m *BaseModelMeta) scanFieldWhichIsStruct(fieldMeta *BaseModelField, fieldT
 // 此方法的最终产物就是构建出 doc 字典文档
 func (m *BaseModelMeta) scanSwagger() (err error) {
 	// 区分基本类型和自定义类型
-	switch m.Param.Type {
+	switch m.Param.SchemaType() {
 
 	case IntegerType, NumberType, BoolType, StringType:
 		// 匹配到基本类型
@@ -431,7 +431,7 @@ func (m *BaseModelMeta) SchemaDesc() string {
 
 // SchemaType 模型类型
 func (m *BaseModelMeta) SchemaType() DataType {
-	return m.Param.Type
+	return m.Param.SchemaType()
 }
 
 // IsRequired 模型都是必须的

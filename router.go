@@ -19,10 +19,10 @@ type RouteIface interface {
 	Scanner
 	RouteType() RouteType
 	Swagger() *openapi.RouteSwagger           // 路由文档
-	ResponseBinder() ModelBindMethod          // 响应体的处理接口,响应体只有一个
-	RequestBinders() ModelBindMethod          // 请求体的处理接口,请求体也只有一个
 	QueryBinders() map[string]ModelBindMethod // 查询参数的处理接口(查询参数名:处理接口)，查询参数可有多个
-	NewInParams(ctx *Context) []reflect.Value // 创建一个完整的函数入参实例列表
+	RequestBinders() ModelBindMethod          // 请求体的处理接口,请求体也只有一个
+	ResponseBinder() ModelBindMethod          // 响应体的处理接口,响应体只有一个
+	NewInParams(ctx *Context) []reflect.Value // 创建一个完整的函数入参实例列表, 此方法会在完成请求参数校验 RequestBinders，QueryBinders 之后执行
 	Call(ctx *Context)                        // 调用API, 需要将响应结果写入 Response 内
 	Id() string
 }
@@ -46,14 +46,14 @@ func (b *BaseModel) IsRequired() bool { return true }
 //
 //	# Usage
 //
-//	router := NewBaseRouter("FastApi", "1.0.0", "FastApi application", false)
+//	router := NewBaseRouter(Config{})
 //	app.IncludeRouter(router)
-func NewBaseRouter(title, version, desc string, debug bool) GroupRouter {
+func NewBaseRouter(conf Config) GroupRouter {
 	return &BaseGroupRouter{
-		Title:   title,
-		Version: version,
-		Desc:    desc,
-		Debug:   debug,
+		Title:   conf.Title,
+		Version: conf.Version,
+		Desc:    conf.Description,
+		Debug:   conf.Debug,
 	}
 }
 

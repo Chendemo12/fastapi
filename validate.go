@@ -31,11 +31,11 @@ type ValidateMethod interface {
 }
 
 type ModelBindMethod interface {
-	Name() string                                   // 名称
-	Validate(data any) *openapi.HTTPValidationError // 校验方法，对于响应首先校验，然后在 Marshal；对于请求，首先 Unmarshal 然后再校验
-	Marshal(obj any) ([]byte, error)                // 序列化方法，通过 ContentType 确定响应体类型
-	Unmarshal(stream []byte, obj any) (err error)   // 反序列化方法，通过 "http:header:Content-Type" 推断内容类型
-	New() any                                       // 创建一个新实例
+	Name() string                                 // 名称
+	Validate(data any) []*openapi.ValidationError // 校验方法，对于响应首先校验，然后在 Marshal；对于请求，首先 Unmarshal 然后再校验
+	Marshal(obj any) ([]byte, error)              // 序列化方法，通过 ContentType 确定响应体类型
+	Unmarshal(stream []byte, obj any) (err error) // 反序列化方法，通过 "http:header:Content-Type" 推断内容类型
+	New() any                                     // 创建一个新实例
 }
 
 type JsonBindMethod struct {
@@ -47,18 +47,17 @@ func (m *JsonBindMethod) Name() string {
 	return "JsonBindMethod"
 }
 
-func (m *JsonBindMethod) Validate(data any) *openapi.HTTPValidationError {
-	var err *openapi.ValidationError
-	var httpv = &openapi.HTTPValidationError{}
+func (m *JsonBindMethod) Validate(data any) []*openapi.ValidationError {
+	var ves []*openapi.ValidationError
 
 	for _, validate := range m.validates {
-		err = validate.V(data)
+		err := validate.V(data)
 		if err != nil {
-			httpv.Detail = append(httpv.Detail, err)
+			ves = append(ves, err)
 		}
 	}
 
-	return httpv
+	return ves
 }
 
 func (m *JsonBindMethod) Marshal(obj any) ([]byte, error) {
@@ -87,9 +86,9 @@ func (m *IntegerBindMethod) Name() string {
 	return "IntegerBindMethod"
 }
 
-func (m *IntegerBindMethod) Validate(data any) *openapi.HTTPValidationError {
+func (m *IntegerBindMethod) Validate(data any) []*openapi.ValidationError {
+	var ves []*openapi.ValidationError
 	var err *openapi.ValidationError
-	var httpv = &openapi.HTTPValidationError{}
 
 	links := []func(data any) *openapi.ValidationError{
 		UnsignedIntegerMaximumV[uint64](m.UnsignedMaximum, false),
@@ -99,11 +98,11 @@ func (m *IntegerBindMethod) Validate(data any) *openapi.HTTPValidationError {
 	for _, link := range links {
 		err = link(data)
 		if err != nil {
-			httpv.Detail = append(httpv.Detail, err)
+			ves = append(ves, err)
 		}
 	}
 
-	return httpv
+	return ves
 }
 
 func (m *IntegerBindMethod) Marshal(obj any) ([]byte, error) {
@@ -257,7 +256,7 @@ func (m *NothingBindMethod) Name() string {
 	return "NothingBindMethod"
 }
 
-func (m *NothingBindMethod) Validate(data any) *openapi.HTTPValidationError {
+func (m *NothingBindMethod) Validate(data any) []*openapi.ValidationError {
 	return nil
 }
 

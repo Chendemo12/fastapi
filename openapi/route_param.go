@@ -202,14 +202,39 @@ func (r *RouteParam) InnerSchema() []SchemaIface {
 }
 
 // New 通过反射创建一个新的参数实例
-func (r *RouteParam) New() (v reflect.Value) {
+func (r *RouteParam) New(value any) (v reflect.Value) {
 	if r.IsPtr {
 		v = reflect.New(r.Prototype.Elem())
 	} else {
 		v = reflect.New(r.Prototype)
 	}
-
+	// 此时v是个指针类型
+	elem := v.Elem()
+	kind := elem.Kind()
+	if elem.CanSet() {
+		switch kind {
+		case reflect.Array, reflect.Slice, reflect.Chan:
+			// TODO: 如何支持
+		case reflect.Bool:
+			elem.SetBool(value.(bool))
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			elem.SetInt(value.(int64))
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			elem.SetUint(value.(uint64))
+		case reflect.Float64, reflect.Float32:
+			elem.SetFloat(value.(float64))
+		case reflect.String:
+			elem.SetString(value.(string))
+		default:
+		}
+	}
 	return v
+}
+
+// QueryName 获得查询参数名称
+// 当其作为查询参数时，由于无法反射到参数的名称，因此手动分配一个名称
+func (r *RouteParam) QueryName() string {
+	return fmt.Sprintf("%s%d", r.Name, r.Index)
 }
 
 // CreateRouteIdentify 获得一个路由对象的唯一标识

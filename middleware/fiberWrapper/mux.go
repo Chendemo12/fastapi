@@ -37,7 +37,7 @@ func Default() *FiberMux {
 		Prefork:       false,                   // core.MultipleProcessEnabled, // 多进程模式
 		CaseSensitive: true,                    // 区分路由大小写
 		StrictRouting: true,                    // 严格路由
-		ServerHeader:  "fiber",                 // 服务器头
+		ServerHeader:  "FastApi",               // 服务器头
 		AppName:       "fastapi.fiber",         // 设置为 Response.Header.Server 属性
 		ColorScheme:   fiber.DefaultColors,     // 彩色输出
 		JSONEncoder:   helper.JsonMarshal,      // json序列化器

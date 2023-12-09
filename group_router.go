@@ -128,10 +128,10 @@ type Scanner interface {
 // GroupRouterMeta 反射构建路由组的元信息
 type GroupRouterMeta struct {
 	router      GroupRouter
-	routerValue reflect.Value
 	routes      []*GroupRoute
 	pkg         string // 包名.结构体名
 	tags        []string
+	routerValue reflect.Value
 }
 
 // NewGroupRouteMeta 构建一个路由组的主入口
@@ -444,18 +444,19 @@ func (r *GroupRoute) scanInParams() (err error) {
 	if r.handlerInNum == FirstInParamOffset { // 只有一个参数,只能是 Context
 		return nil
 	}
+
 	// TODO: Future-231203.9: POST/PATCH/PUT方法最多支持2个结构体参数
 
 	if r.handlerInNum > FirstInParamOffset { // 存在自定义参数
 		// 掐头去尾,获得查询参数,GET/DELETE 必须为基本数据类型
-		for index, param := range r.inParams[:r.handlerInNum-1-1] {
-			switch param.Type {
+		for _, param := range r.inParams[:r.handlerInNum-1-1] {
+			switch param.SchemaType() {
 			case openapi.ObjectType, openapi.ArrayType:
 				if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
-					// GET/DELETE方法不支持多个结构体参数, 打印出结构体方法名，参数索引出从1开始
+					// GET/DELETE方法不支持多个结构体参数, 打印出结构体方法名，参数索引出从1开始, 排除接收器参数，直接取Index即可
 					return errors.New(fmt.Sprintf(
 						"method: '%s' param: '%s', index: %d cannot be a %s",
-						r.group.pkg+"."+r.method.Name, param.Pkg, index+FirstInParamOffset+1, param.Type,
+						r.group.pkg+"."+r.method.Name, param.Pkg, param.Index, param.SchemaType(),
 					))
 				} else {
 					// POST/PATCH/PUT 方法，识别为结构体查询参数
@@ -465,9 +466,9 @@ func (r *GroupRoute) scanInParams() (err error) {
 			default:
 				// NOTICE: 此处无法获得方法的参数名，只能获得参数类型的名称
 				r.swagger.QueryFields = append(r.swagger.QueryFields, &openapi.QModel{
-					Name:   assignQueryFieldName(param.Prototype, index), // 手动指定一个查询参数名称
+					Name:   param.QueryName(), // 手动指定一个查询参数名称
 					Tag:    "",
-					Type:   param.Type,
+					Type:   param.SchemaType(),
 					InPath: false,
 				})
 			}
@@ -477,7 +478,7 @@ func (r *GroupRoute) scanInParams() (err error) {
 		lastInParam := r.inParams[r.handlerInNum-FirstCustomInParamOffset]
 		if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
 			// 作为查询参数
-			switch lastInParam.Type {
+			switch lastInParam.SchemaType() {
 			case openapi.ObjectType:
 				// 如果为结构体,则结构体的每一个字段都将作为一个查询参数
 				// TODO Future-231126.3: 请求体不支持time.Time;
@@ -486,9 +487,9 @@ func (r *GroupRoute) scanInParams() (err error) {
 				// TODO Future-231126.6: 查询参数考虑是否要支持数组
 			default:
 				r.swagger.QueryFields = append(r.swagger.QueryFields, &openapi.QModel{
-					Name:   assignQueryFieldName(lastInParam.Prototype, r.handlerInNum), // 手动指定一个查询参数名称
+					Name:   lastInParam.QueryName(), // 手动指定一个查询参数名称
 					Tag:    "",
-					Type:   lastInParam.Type,
+					Type:   lastInParam.SchemaType(),
 					InPath: false,
 				})
 			}
@@ -534,8 +535,10 @@ func (r *GroupRoute) NewInParams(ctx *Context) []reflect.Value {
 	params[0] = r.group.routerValue
 	params[1] = reflect.ValueOf(ctx)
 
-	for i := 2; i < len(r.inParams); i++ {
-		params[i] = r.inParams[i].New()
+	for i, param := range r.inParams[:r.handlerInNum-FirstCustomInParamOffset] {
+		// 匹配查询参数名称，对于最后一个参数是struct的情况，进行额外处理
+		instance := param.New(ctx.queryFields[param.QueryName()])
+		params[i+FirstCustomInParamOffset] = instance
 	}
 
 	// TODO: 绑定赋值
@@ -557,16 +560,4 @@ func (r *GroupRoute) Call(ctx *Context) {
 		}
 		ctx.response.Content = err.Error()
 	}
-}
-
-// 手动指定一个查询参数名称
-//
-//	@param 	rt		reflect.Type	参数元类型
-//	@param	index	int				参数处于方法的第几个
-func assignQueryFieldName(rt reflect.Type, index int) string {
-	if rt.Kind() == reflect.Ptr {
-		rt = rt.Elem()
-	}
-
-	return fmt.Sprintf("%s%d", rt.Name(), index)
 }

@@ -18,8 +18,14 @@ import (
 //	注意: 当一个路由被执行完毕时, 路由函数中的 Context 将被立刻释放回收, 因此在return之后对
 //	Context 的任何引用都是不对的, 若需在return之后监听 Context.DisposableCtx() 则应该显式的复制或派生
 type Context struct {
-	pathFields  map[string]string  `description:"路径参数"`
-	queryFields map[string]string  `description:"查询参数"`
+	pathFields map[string]string `description:"路径参数"`
+	// 对于查询参数，参数类型会按照以下规则进行转换：
+	// 	int 	=> int64
+	// 	uint 	=> uint64
+	// 	float 	=> float64
+	//	string 	=> string
+	// 	bool 	=> bool
+	queryFields map[string]any     `description:"查询参数"`
 	svc         *Service           `description:"service"`
 	muxCtx      MuxContext         `description:"路由器Context"`
 	routeCtx    context.Context    `description:"获取针对此次请求的唯一context"`
@@ -83,7 +89,7 @@ func (c *Context) Logger() logger.Iface { return c.svc.Logger() }
 // Query 获取查询参数
 // 对于已经在路由处定义的查询参数，应首先从 Context.queryFields 内部读取；
 // 对于没有定义的其他查询参数则调用低层 MuxContext 进行解析
-func (c *Context) Query(name string, undefined ...string) string {
+func (c *Context) Query(name string, undefined ...string) any {
 	v, ok := c.queryFields[name]
 	if ok {
 		return v
@@ -95,6 +101,14 @@ func (c *Context) Query(name string, undefined ...string) string {
 // PathField 获取路径参数
 // 对于已经在路由处定义的路径参数，应首先从 Context.pathFields 内部读取；
 // 对于没有定义的其他查询参数则调用低层 MuxContext 进行解析
+//
+// 对于查询参数，参数类型会按照以下规则进行转换：
+//
+//	int 	=> int64
+//	uint 	=> uint64
+//	float 	=> float64
+//	string 	=> string
+//	bool 	=> bool
 func (c *Context) PathField(name string, undefined ...string) string {
 	v, ok := c.pathFields[name]
 	if ok {

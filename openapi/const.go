@@ -69,6 +69,13 @@ const ReminderWhenResponseModelIsNil = " `| 路由未明确定义返回值，文
 var InnerModelsName = []string{
 	"BaseModel",
 	"BaseModelField",
+	"BaseRouter",
+}
+
+var InnerModelsPkg = []string{
+	"fastapi.BaseModel",
+	"fastapi.BaseModelField",
+	"fastapi.BaseRouter",
 }
 
 // IllegalRouteParamType 不支持的参数类型

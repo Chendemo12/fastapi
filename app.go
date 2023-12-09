@@ -50,6 +50,9 @@ type Profile struct {
 	SwaggerDisabled                    bool          `json:"swaggerDisabled,omitempty" description:"禁用自动文档"`
 	ShutdownTimeout                    time.Duration `json:"shutdownTimeout,omitempty" description:"平滑关机,单位秒"`
 	ContextAutomaticDerivationDisabled bool          `json:"contextAutomaticDerivationDisabled,omitempty" description:"禁用context自动派生"`
+	// 默认情况下当请求校验过程遇到错误字段时，仍会继续向下校验其他字段，并最终将所有的错误消息一次性返回给调用方
+	// 当此设置被开启后，在遇到一个错误的参数时，会立刻停止终止流程，直接返回错误消息
+	StopImmediatelyWhenErrorOccurs bool `json:"stopImmediatelyWhenErrorOccurs" description:"是否在遇到错误字段时立刻停止校验"`
 }
 
 func (f *Wrapper) initService() *Wrapper {
@@ -185,7 +188,7 @@ func (f *Wrapper) acquireCtx(ctx MuxContext) *Context {
 		c.routeCtx, c.routeCancel = context.WithCancel(f.service.ctx)
 	}
 	c.pathFields = map[string]string{}
-	c.queryFields = map[string]string{}
+	c.queryFields = map[string]any{}
 
 	return c
 }
@@ -240,7 +243,18 @@ func (f *Wrapper) Wrap(mux MuxWrapper) *Wrapper {
 
 // ================================ Api ================================
 
-func (f *Wrapper) Config() *Profile { return f.conf }
+func (f *Wrapper) Config() Config {
+	return Config{
+		Logger:                         f.service.Logger(),
+		Version:                        f.conf.Version,
+		Description:                    f.conf.Description,
+		Title:                          f.conf.Title,
+		ShutdownTimeout:                int(f.conf.ShutdownTimeout.Seconds()),
+		DisableSwagAutoCreate:          f.conf.SwaggerDisabled,
+		StopImmediatelyWhenErrorOccurs: f.conf.StopImmediatelyWhenErrorOccurs,
+		Debug:                          f.conf.Debug,
+	}
+}
 
 // Service 获取Wrapper全局服务依赖
 func (f *Wrapper) Service() *Service { return f.service }
@@ -430,13 +444,14 @@ func (f *Wrapper) Run(host, port string) {
 }
 
 type Config struct {
-	Logger                logger.Iface `json:"-" description:"日志"`
-	Version               string       `json:"version,omitempty" description:"APP版本号"`
-	Description           string       `json:"description,omitempty" description:"APP描述"`
-	Title                 string       `json:"title,omitempty" description:"APP标题,也是日志文件名"`
-	ShutdownTimeout       int          `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
-	DisableSwagAutoCreate bool         `json:"disable_swag_auto_create,omitempty" description:"禁用自动文档"`
-	Debug                 bool         `json:"debug,omitempty" description:"调试模式"`
+	Logger                         logger.Iface `json:"-" description:"日志"`
+	Version                        string       `json:"version,omitempty" description:"APP版本号"`
+	Description                    string       `json:"description,omitempty" description:"APP描述"`
+	Title                          string       `json:"title,omitempty" description:"APP标题,也是日志文件名"`
+	ShutdownTimeout                int          `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
+	DisableSwagAutoCreate          bool         `json:"disable_swag_auto_create,omitempty" description:"禁用自动文档"`
+	StopImmediatelyWhenErrorOccurs bool         `json:"stopImmediatelyWhenErrorOccurs" description:"是否在遇到错误字段时立刻停止校验"`
+	Debug                          bool         `json:"debug,omitempty" description:"调试模式"`
 }
 
 func cleanConfig(confs ...Config) Config {
@@ -463,6 +478,7 @@ func cleanConfig(confs ...Config) Config {
 		conf.Logger = confs[0].Logger
 		conf.ShutdownTimeout = confs[0].ShutdownTimeout
 		conf.DisableSwagAutoCreate = confs[0].DisableSwagAutoCreate
+		conf.StopImmediatelyWhenErrorOccurs = confs[0].StopImmediatelyWhenErrorOccurs
 	}
 
 	return conf

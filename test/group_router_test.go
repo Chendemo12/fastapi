@@ -12,6 +12,7 @@ import (
 
 type BaseTypeRouter struct {
 	fastapi.BaseRouter
+	Counter int
 }
 
 func (r *BaseTypeRouter) Prefix() string { return "/api/base-type" }
@@ -25,7 +26,8 @@ func (r *BaseTypeRouter) ReturnBoolGet(c *fastapi.Context) (bool, error) {
 }
 
 func (r *BaseTypeRouter) ReturnIntGet(c *fastapi.Context) (int, error) {
-	return 1, nil
+	r.Counter++
+	return r.Counter, nil
 }
 
 func (r *BaseTypeRouter) ReturnUint16Get(c *fastapi.Context) (uint16, error) {
@@ -315,7 +317,8 @@ func TestNew(t *testing.T) {
 	app.IncludeRouter(&BaseTypeRouter{}).
 		IncludeRouter(&QueryParamRouter{}).
 		IncludeRouter(&RequestBodyRouter{}).
-		IncludeRouter(&ResponseModelRouter{})
+		IncludeRouter(&ResponseModelRouter{}).
+		IncludeRouter(fastapi.NewBaseRouter(app.Config()))
 
 	app.Run("0.0.0.0", "8099") // 阻塞运行
 }
