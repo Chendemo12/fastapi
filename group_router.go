@@ -357,6 +357,22 @@ func (r *GroupRouterMeta) isRouteMethod(method reflect.Method) (*openapi.RouteSw
 	return swagger, true
 }
 
+// QueryParamMode 查询参数的定义模式，不同模式决定了查询参数的校验方式
+// 对于泛型路由来说，仅存在 结构体查询参数 StructQueryParamMode 一种形式;
+// 对于路由组路由来说，三种形式都存在
+type QueryParamMode string
+
+const (
+	// NoQueryParamMode 不存在查询参数 = 0
+	NoQueryParamMode QueryParamMode = "NoQueryParamMode"
+	// SimpleQueryParamMode 只有基本数据类型的简单查询参数类型，不包含结构体类型的查询参数 = 1
+	SimpleQueryParamMode QueryParamMode = "SimpleQueryParamMode"
+	// StructQueryParamMode 以结构体形式定义的查询参数模式 = 4
+	StructQueryParamMode QueryParamMode = "StructQueryParamMode"
+	// MixQueryParamMode 二种形式都有的混合模式 = 7
+	MixQueryParamMode QueryParamMode = "MixQueryParamMode"
+)
+
 // GroupRoute 路由组路由定义
 type GroupRoute struct {
 	swagger *openapi.RouteSwagger
@@ -364,13 +380,14 @@ type GroupRoute struct {
 	method  reflect.Method // 路由方法所属的结构体方法, 用于API调用
 	index   int            // 当前方法所属的结构体方法的偏移量
 	// 路由函数入参数量, 入参数量可以不固定,但第一个必须是 Context
-	handlerInNum   int                   // 如果>1:则最后一个视为请求体(Post/Patch/Post)或查询参数(Get/Delete)
-	handlerOutNum  int                   // 路由函数出参数量, 出参数量始终为2,最后一个必须是 error
-	inParams       []*openapi.RouteParam // 不包含第一个 Context, 因此 handlerInNum - len(inParams) = 1
-	outParams      *openapi.RouteParam   // 不包含最后一个 error, 因此只有一个出参
-	paramBinder    ModelBindMethod       // 查询参数，路径参数的校验器，不存在参数则为 NothingBindMethod
-	requestBinder  ModelBindMethod       // 请求题校验器，不存在请求题则为 NothingBindMethod
-	responseBinder ModelBindMethod       // 响应体校验器，响应体肯定存在 ModelBindMethod
+	handlerInNum   int                        // 如果>1:则最后一个视为请求体(Post/Patch/Post)或查询参数(Get/Delete)
+	handlerOutNum  int                        // 路由函数出参数量, 出参数量始终为2,最后一个必须是 error
+	inParams       []*openapi.RouteParam      // 不包含第一个 Context, 因此 handlerInNum - len(inParams) = 1
+	outParams      *openapi.RouteParam        // 不包含最后一个 error, 因此只有一个出参
+	queryParamMode QueryParamMode             // 查询参数的定义模式
+	paramBinders   map[string]ModelBindMethod // 查询参数，路径参数的校验器，不存在参数则为 NothingBindMethod
+	requestBinder  ModelBindMethod            // 请求题校验器，不存在请求题则为 NothingBindMethod
+	responseBinder ModelBindMethod            // 响应体校验器，响应体肯定存在 ModelBindMethod
 }
 
 func (r *GroupRoute) Id() string { return r.swagger.Id() }
@@ -382,7 +399,7 @@ func NewGroupRoute(swagger *openapi.RouteSwagger, method reflect.Method, group *
 	r.group = group
 	r.index = method.Index
 
-	r.paramBinder = r.paramValidate()
+	r.paramBinders = make(map[string]ModelBindMethod)
 	r.requestBinder = &NothingBindMethod{}
 	r.responseBinder = &NothingBindMethod{}
 
@@ -428,6 +445,13 @@ func (r *GroupRoute) Scan() (err error) {
 		return err
 	}
 
+	r.scanQueryParamMode()
+
+	err = r.scanQueryBinders()
+	if err != nil {
+		return err
+	}
+
 	err = r.ScanInner()
 	return
 }
@@ -440,6 +464,7 @@ func (r *GroupRoute) ScanInner() (err error) {
 
 // 从方法入参中初始化路由参数, 包含了查询参数，请求体参数
 func (r *GroupRoute) scanInParams() (err error) {
+	r.queryParamMode = SimpleQueryParamMode
 	r.swagger.QueryFields = make([]*openapi.QModel, 0)
 	if r.handlerInNum == FirstInParamOffset { // 只有一个参数,只能是 Context
 		return nil
@@ -511,9 +536,48 @@ func (r *GroupRoute) scanOutParams() (err error) {
 	return err
 }
 
-// 查询参数路径参数校验
-func (r *GroupRoute) paramValidate() ModelBindMethod {
-	return &NothingBindMethod{}
+func (r *GroupRoute) scanQueryParamMode() {
+	if r.handlerInNum > FirstInParamOffset { // 存在自定义参数
+		r.queryParamMode = NoQueryParamMode
+		return
+	}
+
+	var end int
+	if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
+		end = len(r.inParams) // 掐头
+	} else {
+		end = len(r.inParams) - 1 // 掐头去尾，最后一个为请求体
+	}
+
+	var hasBase = len(r.inParams[:end]) > 1 // 仅能存在一个 struct 查询参数
+	var hasStruct bool
+
+	for _, param := range r.inParams[:end] {
+		if param.Type == openapi.ObjectType {
+			hasStruct = true
+		} else {
+			hasBase = true
+		}
+	}
+
+	if hasBase && hasStruct {
+		r.queryParamMode = MixQueryParamMode
+	} else {
+		if hasStruct {
+			r.queryParamMode = StructQueryParamMode
+		}
+		if hasBase {
+			r.queryParamMode = SimpleQueryParamMode
+		}
+	}
+}
+
+func (r *GroupRoute) scanQueryBinders() (err error) {
+	// 不包含第一个 Context 和最后一个 结构体参数
+	for _, param := range r.inParams[:r.handlerInNum-FirstCustomInParamOffset] {
+
+	}
+	return
 }
 
 func (r *GroupRoute) RouteType() RouteType { return GroupRouteType }
@@ -530,8 +594,9 @@ func (r *GroupRoute) RequestBinders() ModelBindMethod {
 	return r.requestBinder
 }
 
+// QueryBinders 查询参数路径参数校验
 func (r *GroupRoute) QueryBinders() map[string]ModelBindMethod {
-	return map[string]ModelBindMethod{}
+	return r.paramBinders
 }
 
 func (r *GroupRoute) NewInParams(ctx *Context) []reflect.Value {
@@ -545,6 +610,7 @@ func (r *GroupRoute) NewInParams(ctx *Context) []reflect.Value {
 		instance := param.New(ctx.queryFields[param.QueryName()])
 		params[i+FirstCustomInParamOffset] = instance
 	}
+	// TODO 依据处理 QueryParamMode
 
 	// TODO: 处理最后一个参数
 	params[r.handlerInNum-FirstInParamOffset] = r.inParams[len(r.inParams)-1].New("")

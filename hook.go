@@ -124,6 +124,8 @@ func (c *Context) pathParamsValidate(route RouteIface, stopImmediately bool) {
 
 // 查询参数校验
 //
+//	对于查询参数，仅自定义校验非结构体查询参数，对于结构体查询参数通过反序列化结构体后利用validate实现
+//
 //	验证顺序：
 //		验证是否缺少必选参数, 缺少则break
 //		根据数据类型转换参数值, 不符合数值类型则break
@@ -171,27 +173,44 @@ func (c *Context) queryParamsValidate(route RouteIface, stopImmediately bool) {
 		if !ok { // 此参数值不存在
 			continue
 		}
-		sv := v.(string)
 
+		sv := v.(string)
 		switch qmodel.SchemaType() {
-		case openapi.IntegerType: // 如何区分有符号和无符号类型
-			atoi, err := strconv.Atoi(sv)
+
+		case openapi.IntegerType: // 对于int类型，需要额外区分有符号和无符号类型
+			binder, okk := route.QueryBinders()[qmodel.SchemaTitle()]
+			if !okk {
+				continue
+			}
+			value, errs := binder.Validate(sv)
+			if len(errs) > 0 {
+				ves = append(ves, errs...)
+				if stopImmediately {
+					break
+				}
+			} else {
+				// 符合全部约束
+				c.queryFields[qmodel.SchemaTitle()] = value
+			}
+
+		case openapi.NumberType: // number 类型统一转换为float64类型处理
+			atof, err := strconv.ParseFloat(sv, 64)
 			if err != nil {
 				ves = append(ves, &openapi.ValidationError{
 					Loc:  []string{"query", qmodel.SchemaTitle()},
-					Msg:  fmt.Sprintf("value: '%s' is not an integer", sv),
-					Type: string(openapi.IntegerType),
+					Msg:  fmt.Sprintf("value: '%s' is not a number", sv),
+					Type: string(openapi.NumberType),
 					Ctx:  whereClientError,
 				})
 				if stopImmediately {
 					break
 				}
 			} else {
-				// 符合规则，替换为转换后的值
-				c.queryFields[qmodel.SchemaTitle()] = int64(atoi)
+				// 转换成功，对于float64类型暂不验证范围是否合理
+				c.queryFields[qmodel.SchemaTitle()] = atof
 			}
 
-		case openapi.BoolType:
+		case openapi.BoolType: // 只支持字符串 true 和 false
 			if sv == "false" || sv == "true" {
 				atob, _ := strconv.ParseBool(sv)
 				c.queryFields[qmodel.SchemaTitle()] = atob
@@ -207,41 +226,13 @@ func (c *Context) queryParamsValidate(route RouteIface, stopImmediately bool) {
 				}
 			}
 
-		case openapi.NumberType:
-			atof, err := strconv.ParseFloat(sv, 64)
-			if err != nil {
-				ves = append(ves, &openapi.ValidationError{
-					Loc:  []string{"query", qmodel.SchemaTitle()},
-					Msg:  fmt.Sprintf("value: '%s' is not a number", sv),
-					Type: string(openapi.NumberType),
-					Ctx:  whereClientError,
-				})
-				if stopImmediately {
-					break
-				}
-			} else {
-				c.queryFields[qmodel.SchemaTitle()] = atof
-			}
+		case openapi.StringType:
+		// do nothing
+		default:
 		}
-	}
-	if len(ves) > 0 { // 存在类型不匹配参数
-		c.response.StatusCode = http.StatusUnprocessableEntity
-		c.response.Content = &openapi.HTTPValidationError{Detail: ves}
 	}
 
-	// 验证数值是否符合范围约束
-	for _, qmodel := range route.Swagger().QueryFields {
-		v, ok := c.queryFields[qmodel.SchemaTitle()]
-		if !ok {
-			continue
-		}
-		//err := route.QueryBinders()[qmodel.SchemaTitle()].Validate(v)
-		//if len(err) > 0 {
-		//	ves = append(ves, err...)
-		//}
-		_ = v
-	}
-	if len(ves) > 0 { // 存在范围越界参数
+	if len(ves) > 0 { // 存在类型不匹配或范围越界参数
 		c.response.StatusCode = http.StatusUnprocessableEntity
 		c.response.Content = &openapi.HTTPValidationError{Detail: ves}
 	}
@@ -302,7 +293,7 @@ func (c *Context) responseValidate(route RouteIface) {
 	if c.response.Type == JsonResponseType {
 		// 内部返回的 422 也不再校验
 		if c.response.StatusCode != http.StatusUnprocessableEntity {
-			evs := route.ResponseBinder().Validate(nil)
+			_, evs := route.ResponseBinder().Validate(nil)
 			if len(evs) > 0 {
 				//校验不通过, 修改 Response.StatusCode 和 Response.Content
 				c.response.StatusCode = http.StatusUnprocessableEntity
