@@ -77,18 +77,17 @@ func (m *NothingBindMethod) New() any {
 }
 
 // IntBindMethod 有符号数字验证
-type IntBindMethod[T SignedInteger] struct {
+type IntBindMethod struct {
 	Title   string       `json:"title,omitempty"`
 	Kind    reflect.Kind `json:"kind,omitempty"`
 	Maximum int64        `json:"maximum,omitempty"`
 	Minimum int64        `json:"minimum,omitempty"`
 }
 
-func (m *IntBindMethod[T]) Name() string { return "IntBindMethod" }
+func (m *IntBindMethod) Name() string { return "IntBindMethod" }
 
-func (m *IntBindMethod[T]) Validate(ctx context.Context, data any) (any, []*openapi.ValidationError) {
+func (m *IntBindMethod) Validate(ctx context.Context, data any) (any, []*openapi.ValidationError) {
 	var ves []*openapi.ValidationError
-	var n T
 	// 首先 data 必须是字符串类型
 	sv, ok := data.(string)
 	if !ok {
@@ -99,7 +98,7 @@ func (m *IntBindMethod[T]) Validate(ctx context.Context, data any) (any, []*open
 			Ctx:  whereClientError,
 		})
 
-		return n, ves
+		return nil, ves
 	}
 
 	atoi, err := strconv.ParseInt(sv, 10, 0)
@@ -110,7 +109,7 @@ func (m *IntBindMethod[T]) Validate(ctx context.Context, data any) (any, []*open
 			Type: string(openapi.IntegerType),
 			Ctx:  whereClientError,
 		})
-		return n, ves
+		return nil, ves
 	}
 
 	if atoi > m.Maximum || atoi < m.Minimum {
@@ -120,40 +119,39 @@ func (m *IntBindMethod[T]) Validate(ctx context.Context, data any) (any, []*open
 			Type: string(openapi.IntegerType),
 			Loc:  []string{"param"},
 		})
-		return n, ves
+		return nil, ves
 	}
 
-	return T(atoi), ves
+	return atoi, ves
 }
 
-func (m *IntBindMethod[T]) Marshal(obj T) ([]byte, error) {
+func (m *IntBindMethod) Marshal(obj any) ([]byte, error) {
 	// 目前无实际作用，不实现
 	return []byte{}, nil
 }
 
-func (m *IntBindMethod[T]) Unmarshal(stream []byte, obj T) (ves []*openapi.ValidationError) {
+func (m *IntBindMethod) Unmarshal(stream []byte, obj any) (ves []*openapi.ValidationError) {
 	// 可以通过 binary.BigEndian.Int64 实现，目前不实现
 	return
 }
 
-func (m *IntBindMethod[T]) New() *T {
-	var value = new(T)
-	return value
+// New 返回int的零值
+func (m *IntBindMethod) New() any {
+	return 0
 }
 
 // UintBindMethod 无符号数字验证
-type UintBindMethod[T UnsignedInteger] struct {
+type UintBindMethod struct {
 	Title   string       `json:"title,omitempty"`
 	Kind    reflect.Kind `json:"kind,omitempty"`
 	Maximum uint64       `json:"maximum,omitempty"`
 	Minimum uint64       `json:"minimum,omitempty"`
 }
 
-func (m *UintBindMethod[T]) Name() string { return "UintBindMethod" }
+func (m *UintBindMethod) Name() string { return "UintBindMethod" }
 
-func (m *UintBindMethod[T]) Validate(ctx context.Context, data any) (T, []*openapi.ValidationError) {
+func (m *UintBindMethod) Validate(ctx context.Context, data any) (any, []*openapi.ValidationError) {
 	var ves []*openapi.ValidationError
-	var n T
 	// 首先 data 必须是字符串类型
 	sv, ok := data.(string)
 	if !ok {
@@ -164,7 +162,7 @@ func (m *UintBindMethod[T]) Validate(ctx context.Context, data any) (T, []*opena
 			Ctx:  whereClientError,
 		})
 
-		return n, ves
+		return nil, ves
 	}
 
 	atoi, err := strconv.ParseUint(sv, 10, 0)
@@ -175,7 +173,7 @@ func (m *UintBindMethod[T]) Validate(ctx context.Context, data any) (T, []*opena
 			Type: string(openapi.IntegerType),
 			Ctx:  whereClientError,
 		})
-		return n, ves
+		return nil, ves
 	}
 
 	if atoi > m.Maximum || atoi < m.Minimum {
@@ -185,25 +183,25 @@ func (m *UintBindMethod[T]) Validate(ctx context.Context, data any) (T, []*opena
 			Type: string(openapi.IntegerType),
 			Loc:  []string{"param"},
 		})
-		return n, ves
+		return nil, ves
 	}
 
-	return T(atoi), ves
+	return atoi, ves
 }
 
-func (m *UintBindMethod[T]) Marshal(obj T) ([]byte, error) {
+func (m *UintBindMethod) Marshal(obj any) ([]byte, error) {
 	// 目前无实际作用，不实现
 	return []byte{}, nil
 }
 
-func (m *UintBindMethod[T]) Unmarshal(stream []byte, obj T) (ves []*openapi.ValidationError) {
+func (m *UintBindMethod) Unmarshal(stream []byte, obj any) (ves []*openapi.ValidationError) {
 	// 可以通过 binary.BigEndian.Uint64 实现，目前不实现
 	return
 }
 
-func (m *UintBindMethod[T]) New() *T {
-	var value = new(T)
-	return value
+// New 返回uint的零值
+func (m *UintBindMethod) New() any {
+	return uint(0)
 }
 
 type FloatBindMethod struct {
@@ -323,7 +321,7 @@ func (m *JsonBindMethod[T]) Unmarshal(stream []byte, obj T) (ves []*openapi.Vali
 	return
 }
 
-func (m *JsonBindMethod[T]) New() *T {
+func (m *JsonBindMethod[T]) New() any {
 	var value = new(T)
 	return value
 }
