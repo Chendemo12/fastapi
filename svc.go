@@ -5,7 +5,6 @@ import (
 	"github.com/Chendemo12/fastapi-tool/cronjob"
 	"github.com/Chendemo12/fastapi-tool/logger"
 	"github.com/Chendemo12/fastapi/openapi"
-	"github.com/go-playground/validator/v10"
 )
 
 // HotSwitchSigint 默认热调试开关
@@ -38,13 +37,12 @@ type Event struct {
 // 此对象由Wrapper启动时自动创建，此对象不应被修改，组合和嵌入，
 // 但可通过 setUserSVC 接口设置自定义的上下文信息，并在每一个路由钩子函数中可得
 type Service struct {
-	logger    logger.Iface        `description:"日志对象"`
-	ctx       context.Context     `description:"根Context"`
-	validate  *validator.Validate `description:"请求体验证包"`
-	openApi   *openapi.OpenApi    `description:"模型文档"`
-	cancel    context.CancelFunc  `description:"取消函数"`
-	scheduler *cronjob.Scheduler  `description:"定时任务"`
-	addr      string              `description:"绑定地址"`
+	logger    logger.Iface       `description:"日志对象"`
+	ctx       context.Context    `description:"根Context"`
+	openApi   *openapi.OpenApi   `description:"模型文档"`
+	cancel    context.CancelFunc `description:"取消函数"`
+	scheduler *cronjob.Scheduler `description:"定时任务"`
+	addr      string             `description:"绑定地址"`
 }
 
 // 替换日志句柄
@@ -79,28 +77,13 @@ func (s *Service) Scheduler() *cronjob.Scheduler { return s.scheduler }
 //	@param	stc	any	需要校验的结构体
 //	@param	ctx	any	当校验不通过时需要返回给客户端的附加信息，仅第一个有效
 //	@return
-func (s *Service) Validate(stc any, ctx ...map[string]any) *Response {
-	err := s.validate.StructCtx(s.ctx, stc)
-	if err != nil { // 模型验证错误
-		err, _ := err.(validator.ValidationErrors) // validator的校验错误信息
-
-		if nums := len(err); nums == 0 {
-			return nil // TODO: error
-		} else {
-			ves := make([]*openapi.ValidationError, nums) // 自定义的错误信息
-			for i := 0; i < nums; i++ {
-				ves[i] = &openapi.ValidationError{
-					Loc:  []string{"body", err[i].Field()},
-					Msg:  err[i].Error(),
-					Type: err[i].Type().String(),
-				}
-				if len(ctx) > 0 {
-					ves[i].Ctx = ctx[0]
-				}
-			}
-			return nil // TODO: error
+func (s *Service) Validate(stc any) (any, *openapi.HTTPValidationError) {
+	binder := JsonBindMethod[any]{}
+	value, err := binder.Validate(s.ctx, stc)
+	if err != nil {
+		return nil, &openapi.HTTPValidationError{
+			Detail: err,
 		}
 	}
-
-	return nil
+	return value, nil
 }

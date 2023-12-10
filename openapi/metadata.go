@@ -281,37 +281,37 @@ func (m *BaseModelMeta) scanBaseSwagger() (err error) {
 
 	case reflect.Int, reflect.Int64:
 		// 生成数字类型的最大最小值
-		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = 9223372036854775807
-		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = -9223372036854775808
+		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = IntMaximum
+		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = IntMinimum
 		m.Description = "有符号的数字类型" // 重写注释
 	case reflect.Int8:
-		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = 127
-		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = -128
+		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = Int8Maximum
+		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = Int8Minimum
 		m.Description = "8位有符号的数字类型"
 	case reflect.Int16:
-		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = 32767
-		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = -32768
+		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = Int16Maximum
+		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = Int16Minimum
 		m.Description = "16位有符号的数字类型"
 	case reflect.Int32:
-		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = 2147483647
-		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = -2147483648
+		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = Int32Maximum
+		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = Int32Minimum
 		m.Description = "32位有符号的数字类型"
 
 	case reflect.Uint, reflect.Uint64:
-		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = uint64(9223372036854775809)
-		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = 0
+		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = Uint64Maximum
+		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = Uint64Minimum
 		m.Description = "无符号的数字类型"
 	case reflect.Uint8:
-		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = uint8(255)
-		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = 0
+		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = Uint8Maximum
+		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = Uint8Minimum
 		m.Description = "8位无符号的数字类型"
 	case reflect.Uint16:
-		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = uint16(65535)
-		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = 0
+		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = Uint16Maximum
+		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = Uint16Minimum
 		m.Description = "16位无符号的数字类型"
 	case reflect.Uint32:
-		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = uint32(4294967295)
-		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = 0
+		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = Uint32Maximum
+		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = Uint32Minimum
 		m.Description = "32位无符号的数字类型"
 
 	case reflect.Float32:

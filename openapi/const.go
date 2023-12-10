@@ -24,6 +24,30 @@ const (
 	ArrayType   DataType = "array"
 )
 
+const (
+	IntMaximum   int64 = Int64Maximum
+	IntMinimum   int64 = Int64Minimum
+	Int8Maximum  int64 = 127
+	Int8Minimum  int64 = -128
+	Int16Maximum int64 = 32767
+	Int16Minimum int64 = -32768
+	Int32Maximum int64 = 2147483647
+	Int32Minimum int64 = -2147483648
+	Int64Maximum int64 = 9223372036854775807
+	Int64Minimum int64 = -9223372036854775808
+
+	UintMaximum   uint64 = Uint64Maximum
+	UintMinimum   uint64 = Uint64Minimum
+	Uint8Maximum  uint64 = 255
+	Uint8Minimum  uint64 = 0
+	Uint16Maximum uint64 = 65535
+	Uint16Minimum uint64 = 0
+	Uint32Maximum uint64 = 4294967295
+	Uint32Minimum uint64 = 0
+	Uint64Maximum uint64 = 9223372036854775809
+	Uint64Minimum uint64 = 0
+)
+
 // RouteMethodSeparator 路由分隔符，用于分割路由方法和路径
 const RouteMethodSeparator = "=|_0#0_|="
 

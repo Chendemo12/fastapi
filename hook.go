@@ -2,13 +2,10 @@ package fastapi
 
 import (
 	"fmt"
+	"github.com/Chendemo12/fastapi/openapi"
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
-
-	"github.com/Chendemo12/fastapi-tool/helper"
-	"github.com/Chendemo12/fastapi/openapi"
 )
 
 type MiddlewareHandle func() // 中间件函数
@@ -51,233 +48,18 @@ func (f *Wrapper) Handler(ctx MuxContext) error {
 	route.Call(wrapperCtx)
 
 	// 路由后的校验，校验失败就地修改 Response
-	wrapperCtx.afterWorkflow(route)
+	wrapperCtx.afterWorkflow(route, f.conf.StopImmediatelyWhenErrorOccurs)
 
 	return wrapperCtx.write() // 返回消息流
 }
 
 // ----------------------------------------	路由前的各种校验工作 ----------------------------------------
 
-// 将jsoniter 的反序列化错误转换成 接口错误类型
-func jsoniterUnmarshalErrorToValidationError(err error) *openapi.ValidationError {
-	// jsoniter 的反序列化错误格式：
-	//
-	// jsoniter.iter.ReportError():224
-	//
-	// 	iter.Error = fmt.Errorf("%s: %s, error found in #%v byte of ...|%s|..., bigger context ...|%s|...",
-	//		operation, msg, iter.head-peekStart, parsing, context)
-	//
-	// 	err.Error():
-	//
-	// 	main.SimpleForm.name: ReadString: expmuxCtxts " or n, but found 2, error found in #10 byte of ...| "name": 23,
-	//		"a|..., bigger context ...|{
-	//		"name": 23,
-	//		"age": "23",
-	//		"sex": "F"
-	// 	}|...
-	msg := err.Error()
-	ve := &openapi.ValidationError{Loc: []string{"body"}, Ctx: whereClientError}
-	for i := 0; i < len(msg); i++ {
-		if msg[i:i+1] == ":" {
-			ve.Loc = append(ve.Loc, msg[:i])
-			break
-		}
-	}
-	if msgs := strings.Split(msg, jsoniterUnmarshalErrorSeparator); len(msgs) > 0 {
-		_ = helper.JsonUnmarshal([]byte(msgs[jsonErrorFormIndex]), &ve.Ctx)
-		ve.Msg = msgs[jsonErrorFieldMsgIndex][len(ve.Loc[1])+2:]
-		if s := strings.Split(ve.Msg, ":"); len(s) > 0 {
-			ve.Type = s[0]
-		}
-	}
-
-	return ve
-}
-
-// 路径参数校验, 路径参数均为字符串类型，主要验证是否存在，不校验范围、值是否合理
-// 对于路径参数，如果缺少理论上不会匹配到相应的路由
-func (c *Context) pathParamsValidate(route RouteIface, stopImmediately bool) {
-	var ves []*openapi.ValidationError
-	// 路径参数校验
-	for _, p := range route.Swagger().PathFields {
-		value := c.muxCtx.Params(p.SchemaTitle(), "")
-		c.pathFields[p.SchemaTitle()] = value // 存储路径参数，即便是空字符串
-
-		if value == "" { // 路径参数都是必须的
-			ves = append(ves, &openapi.ValidationError{
-				Loc:  []string{"path", p.SchemaTitle()},
-				Msg:  PathPsIsEmpty,
-				Type: "string", // 路径参数都是字符串类型
-				Ctx:  whereClientError,
-			})
-			if stopImmediately {
-				break
-			}
-		}
-	}
-
-	if len(ves) > 0 { // 存在缺失参数
-		c.response.StatusCode = http.StatusUnprocessableEntity
-		c.response.Content = &openapi.HTTPValidationError{Detail: ves}
-	}
-}
-
-// 查询参数校验
-//
-//	对于查询参数，仅自定义校验非结构体查询参数，对于结构体查询参数通过反序列化结构体后利用validate实现
-//
-//	验证顺序：
-//		验证是否缺少必选参数, 缺少则break
-//		根据数据类型转换参数值, 不符合数值类型则break
-//		验证数值是否符合范围约束, 不符合则break
-//
-//	对于存在多个错误的字段:
-//		如果 stopImmediately=false, 则全部校验完成后再统一返回
-//		反之则在遇到第一个错误后就立刻返回错误消息
-//
-//	@return	*Response 校验结果, 若为nil则校验通过
-func (c *Context) queryParamsValidate(route RouteIface, stopImmediately bool) {
-	var ves []*openapi.ValidationError
-
-	// 验证是否缺少必选参数
-	for _, q := range route.Swagger().QueryFields {
-		value := c.muxCtx.Query(q.SchemaTitle(), "")
-		if value != "" {
-			// 记录传入参数值，如果是空字符串则不记录，否则会影响 Query 方法的使用
-			c.queryFields[q.SchemaTitle()] = value
-		} else {
-			if q.IsRequired() {
-				// 但是此查询参数设置为必选
-				ves = append(ves, &openapi.ValidationError{
-					Loc:  []string{"query", q.SchemaTitle()},
-					Msg:  QueryPsIsEmpty,
-					Type: string(q.Type),
-					Ctx:  whereClientError,
-				})
-				if stopImmediately {
-					break
-				}
-			}
-		}
-	}
-
-	if len(ves) > 0 { // 存在缺失参数
-		c.response.StatusCode = http.StatusUnprocessableEntity
-		c.response.Content = &openapi.HTTPValidationError{Detail: ves}
-	}
-
-	// 根据数据类型转换并校验参数值，比如: 定义为int类型，但是参数值为“abc”，虽然是存在的但是不合法
-	// 转换规则按照 QModel 定义进行，只有转换成功后才进行校验
-	for _, qmodel := range route.Swagger().QueryFields {
-		v, ok := c.queryFields[qmodel.SchemaTitle()]
-		if !ok { // 此参数值不存在
-			continue
-		}
-
-		sv := v.(string)
-		switch qmodel.SchemaType() {
-
-		case openapi.IntegerType: // 对于int类型，需要额外区分有符号和无符号类型
-			binder, okk := route.QueryBinders()[qmodel.SchemaTitle()]
-			if !okk {
-				continue
-			}
-			value, errs := binder.Validate(sv)
-			if len(errs) > 0 {
-				ves = append(ves, errs...)
-				if stopImmediately {
-					break
-				}
-			} else {
-				// 符合全部约束
-				c.queryFields[qmodel.SchemaTitle()] = value
-			}
-
-		case openapi.NumberType: // number 类型统一转换为float64类型处理
-			atof, err := strconv.ParseFloat(sv, 64)
-			if err != nil {
-				ves = append(ves, &openapi.ValidationError{
-					Loc:  []string{"query", qmodel.SchemaTitle()},
-					Msg:  fmt.Sprintf("value: '%s' is not a number", sv),
-					Type: string(openapi.NumberType),
-					Ctx:  whereClientError,
-				})
-				if stopImmediately {
-					break
-				}
-			} else {
-				// 转换成功，对于float64类型暂不验证范围是否合理
-				c.queryFields[qmodel.SchemaTitle()] = atof
-			}
-
-		case openapi.BoolType: // 只支持字符串 true 和 false
-			if sv == "false" || sv == "true" {
-				atob, _ := strconv.ParseBool(sv)
-				c.queryFields[qmodel.SchemaTitle()] = atob
-			} else {
-				ves = append(ves, &openapi.ValidationError{
-					Loc:  []string{"query", qmodel.SchemaTitle()},
-					Msg:  fmt.Sprintf("value: '%s' is not a bool", sv),
-					Type: string(openapi.BoolType),
-					Ctx:  whereClientError,
-				})
-				if stopImmediately {
-					break
-				}
-			}
-
-		case openapi.StringType:
-		// do nothing
-		default:
-		}
-	}
-
-	if len(ves) > 0 { // 存在类型不匹配或范围越界参数
-		c.response.StatusCode = http.StatusUnprocessableEntity
-		c.response.Content = &openapi.HTTPValidationError{Detail: ves}
-	}
-}
-
-// 请求体校验
-//
-//	@return	*Response 校验结果, 若为nil则校验通过
-func (c *Context) requestBodyValidate(route RouteIface, stopImmediately bool) {
-	//resp = requestBodyMarshal(userSVC, route) // 请求体序列化
-	//if resp != nil {
-	//	return c.Status(resp.StatusCode).JSON(resp.Content)
-	//}
-
-	//resp = c.Validate(c.RequestBody)
-	//if resp != nil {
-	//	return c.Status(resp.StatusCode).JSON(resp.Content)
-	//}
-}
-
 // 执行用户自定义钩子函数前的工作流
 func (c *Context) beforeWorkflow(route RouteIface, stopImmediately bool) {
-	links := []func(route RouteIface, stopImmediately bool){
-		c.pathParamsValidate,  // 路径参数校验
-		c.queryParamsValidate, // 查询参数校验
-		c.requestBodyValidate, // 请求体自动校验
-	}
-
-	for _, link := range links {
-		link(route, stopImmediately)
+	for _, link := range requestValidateLinks {
+		link(c, route, stopImmediately)
 		if c.response.Content != nil {
-			return // 当任意环节校验失败时,即终止下文环节
-		}
-	}
-}
-
-// 主要是对响应体是否符合tag约束的校验，
-func (c *Context) afterWorkflow(route RouteIface) {
-	links := []func(route RouteIface){
-		c.responseValidate, // 路由返回值校验
-	}
-
-	for _, link := range links {
-		link(route)
-		if c.response != nil {
 			return // 当任意环节校验失败时,即终止下文环节
 		}
 	}
@@ -285,21 +67,11 @@ func (c *Context) afterWorkflow(route RouteIface) {
 
 // ----------------------------------------	路由后的响应体校验工作 ----------------------------------------
 
-// 返回值校验root入口
-//
-//	@return	*Response 校验结果, 若校验不通过则修改 Response.StatusCode 和 Response.Content
-func (c *Context) responseValidate(route RouteIface) {
-	// 仅校验“非422的JSONResponse”
-	if c.response.Type == JsonResponseType {
-		// 内部返回的 422 也不再校验
-		if c.response.StatusCode != http.StatusUnprocessableEntity {
-			_, evs := route.ResponseBinder().Validate(nil)
-			if len(evs) > 0 {
-				//校验不通过, 修改 Response.StatusCode 和 Response.Content
-				c.response.StatusCode = http.StatusUnprocessableEntity
-				c.response.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
-				c.response.Content = &openapi.HTTPValidationError{Detail: evs}
-			}
+// 主要是对响应体是否符合tag约束的校验，
+func (c *Context) afterWorkflow(route RouteIface, stopImmediately bool) {
+	for _, link := range responseValidateLinks {
+		if link(c, route, stopImmediately) {
+			return // 当任意环节校验失败时,即终止下文环节
 		}
 	}
 }
@@ -361,4 +133,193 @@ func (c *Context) write() error {
 	default:
 		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
 	}
+}
+
+var requestValidateLinks = []func(c *Context, route RouteIface, stopImmediately bool){
+	pathParamsValidate,  // 路径参数校验
+	queryParamsValidate, // 查询参数校验
+	requestBodyValidate, // 请求体自动校验
+}
+
+var responseValidateLinks = []func(c *Context, route RouteIface, stopImmediately bool) (hasError bool){
+	responseValidate, // 路由返回值校验
+}
+
+// 路径参数校验, 路径参数均为字符串类型，主要验证是否存在，不校验范围、值是否合理
+// 对于路径参数，如果缺少理论上不会匹配到相应的路由
+func pathParamsValidate(c *Context, route RouteIface, stopImmediately bool) {
+	var ves []*openapi.ValidationError
+	// 路径参数校验
+	for _, p := range route.Swagger().PathFields {
+		value := c.muxCtx.Params(p.SchemaTitle(), "")
+		c.pathFields[p.SchemaTitle()] = value // 存储路径参数，即便是空字符串
+
+		if value == "" { // 路径参数都是必须的
+			ves = append(ves, &openapi.ValidationError{
+				Loc:  []string{"path", p.SchemaTitle()},
+				Msg:  PathPsIsEmpty,
+				Type: "string", // 路径参数都是字符串类型
+				Ctx:  whereClientError,
+			})
+			if stopImmediately {
+				break
+			}
+		}
+	}
+
+	if len(ves) > 0 { // 存在缺失参数
+		c.response.StatusCode = http.StatusUnprocessableEntity
+		c.response.Content = &openapi.HTTPValidationError{Detail: ves}
+	}
+}
+
+// 查询参数校验
+//
+//	对于查询参数，仅自定义校验非结构体查询参数，对于结构体查询参数通过反序列化结构体后利用validate实现
+//
+//	验证顺序：
+//		验证是否缺少必选参数, 缺少则break
+//		根据数据类型转换参数值, 不符合数值类型则break
+//		验证数值是否符合范围约束, 不符合则break
+//
+//	对于存在多个错误的字段:
+//		如果 stopImmediately=false, 则全部校验完成后再统一返回
+//		反之则在遇到第一个错误后就立刻返回错误消息
+//
+//	@return	*Response 校验结果, 若为nil则校验通过
+func queryParamsValidate(c *Context, route RouteIface, stopImmediately bool) {
+	var ves []*openapi.ValidationError
+
+	// 验证是否缺少必选参数
+	for _, q := range route.Swagger().QueryFields {
+		value := c.muxCtx.Query(q.SchemaTitle(), "")
+		if value != "" {
+			// 记录传入参数值，如果是空字符串则不记录，否则会影响 Query 方法的使用
+			c.queryFields[q.SchemaTitle()] = value
+		} else {
+			if q.IsRequired() {
+				// 但是此查询参数设置为必选
+				ves = append(ves, &openapi.ValidationError{
+					Loc:  []string{"query", q.SchemaTitle()},
+					Msg:  QueryPsIsEmpty,
+					Type: string(q.Type),
+					Ctx:  whereClientError,
+				})
+				if stopImmediately {
+					break
+				}
+			}
+		}
+	}
+
+	if len(ves) > 0 { // 存在缺失参数
+		c.response.StatusCode = http.StatusUnprocessableEntity
+		c.response.Content = &openapi.HTTPValidationError{Detail: ves}
+	}
+
+	// 根据数据类型转换并校验参数值，比如: 定义为int类型，但是参数值为“abc”，虽然是存在的但是不合法
+	// 转换规则按照 QModel 定义进行，只有转换成功后才进行校验
+	for _, qmodel := range route.Swagger().QueryFields {
+		v, ok := c.queryFields[qmodel.SchemaTitle()]
+		if !ok { // 此参数值不存在
+			continue
+		}
+
+		sv := v.(string)
+		switch qmodel.SchemaType() {
+
+		case openapi.IntegerType: // 对于int类型，需要额外区分有符号和无符号类型
+			binder, okk := route.QueryBinders()[qmodel.SchemaTitle()]
+			if !okk {
+				continue
+			}
+			value, errs := binder.Validate(nil, sv)
+			if len(errs) > 0 {
+				ves = append(ves, errs...)
+				if stopImmediately {
+					break
+				}
+			} else {
+				// 符合全部约束
+				c.queryFields[qmodel.SchemaTitle()] = value
+			}
+
+		case openapi.NumberType: // number 类型统一转换为float64类型处理
+			atof, err := strconv.ParseFloat(sv, 64)
+			if err != nil {
+				ves = append(ves, &openapi.ValidationError{
+					Loc:  []string{"query", qmodel.SchemaTitle()},
+					Msg:  fmt.Sprintf("value: '%s' is not a number", sv),
+					Type: string(openapi.NumberType),
+					Ctx:  whereClientError,
+				})
+				if stopImmediately {
+					break
+				}
+			} else {
+				// 转换成功，对于float64类型暂不验证范围是否合理
+				c.queryFields[qmodel.SchemaTitle()] = atof
+			}
+
+		case openapi.BoolType: // 只支持字符串 true 和 false
+			if sv == "false" || sv == "true" {
+				atob, _ := strconv.ParseBool(sv)
+				c.queryFields[qmodel.SchemaTitle()] = atob
+			} else {
+				ves = append(ves, &openapi.ValidationError{
+					Loc:  []string{"query", qmodel.SchemaTitle()},
+					Msg:  fmt.Sprintf("value: '%s' is not a bool", sv),
+					Type: string(openapi.BoolType),
+					Ctx:  whereClientError,
+				})
+				if stopImmediately {
+					break
+				}
+			}
+
+		case openapi.StringType:
+		// do nothing
+		default:
+		}
+	}
+
+	if len(ves) > 0 { // 存在类型不匹配或范围越界参数
+		c.response.StatusCode = http.StatusUnprocessableEntity
+		c.response.Content = &openapi.HTTPValidationError{Detail: ves}
+	}
+}
+
+// 请求体校验
+//
+//	@return	*Response 校验结果, 若为nil则校验通过
+func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) {
+	//resp = requestBodyMarshal(userSVC, route) // 请求体序列化
+	//if resp != nil {
+	//	return c.Status(resp.StatusCode).JSON(resp.Content)
+	//}
+
+	//resp = c.Validate(c.RequestBody)
+	//if resp != nil {
+	//	return c.Status(resp.StatusCode).JSON(resp.Content)
+	//}
+}
+
+// 返回值校验root入口
+//
+//	@return	*Response 校验结果, 若校验不通过则修改 Response.StatusCode 和 Response.Content
+func responseValidate(c *Context, route RouteIface, stopImmediately bool) (hasError bool) {
+	// 仅校验“非422的JSONResponse”
+	if c.response.Type == JsonResponseType {
+		// 内部返回的 422 也不再校验
+		if c.response.StatusCode != http.StatusUnprocessableEntity {
+			_, evs := route.ResponseBinder().Validate(nil, nil)
+			if len(evs) > 0 {
+				//校验不通过, 修改 Response.StatusCode 和 Response.Content
+				c.response.StatusCode = http.StatusUnprocessableEntity
+				c.response.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
+				c.response.Content = &openapi.HTTPValidationError{Detail: evs}
+			}
+		}
+	}
+	return false
 }

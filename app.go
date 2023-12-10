@@ -17,7 +17,6 @@ import (
 
 	"github.com/Chendemo12/fastapi-tool/cronjob"
 	"github.com/Chendemo12/fastapi-tool/logger"
-	"github.com/go-playground/validator/v10"
 )
 
 var one = &sync.Once{}
@@ -503,7 +502,7 @@ func New(c ...Config) *Wrapper {
 func Create(c Config) *Wrapper {
 	conf := cleanConfig(c)
 
-	sc := &Service{validate: validator.New()}
+	sc := &Service{}
 	sc.ctx, sc.cancel = context.WithCancel(context.Background())
 	sc.scheduler = cronjob.NewScheduler(sc.ctx, nil)
 

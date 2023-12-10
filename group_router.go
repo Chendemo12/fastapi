@@ -338,8 +338,7 @@ func (r *GroupRouterMeta) isRouteMethod(method reflect.Method) (*openapi.RouteSw
 		}
 	}
 
-	// 判断第一个返回值参数类型是否符合要求
-	// TODO Future-231126.1: 返回值不允许为nil, see RouteParam.Init()
+	// 判断第一个返回值参数类型是否符合要求,返回值不允许为nil
 	firstOutParam := method.Type.Out(FirstOutParamOffset)
 	if firstOutParam.Kind() == reflect.Pointer {
 		// 通常情况下会返回指针，此时获取实际的类型
@@ -380,14 +379,14 @@ type GroupRoute struct {
 	method  reflect.Method // 路由方法所属的结构体方法, 用于API调用
 	index   int            // 当前方法所属的结构体方法的偏移量
 	// 路由函数入参数量, 入参数量可以不固定,但第一个必须是 Context
-	handlerInNum   int                        // 如果>1:则最后一个视为请求体(Post/Patch/Post)或查询参数(Get/Delete)
-	handlerOutNum  int                        // 路由函数出参数量, 出参数量始终为2,最后一个必须是 error
-	inParams       []*openapi.RouteParam      // 不包含第一个 Context, 因此 handlerInNum - len(inParams) = 1
-	outParams      *openapi.RouteParam        // 不包含最后一个 error, 因此只有一个出参
-	queryParamMode QueryParamMode             // 查询参数的定义模式
-	paramBinders   map[string]ModelBindMethod // 查询参数，路径参数的校验器，不存在参数则为 NothingBindMethod
-	requestBinder  ModelBindMethod            // 请求题校验器，不存在请求题则为 NothingBindMethod
-	responseBinder ModelBindMethod            // 响应体校验器，响应体肯定存在 ModelBindMethod
+	handlerInNum   int                   // 如果>1:则最后一个视为请求体(Post/Patch/Post)或查询参数(Get/Delete)
+	handlerOutNum  int                   // 路由函数出参数量, 出参数量始终为2,最后一个必须是 error
+	inParams       []*openapi.RouteParam // 不包含第一个 Context 但包含最后一个“查询参数结构体”或“请求体”, 因此 handlerInNum - len(inParams) = 1
+	outParams      *openapi.RouteParam   // 不包含最后一个 error, 因此只有一个出参
+	queryParamMode QueryParamMode        // 查询参数的定义模式
+	queryBinders   []*ModelBinder        // 查询参数，路径参数的校验器，不存在参数则为 NothingBindMethod
+	requestBinder  *ModelBinder          // 请求题校验器，不存在请求题则为 NothingBindMethod
+	responseBinder *ModelBinder          // 响应体校验器，响应体肯定存在 ModelBindMethod
 }
 
 func (r *GroupRoute) Id() string { return r.swagger.Id() }
@@ -399,9 +398,19 @@ func NewGroupRoute(swagger *openapi.RouteSwagger, method reflect.Method, group *
 	r.group = group
 	r.index = method.Index
 
-	r.paramBinders = make(map[string]ModelBindMethod)
-	r.requestBinder = &NothingBindMethod{}
-	r.responseBinder = &NothingBindMethod{}
+	r.queryBinders = make([]*ModelBinder, 0)
+	r.requestBinder = &ModelBinder{
+		Title:         "",
+		Method:        &NothingBindMethod{},
+		QModel:        nil,
+		ResponseModel: nil,
+	}
+	r.responseBinder = &ModelBinder{
+		Title:        "",
+		Method:       &NothingBindMethod{},
+		QModel:       nil,
+		RequestModel: nil,
+	}
 
 	return r
 }
@@ -429,30 +438,23 @@ func (r *GroupRoute) Scan() (err error) {
 		}
 	}
 	// 由于以下几个scan方法续需读取内部的反射数据, swagger 层面无法读取,因此在此层面进行解析
-	// 解析响应体
-	err = r.outParams.Init()
-	if err != nil {
-		return err
+
+	links := []func() error{
+		r.outParams.Init, // 解析响应体
+		r.scanInParams,   // 初始化模型文档
+		r.scanOutParams,
+		r.scanQueryParamMode,
+		r.scanBinders,
+		r.ScanInner, // 递归进入下层进行解析
 	}
 
-	// 初始化模型文档
-	err = r.scanInParams()
-	if err != nil {
-		return err
-	}
-	err = r.scanOutParams()
-	if err != nil {
-		return err
+	for _, link := range links {
+		err = link()
+		if err != nil {
+			return err
+		}
 	}
 
-	r.scanQueryParamMode()
-
-	err = r.scanQueryBinders()
-	if err != nil {
-		return err
-	}
-
-	err = r.ScanInner()
 	return
 }
 
@@ -536,7 +538,8 @@ func (r *GroupRoute) scanOutParams() (err error) {
 	return err
 }
 
-func (r *GroupRoute) scanQueryParamMode() {
+// 此方法需在 scanInParams 执行完成之后执行
+func (r *GroupRoute) scanQueryParamMode() (err error) {
 	if r.handlerInNum > FirstInParamOffset { // 存在自定义参数
 		r.queryParamMode = NoQueryParamMode
 		return
@@ -570,12 +573,41 @@ func (r *GroupRoute) scanQueryParamMode() {
 			r.queryParamMode = SimpleQueryParamMode
 		}
 	}
+
+	return
 }
 
-func (r *GroupRoute) scanQueryBinders() (err error) {
-	// 不包含第一个 Context 和最后一个 结构体参数
-	for _, param := range r.inParams[:r.handlerInNum-FirstCustomInParamOffset] {
+// 此方法需在 scanInParams , scanOutParams , scanQueryParamMode 执行完成之后执行
+func (r *GroupRoute) scanBinders() (err error) {
+	r.responseBinder.ResponseModel = r.swagger.ResponseModel
+	r.responseBinder.Title = r.swagger.ResponseModel.SchemaTitle()
+	r.responseBinder.Method = InferBinderMethod(r.swagger.ResponseModel.Param, openapi.RouteParamResponse)
 
+	// 初始化请求体验证方法
+	if r.swagger.RequestModel != nil {
+		r.requestBinder.Title = r.swagger.RequestModel.SchemaTitle()
+		r.requestBinder.RequestModel = r.swagger.RequestModel
+		r.requestBinder.Method = InferBinderMethod(r.swagger.RequestModel.Param, openapi.RouteParamRequest)
+	} else {
+		r.requestBinder.RequestModel = nil
+	}
+
+	// 不包含第一个 Context 和最后一个“结构体参数”
+	for _, param := range r.inParams[:r.handlerInNum-FirstCustomInParamOffset] {
+		binder := &ModelBinder{
+			Title:         param.SchemaTitle(),
+			Method:        InferBinderMethod(param, openapi.RouteParamQuery),
+			RequestModel:  nil,
+			ResponseModel: nil,
+		}
+		for _, q := range r.swagger.QueryFields {
+			if q.SchemaTitle() == param.SchemaTitle() {
+				binder.QModel = q
+			}
+		}
+		// TODO: 如何处理最后一个结构体查询参数
+		_
+		r.queryBinders = append(r.queryBinders, binder)
 	}
 	return
 }
@@ -586,17 +618,17 @@ func (r *GroupRoute) Swagger() *openapi.RouteSwagger {
 	return r.swagger
 }
 
-func (r *GroupRoute) ResponseBinder() ModelBindMethod {
+func (r *GroupRoute) ResponseBinder() *ModelBinder {
 	return r.responseBinder
 }
 
-func (r *GroupRoute) RequestBinders() ModelBindMethod {
-	return r.requestBinder
+func (r *GroupRoute) RequestBinders() *ModelBinder {
+	return r.responseBinder
 }
 
-// QueryBinders 查询参数路径参数校验
-func (r *GroupRoute) QueryBinders() map[string]ModelBindMethod {
-	return r.paramBinders
+// QueryBinders 查询参数校验方法
+func (r *GroupRoute) QueryBinders() []*ModelBinder {
+	return r.queryBinders
 }
 
 func (r *GroupRoute) NewInParams(ctx *Context) []reflect.Value {
@@ -621,15 +653,14 @@ func (r *GroupRoute) NewInParams(ctx *Context) []reflect.Value {
 // Call 调用API, 并将响应结果写入 Response 内
 func (r *GroupRoute) Call(ctx *Context) {
 	result := r.method.Func.Call(r.NewInParams(ctx))
-	if last := result[LastOutParamOffset]; !last.IsValid() || last.IsNil() {
+	// 是否存在错误
+	last := result[LastOutParamOffset]
+	if !last.IsValid() || last.IsNil() {
 		// err=nil, 函数没有返回错误
 		ctx.response.Content = result[FirstOutParamOffset].Interface()
 	} else {
 		err := last.Interface().(error)
-		if ctx.response.StatusCode == http.StatusOK {
-			// 上层没有自定义响应状态码，err!=nil的情况，状态码不允许为200
-			ctx.response.StatusCode = http.StatusInternalServerError
-		}
+		ctx.response.StatusCode = http.StatusInternalServerError
 		ctx.response.Content = err.Error()
 	}
 }

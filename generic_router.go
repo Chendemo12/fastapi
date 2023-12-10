@@ -64,17 +64,17 @@ func (r *GenericRoute[T]) Swagger() *openapi.RouteSwagger {
 	return r.swagger
 }
 
-func (r *GenericRoute[T]) ResponseBinder() ModelBindMethod {
+func (r *GenericRoute[T]) ResponseBinder() *ModelBinder {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (r *GenericRoute[T]) RequestBinders() ModelBindMethod {
+func (r *GenericRoute[T]) RequestBinders() *ModelBinder {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (r *GenericRoute[T]) QueryBinders() map[string]ModelBindMethod {
+func (r *GenericRoute[T]) QueryBinders() []*ModelBinder {
 	//TODO implement me
 	panic("implement me")
 }

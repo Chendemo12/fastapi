@@ -29,7 +29,7 @@ type RouteSwagger struct {
 func (r *RouteSwagger) Init() (err error) {
 	r.api = CreateRouteIdentify(r.Method, r.Url)
 	// 由于查询参数和请求体需要从方法入参中提取, 以及响应体需要从方法出参中提取,因此在上层进行解析
-	if r.ResponseModel == nil { // TODO Future-231126.1: 目前返回值不允许为nil
+	if r.ResponseModel == nil { // 返回值不允许为nil, 此处错误为上层忘记初始化模型参数
 		return errors.New("ResponseModel is not init")
 	}
 
@@ -146,12 +146,6 @@ func NewRouteParam(rt reflect.Type, index int) *RouteParam {
 }
 
 func (r *RouteParam) Init() (err error) {
-	// TODO Future-231126.1: 返回值不允许为nil
-	if r.PrototypeKind == reflect.Invalid {
-		r.IsNil = true
-		return errors.New("response cannot be Nil")
-	}
-
 	if r.IsPtr { // 指针类型
 		r.Type = ReflectKindToType(r.Prototype.Elem().Kind())
 		r.Name = r.Prototype.Elem().Name()
@@ -250,6 +244,16 @@ func (r *RouteParam) New(value any) (v reflect.Value) {
 func (r *RouteParam) QueryName() string {
 	return fmt.Sprintf("%s%d", r.Name, r.Index)
 }
+
+// RouteParamType 路由参数类型
+type RouteParamType string
+
+const (
+	RouteParamQuery    RouteParamType = "query"
+	RouteParamPath     RouteParamType = "path"
+	RouteParamRequest  RouteParamType = "requestBody"
+	RouteParamResponse RouteParamType = "responseBody"
+)
 
 // CreateRouteIdentify 获得一个路由对象的唯一标识
 func CreateRouteIdentify(method, url string) string {

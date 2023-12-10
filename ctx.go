@@ -138,18 +138,21 @@ func (c *Context) ContentType(contentType string) {
 // ================================ 范型路由方法 ================================
 
 // Validator 获取请求体验证器
-func (c *Context) Validator() *validator.Validate { return c.svc.validate }
+func (c *Context) Validator() *validator.Validate { return defaultValidator }
 
 // BodyParser 【范型路由可用】序列化请求体
 func (c *Context) BodyParser(a any) *Response {
-	if err := c.muxCtx.BodyParser(a); err != nil { // 请求的表单序列化错误
+	binder := JsonBindMethod[any]{}
+	// TODO: read body
+	err := binder.Unmarshal([]byte{}, a)
+	if err != nil { // 请求的表单序列化错误
 		c.Logger().Error(err)
 		c.response.StatusCode = http.StatusUnprocessableEntity
-		c.response.Content = &openapi.HTTPValidationError{Detail: []*openapi.ValidationError{jsoniterUnmarshalErrorToValidationError(err)}}
+		c.response.Content = &openapi.HTTPValidationError{Detail: err}
 		c.response.Type = ErrResponseType
 	}
 
-	return nil
+	return c.response
 }
 
 // ShouldBindJSON 【范型路由可用】绑定并校验参数是否正确
@@ -157,11 +160,15 @@ func (c *Context) ShouldBindJSON(stc any) *Response {
 	if err := c.BodyParser(stc); err != nil {
 		return err
 	}
-	if resp := c.svc.Validate(stc, whereClientError); resp != nil {
-		return resp
+
+	_, err := c.svc.Validate(stc)
+	if err != nil {
+		c.response.StatusCode = http.StatusUnprocessableEntity
+		c.response.Content = err
+		c.response.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
 	}
 
-	return nil
+	return c.response
 }
 
 // JSONResponse 仅支持可以json序列化的响应体 (校验返回值)
