@@ -90,7 +90,7 @@ func (r *RouteSwagger) scanPath() (err error) {
 
 		// GET: /api/clipboard/:day?num  	=> day为路径参数,num为查询参数
 		// GET: /api/clipboard/:day/?num	=> day为路径参数,num为查询参数
-		qm := &QModel{Type: StringType, InPath: false}
+		qm := &QModel{DataType: StringType, InPath: false}
 
 		if strings.HasPrefix(p, pathschema.OptionalQueryParamPrefix) {
 			// 发现查询参数
@@ -124,40 +124,42 @@ func (r *RouteSwagger) Id() string { return r.api }
 // RouteParam 路由参数, 具体包含查询参数,路径参数,请求体参数和响应体参数
 // 目前参数不支持一下类型
 type RouteParam struct {
-	Prototype     reflect.Type // 直接反射后获取的类型,未提取指针指向的类型
-	PrototypeKind reflect.Kind // 原始类型的参数类型
-	IsPtr         bool         // 标识 Prototype 是否是指针类型
-	IsNil         bool         // TODO Future: what to do
-	Name          string       // 名称
-	Pkg           string       // 包含包名,如果是结构体则为: 包名.结构体名, 处理了指针
-	Type          DataType     // 如果是指针,则为指针指向的类型定义
-	Index         int          // 参数处于方法中的原始位置,可通过 method.RouteType.In(Index) 或 method.RouteType.Out(Index) 反向获得此参数
-	T             ModelSchema  // TODO Future-231126.5: 泛型路由注册
+	Prototype      reflect.Type   // 直接反射后获取的类型,未提取指针指向的类型
+	PrototypeKind  reflect.Kind   // 原始类型的参数类型
+	IsPtr          bool           // 标识 Prototype 是否是指针类型
+	IsNil          bool           // TODO Future: what to do
+	Name           string         // 名称
+	Pkg            string         // 包含包名,如果是结构体则为: 包名.结构体名, 处理了指针
+	DataType       DataType       // 如果是指针,则为指针指向的类型定义
+	RouteParamType RouteParamType // 参数路由类型, 并非完全准确, 只在限制范围内访问
+	Index          int            // 参数处于方法中的原始位置,可通过 method.RouteType.In(Index) 或 method.RouteType.Out(Index) 反向获得此参数
+	T              ModelSchema    // TODO Future-231126.5: 泛型路由注册
 }
 
-func NewRouteParam(rt reflect.Type, index int) *RouteParam {
+func NewRouteParam(rt reflect.Type, index int, paramType RouteParamType) *RouteParam {
 	r := &RouteParam{}
 	r.Prototype = rt
 	r.PrototypeKind = rt.Kind()
 	r.IsPtr = rt.Kind() == reflect.Ptr
 	r.Index = index
+	r.RouteParamType = paramType
 
 	return r
 }
 
 func (r *RouteParam) Init() (err error) {
 	if r.IsPtr { // 指针类型
-		r.Type = ReflectKindToType(r.Prototype.Elem().Kind())
+		r.DataType = ReflectKindToType(r.Prototype.Elem().Kind())
 		r.Name = r.Prototype.Elem().Name()
 		r.Pkg = r.Prototype.Elem().String()
 	} else {
-		r.Type = ReflectKindToType(r.PrototypeKind)
+		r.DataType = ReflectKindToType(r.PrototypeKind)
 		r.Name = r.Prototype.Name()
 		r.Pkg = r.Prototype.String()
 	}
 
 	// 对于[]object 形式，修改其模型名称
-	if r.Type == ArrayType {
+	if r.DataType == ArrayType {
 		elem := r.Prototype.Elem()
 		if elem.Kind() == reflect.Ptr {
 			elem = elem.Elem()
@@ -197,7 +199,7 @@ func (r *RouteParam) JsonName() string { return r.Name }
 
 func (r *RouteParam) SchemaDesc() string { return "" }
 
-func (r *RouteParam) SchemaType() DataType { return r.Type }
+func (r *RouteParam) SchemaType() DataType { return r.DataType }
 
 func (r *RouteParam) IsRequired() bool { return true }
 

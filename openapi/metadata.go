@@ -61,7 +61,7 @@ func (m *BaseModelMeta) scanModel() (err error) {
 	// 检测到数组或结构体, 解析模型信息
 	if m.Param.SchemaType() == ArrayType {
 		// 方法处直接返回数组, 递归处理子元素
-		param := NewRouteParam(m.Param.CopyPrototype().Elem(), 0)
+		param := NewRouteParam(m.Param.CopyPrototype().Elem(), 0, RouteParamRequest)
 		err = param.Init()
 		if err != nil {
 			return err
@@ -454,7 +454,7 @@ func (m *BaseModelMeta) InnerSchema() []SchemaIface {
 		inner := m.innerModels[i]
 		if inner.rType.Kind() == reflect.Struct || inner.rType.Kind() == reflect.Ptr {
 			// 仍然是个模型，继续反射
-			param := NewRouteParam(inner.rType, 0)
+			param := NewRouteParam(inner.rType, 0, RouteParamResponse)
 			err := param.Init()
 			if param.Prototype.Name() == "" {
 				// NOTICE: 匿名字段，只能从外部自行分配名称

@@ -9,11 +9,12 @@ import (
 // QModel 查询参数或路径参数元数据, 此类型会进一步转换为 openapi.Parameter
 type QModel struct {
 	Name     string            `json:"name,omitempty" description:"字段名称"` // 如果是通过结构体生成,则为json标签名称
-	Tag      reflect.StructTag `json:"tag,omitempty" description:"TAG"`   // 仅在结构体作为查询参数时有效
-	Type     DataType          `json:"otype,omitempty" description:"openapi 数据类型"`
 	Kind     reflect.Kind      `json:"Kind,omitempty" description:"反射类型"`
-	InPath   bool              `json:"in_path,omitempty" description:"是否是路径参数"`
+	DataType DataType          `json:"data_type,omitempty" description:"openapi 数据类型"`
 	Required bool              `json:"required,omitempty" description:"是否必须"`
+	Tag      reflect.StructTag `json:"tag,omitempty" description:"TAG"` // 仅在结构体作为查询参数时有效
+	InPath   bool              `json:"in_path,omitempty" description:"是否是路径参数"`
+	InStruct bool              `json:"in_struct,omitempty" description:"是否是结构体字段参数"`
 }
 
 func (q *QModel) Init() (err error) {
@@ -40,7 +41,7 @@ func (q *QModel) SchemaDesc() string {
 }
 
 // SchemaType 模型类型
-func (q *QModel) SchemaType() DataType { return q.Type }
+func (q *QModel) SchemaType() DataType { return q.DataType }
 
 // IsRequired 是否必须
 func (q *QModel) IsRequired() bool { return q.Required }
@@ -65,7 +66,11 @@ func (q *QModel) Schema() (m map[string]any) {
 		"default": GetDefaultV(q.Tag, q.SchemaType()),
 	}
 	m["name"] = q.SchemaPkg()
-	m["in"] = "query"
+	if q.InPath {
+		m["in"] = "path"
+	} else {
+		m["in"] = "query"
+	}
 
 	return
 }
@@ -103,7 +108,12 @@ func StructToQModels(rt reflect.Type) []*QModel {
 		}
 
 		m = append(m, &QModel{
-			Name: field.Name, Tag: field.Tag, Type: dataType, Kind: field.Type.Kind(), InPath: false,
+			Name:     field.Name,
+			Tag:      field.Tag,
+			DataType: dataType,
+			Kind:     field.Type.Kind(),
+			InPath:   false,
+			InStruct: true,
 		})
 	}
 	return m

@@ -93,23 +93,6 @@ func (f *Wrapper) initRoutes() *Wrapper {
 		_ = route
 	}
 
-	// 构造参数的验证器
-	for _, group := range f.groupRouters {
-		for index, route := range group.Routes() {
-			// TODO: not finished
-			switch route.Swagger().ResponseModel.SchemaType() {
-			case openapi.ObjectType:
-				group.routes[index].responseBinder = &NothingBindMethod{}
-			default:
-				group.routes[index].responseBinder = &NothingBindMethod{}
-			}
-			switch route.Swagger().ResponseModel.SchemaType() {
-			default:
-				group.routes[index].requestBinder = &NothingBindMethod{}
-			}
-		}
-	}
-
 	for _, route := range f.genericRoutes {
 		_ = route
 	}

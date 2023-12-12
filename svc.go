@@ -71,19 +71,3 @@ func (s *Service) Done() <-chan struct{} { return s.ctx.Done() }
 
 // Scheduler 获取内部调度器
 func (s *Service) Scheduler() *cronjob.Scheduler { return s.scheduler }
-
-// Validate 结构体验证
-//
-//	@param	stc	any	需要校验的结构体
-//	@param	ctx	any	当校验不通过时需要返回给客户端的附加信息，仅第一个有效
-//	@return
-func (s *Service) Validate(stc any) (any, *openapi.HTTPValidationError) {
-	binder := JsonBindMethod[any]{}
-	value, err := binder.Validate(s.ctx, stc)
-	if err != nil {
-		return nil, &openapi.HTTPValidationError{
-			Detail: err,
-		}
-	}
-	return value, nil
-}

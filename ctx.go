@@ -25,12 +25,13 @@ type Context struct {
 	// 	float 	=> float64
 	//	string 	=> string
 	// 	bool 	=> bool
-	queryFields map[string]any     `description:"查询参数, 仅记录存在值的查询参数"`
-	svc         *Service           `description:"service"`
-	muxCtx      MuxContext         `description:"路由器Context"`
-	routeCtx    context.Context    `description:"获取针对此次请求的唯一context"`
-	routeCancel context.CancelFunc `description:"获取针对此次请求的唯一取消函数"`
-	response    *Response          `description:"返回值,以减少函数间复制的开销"`
+	queryFields      map[string]any     `description:"查询参数, 仅记录存在值的查询参数"`
+	structQueryModel any                `description:"结构体类型查询参数"`
+	svc              *Service           `description:"service"`
+	muxCtx           MuxContext         `description:"路由器Context"`
+	routeCtx         context.Context    `description:"获取针对此次请求的唯一context"`
+	routeCancel      context.CancelFunc `description:"获取针对此次请求的唯一取消函数"`
+	response         *Response          `description:"返回值,以减少函数间复制的开销"`
 }
 
 // ================================ 公共方法 ================================
@@ -39,7 +40,7 @@ func (c *Context) Deadline() (deadline time.Time, ok bool) {
 	if c.routeCtx != nil {
 		return c.routeCtx.Deadline()
 	}
-	return time.Time{}, false
+	return c.svc.ctx.Deadline()
 }
 
 func (c *Context) Err() error {
@@ -161,11 +162,14 @@ func (c *Context) ShouldBindJSON(stc any) *Response {
 		return err
 	}
 
-	_, err := c.svc.Validate(stc)
+	binder := JsonBindMethod[any]{}
+	value, err := binder.Validate(c.Service().ctx, stc)
 	if err != nil {
 		c.response.StatusCode = http.StatusUnprocessableEntity
 		c.response.Content = err
 		c.response.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
+	} else {
+		c.response.Content = value
 	}
 
 	return c.response

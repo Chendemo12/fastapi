@@ -19,21 +19,25 @@ type RouteIface interface {
 	Scanner
 	RouteType() RouteType
 	Swagger() *openapi.RouteSwagger           // 路由文档
-	QueryBinders() []*ModelBinder             // 查询参数的处理接口(查询参数名:处理接口)，查询参数可有多个
-	RequestBinders() *ModelBinder             // 请求体的处理接口,请求体也只有一个
-	ResponseBinder() *ModelBinder             // 响应体的处理接口,响应体只有一个
+	QueryBinders() []*ParamBinder             // 查询参数的处理接口(查询参数名:处理接口)，查询参数可有多个
+	RequestBinders() *ParamBinder             // 请求体的处理接口,请求体也只有一个
+	ResponseBinder() *ParamBinder             // 响应体的处理接口,响应体只有一个
 	NewInParams(ctx *Context) []reflect.Value // 创建一个完整的函数入参实例列表, 此方法会在完成请求参数校验 RequestBinders，QueryBinders 之后执行
 	Call(ctx *Context)                        // 调用API, 需要将响应结果写入 Response 内
 	Id() string
 }
 
-type ModelBinder struct {
-	Title         string                 `json:"title,omitempty"`
-	Method        ModelBindMethod        `json:"-"`
-	QModel        *openapi.QModel        `json:"-"` // 以下字段三选一
-	RequestModel  *openapi.BaseModelMeta `json:"-"`
-	ResponseModel *openapi.BaseModelMeta `json:"-"`
+// ParamBinder 参数验证模型
+type ParamBinder struct {
+	Title          string `json:"title,omitempty"`
+	RouteParamType openapi.RouteParamType
+	Method         ModelBindMethod        `json:"-"`
+	QModel         *openapi.QModel        `json:"-"` // 以下字段三选一
+	RequestModel   *openapi.BaseModelMeta `json:"-"`
+	ResponseModel  *openapi.BaseModelMeta `json:"-"`
 }
+
+func (b *ParamBinder) SchemaTitle() string { return b.Title }
 
 // BaseModel 基本数据模型, 对于上层的路由定义其请求体和响应体都应为继承此结构体的结构体
 // 在 OpenApi 文档模型中,此模型的类型始终为 "object"
@@ -48,41 +52,42 @@ func (b *BaseModel) SchemaType() openapi.DataType { return openapi.ObjectType }
 
 func (b *BaseModel) IsRequired() bool { return true }
 
-// ====================
+// ================================================================================
 
-func InferBinderMethod(param *openapi.RouteParam, modelType openapi.RouteParamType) ModelBindMethod {
+// InferBinderMethod 利用反射推断参数的校验器
+func InferBinderMethod(param openapi.SchemaIface, prototypeKind reflect.Kind, modelType openapi.RouteParamType) ModelBindMethod {
 	if param == nil {
 		return &NothingBindMethod{}
 	}
 
 	var binder ModelBindMethod
-	switch param.PrototypeKind {
+	switch prototypeKind {
 
 	case reflect.Int, reflect.Int64:
 		binder = &IntBindMethod{
 			Title:   param.SchemaTitle(),
-			Kind:    param.PrototypeKind,
+			Kind:    prototypeKind,
 			Maximum: openapi.IntMaximum,
 			Minimum: openapi.IntMinimum,
 		}
 	case reflect.Int8:
 		binder = &IntBindMethod{
 			Title:   param.SchemaTitle(),
-			Kind:    param.PrototypeKind,
+			Kind:    prototypeKind,
 			Maximum: openapi.Int8Maximum,
 			Minimum: openapi.Int8Minimum,
 		}
 	case reflect.Int16:
 		binder = &IntBindMethod{
 			Title:   param.SchemaTitle(),
-			Kind:    param.PrototypeKind,
+			Kind:    prototypeKind,
 			Maximum: openapi.Int16Maximum,
 			Minimum: openapi.Int16Minimum,
 		}
 	case reflect.Int32:
 		binder = &IntBindMethod{
 			Title:   param.SchemaTitle(),
-			Kind:    param.PrototypeKind,
+			Kind:    prototypeKind,
 			Maximum: openapi.Int32Maximum,
 			Minimum: openapi.Int32Minimum,
 		}
@@ -90,28 +95,28 @@ func InferBinderMethod(param *openapi.RouteParam, modelType openapi.RouteParamTy
 	case reflect.Uint, reflect.Uint64:
 		binder = &UintBindMethod{
 			Title:   param.SchemaTitle(),
-			Kind:    param.PrototypeKind,
+			Kind:    prototypeKind,
 			Maximum: openapi.UintMaximum,
 			Minimum: openapi.UintMinimum,
 		}
 	case reflect.Uint8:
 		binder = &UintBindMethod{
 			Title:   param.SchemaTitle(),
-			Kind:    param.PrototypeKind,
+			Kind:    prototypeKind,
 			Maximum: openapi.Uint8Maximum,
 			Minimum: openapi.Uint8Minimum,
 		}
 	case reflect.Uint16:
 		binder = &UintBindMethod{
 			Title:   param.SchemaTitle(),
-			Kind:    param.PrototypeKind,
+			Kind:    prototypeKind,
 			Maximum: openapi.Uint16Maximum,
 			Minimum: openapi.Uint16Minimum,
 		}
 	case reflect.Uint32:
 		binder = &UintBindMethod{
 			Title:   param.SchemaTitle(),
-			Kind:    param.PrototypeKind,
+			Kind:    prototypeKind,
 			Maximum: openapi.Uint32Maximum,
 			Minimum: openapi.Uint32Minimum,
 		}
@@ -120,7 +125,7 @@ func InferBinderMethod(param *openapi.RouteParam, modelType openapi.RouteParamTy
 	case reflect.Float32, reflect.Float64:
 		binder = &FloatBindMethod{
 			Title: param.SchemaTitle(),
-			Kind:  param.PrototypeKind,
+			Kind:  prototypeKind,
 		}
 	case reflect.String:
 		binder = &NothingBindMethod{}
@@ -137,7 +142,7 @@ func InferBinderMethod(param *openapi.RouteParam, modelType openapi.RouteParamTy
 	return binder
 }
 
-// ====================
+// ================================================================================
 
 // NewBaseRouter 用于获取后端服务基本信息的路由组
 //

@@ -384,9 +384,9 @@ type GroupRoute struct {
 	inParams       []*openapi.RouteParam // 不包含第一个 Context 但包含最后一个“查询参数结构体”或“请求体”, 因此 handlerInNum - len(inParams) = 1
 	outParams      *openapi.RouteParam   // 不包含最后一个 error, 因此只有一个出参
 	queryParamMode QueryParamMode        // 查询参数的定义模式
-	queryBinders   []*ModelBinder        // 查询参数，路径参数的校验器，不存在参数则为 NothingBindMethod
-	requestBinder  *ModelBinder          // 请求题校验器，不存在请求题则为 NothingBindMethod
-	responseBinder *ModelBinder          // 响应体校验器，响应体肯定存在 ModelBindMethod
+	queryBinders   []*ParamBinder        // 查询参数，路径参数的校验器，不存在参数则为 NothingBindMethod
+	requestBinder  *ParamBinder          // 请求题校验器，不存在请求题则为 NothingBindMethod
+	responseBinder *ParamBinder          // 响应体校验器，响应体肯定存在 ModelBindMethod
 }
 
 func (r *GroupRoute) Id() string { return r.swagger.Id() }
@@ -398,19 +398,7 @@ func NewGroupRoute(swagger *openapi.RouteSwagger, method reflect.Method, group *
 	r.group = group
 	r.index = method.Index
 
-	r.queryBinders = make([]*ModelBinder, 0)
-	r.requestBinder = &ModelBinder{
-		Title:         "",
-		Method:        &NothingBindMethod{},
-		QModel:        nil,
-		ResponseModel: nil,
-	}
-	r.responseBinder = &ModelBinder{
-		Title:        "",
-		Method:       &NothingBindMethod{},
-		QModel:       nil,
-		RequestModel: nil,
-	}
+	r.queryBinders = make([]*ParamBinder, 0)
 
 	return r
 }
@@ -419,9 +407,9 @@ func (r *GroupRoute) Init() (err error) {
 	r.handlerInNum = r.method.Type.NumIn() - FirstInParamOffset // 排除接收器
 	r.handlerOutNum = OutParamNum                               // 返回值数量始终为2
 
-	r.outParams = openapi.NewRouteParam(r.method.Type.Out(FirstOutParamOffset), FirstOutParamOffset)
+	r.outParams = openapi.NewRouteParam(r.method.Type.Out(FirstOutParamOffset), FirstOutParamOffset, openapi.RouteParamResponse)
 	for n := FirstCustomInParamOffset; n <= r.handlerInNum; n++ {
-		r.inParams = append(r.inParams, openapi.NewRouteParam(r.method.Type.In(n), n))
+		r.inParams = append(r.inParams, openapi.NewRouteParam(r.method.Type.In(n), n, openapi.RouteParamQuery))
 	}
 
 	err = r.Scan()
@@ -496,9 +484,9 @@ func (r *GroupRoute) scanInParams() (err error) {
 					Name: param.QueryName(), // 手动指定一个查询参数名称
 					Tag: reflect.StructTag(fmt.Sprintf(`json:"%s" %s:"%s"`,
 						param.QueryName(), openapi.DefaultValidateTagName, openapi.DefaultParamRequiredLabel)), // 对于函数参数类型的查询参数,全部为必选的
-					Type:   param.SchemaType(),
-					Kind:   param.PrototypeKind,
-					InPath: false,
+					DataType: param.SchemaType(),
+					Kind:     param.PrototypeKind,
+					InPath:   false,
 				})
 			}
 		}
@@ -519,9 +507,9 @@ func (r *GroupRoute) scanInParams() (err error) {
 					Name: lastInParam.QueryName(), // 手动指定一个查询参数名称
 					Tag: reflect.StructTag(fmt.Sprintf(`json:"%s" %s:"%s"`,
 						lastInParam.QueryName(), openapi.DefaultValidateTagName, openapi.DefaultParamRequiredLabel)), // 对于函数参数类型的查询参数,全部为必选的
-					Type:   lastInParam.SchemaType(),
-					Kind:   lastInParam.PrototypeKind,
-					InPath: false,
+					DataType: lastInParam.SchemaType(),
+					Kind:     lastInParam.PrototypeKind,
+					InPath:   false,
 				})
 			}
 		} else { // 作为请求体
@@ -556,7 +544,7 @@ func (r *GroupRoute) scanQueryParamMode() (err error) {
 	var hasStruct bool
 
 	for _, param := range r.inParams[:end] {
-		if param.Type == openapi.ObjectType {
+		if param.SchemaType() == openapi.ObjectType {
 			hasStruct = true
 		} else {
 			hasBase = true
@@ -579,34 +567,35 @@ func (r *GroupRoute) scanQueryParamMode() (err error) {
 
 // 此方法需在 scanInParams , scanOutParams , scanQueryParamMode 执行完成之后执行
 func (r *GroupRoute) scanBinders() (err error) {
-	r.responseBinder.ResponseModel = r.swagger.ResponseModel
-	r.responseBinder.Title = r.swagger.ResponseModel.SchemaTitle()
-	r.responseBinder.Method = InferBinderMethod(r.swagger.ResponseModel.Param, openapi.RouteParamResponse)
-
-	// 初始化请求体验证方法
-	if r.swagger.RequestModel != nil {
-		r.requestBinder.Title = r.swagger.RequestModel.SchemaTitle()
-		r.requestBinder.RequestModel = r.swagger.RequestModel
-		r.requestBinder.Method = InferBinderMethod(r.swagger.RequestModel.Param, openapi.RouteParamRequest)
-	} else {
-		r.requestBinder.RequestModel = nil
+	r.responseBinder = &ParamBinder{
+		Title:          r.swagger.ResponseModel.SchemaTitle(),
+		RouteParamType: openapi.RouteParamResponse,
+		Method:         InferBinderMethod(r.swagger.ResponseModel.Param, r.swagger.ResponseModel.Param.PrototypeKind, openapi.RouteParamResponse),
+		ResponseModel:  r.swagger.ResponseModel,
 	}
 
-	// 不包含第一个 Context 和最后一个“结构体参数”
-	for _, param := range r.inParams[:r.handlerInNum-FirstCustomInParamOffset] {
-		binder := &ModelBinder{
-			Title:         param.SchemaTitle(),
-			Method:        InferBinderMethod(param, openapi.RouteParamQuery),
-			RequestModel:  nil,
-			ResponseModel: nil,
+	// 初始化请求体验证方法
+	r.requestBinder = &ParamBinder{
+		Title:          "",
+		RouteParamType: openapi.RouteParamRequest,
+		RequestModel:   r.swagger.RequestModel,
+	}
+	if r.swagger.RequestModel != nil {
+		r.responseBinder.Title = r.swagger.RequestModel.SchemaTitle()
+		r.requestBinder.Method = InferBinderMethod(r.swagger.RequestModel.Param, r.swagger.RequestModel.Param.PrototypeKind, openapi.RouteParamRequest)
+	} else {
+		r.requestBinder.Method = &NothingBindMethod{}
+	}
+
+	// 构建查询参数验证器
+	for _, qmodel := range r.swagger.QueryFields {
+		binder := &ParamBinder{
+			Title:          qmodel.SchemaTitle(),
+			RouteParamType: openapi.RouteParamQuery,
+			Method:         InferBinderMethod(qmodel, qmodel.Kind, openapi.RouteParamQuery),
+			RequestModel:   nil,
+			ResponseModel:  nil,
 		}
-		for _, q := range r.swagger.QueryFields {
-			if q.SchemaTitle() == param.SchemaTitle() {
-				binder.QModel = q
-			}
-		}
-		// TODO: 如何处理最后一个结构体查询参数
-		_
 		r.queryBinders = append(r.queryBinders, binder)
 	}
 	return
@@ -618,16 +607,16 @@ func (r *GroupRoute) Swagger() *openapi.RouteSwagger {
 	return r.swagger
 }
 
-func (r *GroupRoute) ResponseBinder() *ModelBinder {
+func (r *GroupRoute) ResponseBinder() *ParamBinder {
 	return r.responseBinder
 }
 
-func (r *GroupRoute) RequestBinders() *ModelBinder {
+func (r *GroupRoute) RequestBinders() *ParamBinder {
 	return r.responseBinder
 }
 
 // QueryBinders 查询参数校验方法
-func (r *GroupRoute) QueryBinders() []*ModelBinder {
+func (r *GroupRoute) QueryBinders() []*ParamBinder {
 	return r.queryBinders
 }
 
@@ -638,14 +627,18 @@ func (r *GroupRoute) NewInParams(ctx *Context) []reflect.Value {
 
 	// 处理查询参数
 	for i, param := range r.inParams[:r.handlerInNum-FirstCustomInParamOffset] {
-		// 匹配查询参数名称，对于最后一个参数是struct的情况，进行额外处理
-		instance := param.New(ctx.queryFields[param.QueryName()])
-		params[i+FirstCustomInParamOffset] = instance
-	}
-	// TODO 依据处理 QueryParamMode
+		if param.SchemaType().IsBaseType() {
+			// 匹配查询参数名称，对于最后一个参数是struct的情况，进行额外处理
+			instance := param.New(ctx.queryFields[param.QueryName()])
+			params[i+FirstCustomInParamOffset] = instance
+		} else {
+			// 匹配到结构体查询参数或请求体
+			// TODO 依据处理 QueryParamMode
 
-	// TODO: 处理最后一个参数
-	params[r.handlerInNum-FirstInParamOffset] = r.inParams[len(r.inParams)-1].New("")
+			// TODO: 处理最后一个参数
+			params[r.handlerInNum-FirstInParamOffset] = r.inParams[len(r.inParams)-1].New("")
+		}
+	}
 
 	return params
 }
