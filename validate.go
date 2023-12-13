@@ -42,7 +42,7 @@ type ModelBindMethod interface {
 	// data 为需要验证的数据模型，如果验证通过，则第一个返回值为做了类型转换的data
 	Validate(ctx context.Context, data any) (any, []*openapi.ValidationError)
 	Marshal(obj any) ([]byte, error)                                   // 序列化方法，通过 ContentType 确定响应体类型
-	Unmarshal(stream []byte, obj any) (ves []*openapi.ValidationError) // 反序列化方法，通过 "http:header:Content-RouteParamType" 推断内容类型
+	Unmarshal(stream []byte, obj any) (ves []*openapi.ValidationError) // 反序列化方法，通过 "http:header:Content-Type" 推断内容类型
 	New() any                                                          // 创建一个新实例
 }
 

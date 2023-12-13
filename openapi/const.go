@@ -112,7 +112,7 @@ var IllegalRouteParamType = []reflect.Kind{
 	reflect.Map, // TODO Future-231126.7: 查询参数值不允许为map
 }
 
-const HeaderContentType = "Content-RouteParamType"
+const HeaderContentType = "Content-Type"
 
 const (
 	MIMETextXML                    string = "text/xml"

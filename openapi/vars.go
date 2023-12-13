@@ -21,7 +21,7 @@ type dict map[string]any
 type ValidationError struct {
 	Ctx  map[string]any `json:"service,omitempty" description:"Service"`
 	Msg  string         `json:"msg" description:"Message" binding:"required"`
-	Type string         `json:"type" description:"Error RouteParamType" binding:"required"`
+	Type string         `json:"type" description:"Error Type" binding:"required"`
 	Loc  []string       `json:"loc" description:"Location" binding:"required"`
 }
 
@@ -46,7 +46,7 @@ func (v *ValidationError) Schema() (m map[string]any) {
 				"items": dict{"anyOf": []map[string]string{{"type": "string"}, {"type": "integer"}}},
 			},
 			"msg":  dict{"title": "Message", "type": "string"},
-			"type": dict{"title": "Error RouteParamType", "type": "string"},
+			"type": dict{"title": "Error Type", "type": "string"},
 		},
 		requiredTag: []string{"loc", "msg", "type"},
 	}
