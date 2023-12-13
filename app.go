@@ -137,7 +137,7 @@ func (f *Wrapper) initMux() *Wrapper {
 		panic("mux is not initialized")
 	}
 
-	f.Wrap(f.mux)
+	f.wrap(f.mux)
 	return f
 }
 
@@ -151,7 +151,6 @@ func (f *Wrapper) initialize() *Wrapper {
 	f.initFinder()
 	f.initMux()
 	f.initSwagger() // === 必须最后调用
-	f.Wrap(f.mux)
 
 	f.service.Logger().Debug(
 		"Run at: " + utils.Ternary[string](f.conf.Debug, "Development", "Production"),
@@ -159,43 +158,13 @@ func (f *Wrapper) initialize() *Wrapper {
 	return f
 }
 
-// 申请一个 Context 并初始化
-func (f *Wrapper) acquireCtx(ctx MuxContext) *Context {
-	c := f.pool.Get().(*Context)
-	// 初始化各种参数
-	c.muxCtx = ctx
-	c.response = AcquireResponse()
-	// 为每一个路由创建一个独立的ctx, 允许不启用此功能
-	if !f.conf.ContextAutomaticDerivationDisabled {
-		c.routeCtx, c.routeCancel = context.WithCancel(f.service.ctx)
-	}
-	c.pathFields = map[string]string{}
-	c.queryFields = map[string]any{}
-
-	return c
-}
-
-// 释放并归还 Context
-func (f *Wrapper) releaseCtx(ctx *Context) {
-	ReleaseResponse(ctx.response)
-	ctx.muxCtx = nil
-	ctx.routeCtx = nil
-	ctx.routeCancel = nil
-	ctx.response = nil // 释放内存
-
-	ctx.pathFields = nil
-	ctx.queryFields = nil
-
-	f.pool.Put(ctx)
-}
-
 // ResetRunMode 重设运行时环境
 func (f *Wrapper) resetRunMode(md bool) {
 	f.conf.Debug = md
 }
 
-// Wrap 绑定数据到路由器上
-func (f *Wrapper) Wrap(mux MuxWrapper) *Wrapper {
+// 绑定数据到路由器上
+func (f *Wrapper) wrap(mux MuxWrapper) *Wrapper {
 	var err error
 	// 挂载路由到路由器上
 	for _, group := range f.groupRouters {

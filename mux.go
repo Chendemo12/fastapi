@@ -34,7 +34,7 @@ type MuxContext interface {
 	Get(key string, defaultValue ...string) string // 从上下文中读取键/值对
 	Redirect(code int, location string) error      // 重定向
 
-	BodyParser(model any) error // 解析请求体
+	BodyParser(model any) error // 解析请求体并绑定到结构体model上,作用等同于Unmarshal
 	RemoteAddr() net.Addr       // RemoteIP解析来自Request的IP。RemoteAddr，规范化并返回IP(不带端口)。
 	ClientIP() string           // ClientIP实现了一个最佳努力算法来返回真实的客户端IP。
 

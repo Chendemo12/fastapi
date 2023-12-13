@@ -224,7 +224,7 @@ func (r *RouteParam) New(value any) (v reflect.Value) {
 	if elem.CanSet() {
 		switch kind {
 		case reflect.Array, reflect.Slice, reflect.Chan:
-			// TODO: 如何支持
+			// TODO: 定义长度
 		case reflect.Bool:
 			elem.SetBool(value.(bool))
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:

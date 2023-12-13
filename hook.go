@@ -218,7 +218,6 @@ func queryParamsValidate(c *Context, route RouteIface, stopImmediately bool) {
 
 	// 根据数据类型转换并校验参数值，比如: 定义为int类型，但是参数值为“abc”，虽然是存在的但是不合法
 	// 转换规则按照 QModel 定义进行，只有转换成功后才进行校验
-	structQueryParam := make(map[string]any) // 存在结构体查询参数,反序列化并校验
 	for _, binder := range route.QueryBinders() {
 		v, ok := c.queryFields[binder.Title]
 		if !ok { // 此参数值不存在
@@ -226,29 +225,20 @@ func queryParamsValidate(c *Context, route RouteIface, stopImmediately bool) {
 		}
 
 		sv := v.(string)
-		if binder.QModel.InStruct { //通过结构体校验可以支持枚举,日期等复杂参数
-			structQueryParam[binder.Title] = sv
-		} else {
-			value, err := binder.Method.Validate(c.routeCtx, sv)
-			if err != nil {
-				ves = append(ves, &openapi.ValidationError{
-					Loc:  []string{"query", binder.SchemaTitle()},
-					Msg:  fmt.Sprintf("value: '%s' is not a number", sv),
-					Type: string(binder.QModel.SchemaType()),
-					Ctx:  whereClientError,
-				})
-				if stopImmediately {
-					break
-				}
-			} else {
-				c.queryFields[binder.SchemaTitle()] = value
+		value, err := binder.Method.Validate(c.routeCtx, sv)
+		if err != nil {
+			ves = append(ves, &openapi.ValidationError{
+				Loc:  []string{"query", binder.SchemaTitle()},
+				Msg:  fmt.Sprintf("value: '%s' is not a number", sv),
+				Type: string(binder.QModel.SchemaType()),
+				Ctx:  whereClientError,
+			})
+			if stopImmediately {
+				break
 			}
+		} else {
+			c.queryFields[binder.SchemaTitle()] = value
 		}
-	}
-
-	if len(structQueryParam) > 0 {
-		// 通过反序列化和validate进行校验
-		c.structQueryModel = nil
 	}
 
 	if len(ves) > 0 { // 存在类型不匹配或范围越界参数
@@ -261,15 +251,36 @@ func queryParamsValidate(c *Context, route RouteIface, stopImmediately bool) {
 //
 //	@return	*Response 校验结果, 若为nil则校验通过
 func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) {
-	//resp = requestBodyMarshal(userSVC, route) // 请求体序列化
-	//if resp != nil {
-	//	return c.Status(resp.StatusCode).JSON(resp.Content)
-	//}
+	var instance any
 
-	//resp = c.Validate(c.RequestBody)
-	//if resp != nil {
-	//	return c.Status(resp.StatusCode).JSON(resp.Content)
-	//}
+	switch route.Swagger().Method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch:
+		instance = route.NewRequestModel()
+	default:
+		instance = nil
+	}
+
+	if instance != nil {
+		// 存在请求体,首先进行反序列化,之后校验参数是否合法,校验通过后绑定到 Context
+		err := c.muxCtx.BodyParser(instance)
+		c.response.Type = JsonResponseType
+
+		if err != nil {
+			c.Logger().Error(err)
+			vv := jsoniterUnmarshalErrorToValidationError(err)
+			c.response.Content = &openapi.HTTPValidationError{Detail: []*openapi.ValidationError{vv}}
+			c.response.StatusCode = http.StatusUnprocessableEntity
+		} else {
+			value, ves := route.RequestBinders().Method.Validate(c.routeCtx, instance)
+			if len(ves) > 0 {
+				c.response.Content = &openapi.HTTPValidationError{Detail: ves}
+				c.response.StatusCode = http.StatusUnprocessableEntity
+			} else {
+				// 校验通过
+				c.requestModel = value
+			}
+		}
+	}
 }
 
 // 返回值校验root入口

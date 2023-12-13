@@ -18,6 +18,11 @@ import (
 //	注意: 当一个路由被执行完毕时, 路由函数中的 Context 将被立刻释放回收, 因此在return之后对
 //	Context 的任何引用都是不对的, 若需在return之后监听 Context.DisposableCtx() 则应该显式的复制或派生
 type Context struct {
+	svc         *Service           `description:"service"`
+	muxCtx      MuxContext         `description:"路由器Context"`
+	routeCtx    context.Context    `description:"获取针对此次请求的唯一context"`
+	routeCancel context.CancelFunc `description:"获取针对此次请求的唯一取消函数"`
+	// 存储路径参数, 路径参数类型全部为字符串类型, 路径参数都是肯定存在的
 	pathFields map[string]string `description:"路径参数"`
 	// 对于查询参数，参数类型会按照以下规则进行转换：
 	// 	int 	=> int64
@@ -25,13 +30,41 @@ type Context struct {
 	// 	float 	=> float64
 	//	string 	=> string
 	// 	bool 	=> bool
-	queryFields      map[string]any     `description:"查询参数, 仅记录存在值的查询参数"`
-	structQueryModel any                `description:"结构体类型查询参数"`
-	svc              *Service           `description:"service"`
-	muxCtx           MuxContext         `description:"路由器Context"`
-	routeCtx         context.Context    `description:"获取针对此次请求的唯一context"`
-	routeCancel      context.CancelFunc `description:"获取针对此次请求的唯一取消函数"`
-	response         *Response          `description:"返回值,以减少函数间复制的开销"`
+	queryFields  map[string]any `description:"查询参数, 仅记录存在值的查询参数"`
+	requestModel any            `description:"请求体"`
+	response     *Response      `description:"返回值,以减少函数间复制的开销"`
+}
+
+// 申请一个 Context 并初始化
+func (f *Wrapper) acquireCtx(ctx MuxContext) *Context {
+	c := f.pool.Get().(*Context)
+	// 初始化各种参数
+	c.muxCtx = ctx
+	c.response = AcquireResponse()
+	// 为每一个路由创建一个独立的ctx, 允许不启用此功能
+	if !f.conf.ContextAutomaticDerivationDisabled {
+		c.routeCtx, c.routeCancel = context.WithCancel(f.service.ctx)
+	}
+	c.pathFields = map[string]string{}
+	c.queryFields = map[string]any{}
+
+	return c
+}
+
+// 释放并归还 Context
+func (f *Wrapper) releaseCtx(ctx *Context) {
+	ReleaseResponse(ctx.response)
+
+	ctx.muxCtx = nil
+	ctx.routeCtx = nil
+	ctx.routeCancel = nil
+	ctx.requestModel = nil
+	ctx.response = nil // 释放内存
+
+	ctx.pathFields = nil
+	ctx.queryFields = nil
+
+	f.pool.Put(ctx)
 }
 
 // ================================ 公共方法 ================================
@@ -140,40 +173,6 @@ func (c *Context) ContentType(contentType string) {
 
 // Validator 获取请求体验证器
 func (c *Context) Validator() *validator.Validate { return defaultValidator }
-
-// BodyParser 【范型路由可用】序列化请求体
-func (c *Context) BodyParser(a any) *Response {
-	binder := JsonBindMethod[any]{}
-	// TODO: read body
-	err := binder.Unmarshal([]byte{}, a)
-	if err != nil { // 请求的表单序列化错误
-		c.Logger().Error(err)
-		c.response.StatusCode = http.StatusUnprocessableEntity
-		c.response.Content = &openapi.HTTPValidationError{Detail: err}
-		c.response.Type = ErrResponseType
-	}
-
-	return c.response
-}
-
-// ShouldBindJSON 【范型路由可用】绑定并校验参数是否正确
-func (c *Context) ShouldBindJSON(stc any) *Response {
-	if err := c.BodyParser(stc); err != nil {
-		return err
-	}
-
-	binder := JsonBindMethod[any]{}
-	value, err := binder.Validate(c.Service().ctx, stc)
-	if err != nil {
-		c.response.StatusCode = http.StatusUnprocessableEntity
-		c.response.Content = err
-		c.response.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
-	} else {
-		c.response.Content = value
-	}
-
-	return c.response
-}
 
 // JSONResponse 仅支持可以json序列化的响应体 (校验返回值)
 //

@@ -282,6 +282,7 @@ func (m *BoolBindMethod) New() any {
 	return false
 }
 
+// JsonBindMethod json数据类型验证器,适用于泛型路由
 type JsonBindMethod[T any] struct {
 	Title string         `json:"title,omitempty"`
 	Where map[string]any `json:"-"` // whereClientError / whereServerError
