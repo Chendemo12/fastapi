@@ -1,6 +1,7 @@
 package fastapi
 
 import (
+	"github.com/Chendemo12/fastapi-tool/logger"
 	"io"
 	"net"
 	"net/http"
@@ -18,6 +19,8 @@ type MuxWrapper interface {
 	ShutdownWithTimeout(timeout time.Duration) error
 	// BindRoute 注册路由
 	BindRoute(method, path string, handler MuxHandler) error
+	// SetLogger 设置日志句柄
+	SetLogger(logger logger.Iface)
 }
 
 // MuxContext Web引擎的 Context，例如 fiber.Ctx, gin.Context

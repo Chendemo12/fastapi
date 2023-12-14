@@ -57,7 +57,7 @@ type GenericRoute[T openapi.ModelSchema] struct {
 func (r *GenericRoute[T]) Id() string { return r.swagger.Id() }
 
 func (r *GenericRoute[T]) RouteType() RouteType {
-	return GenericRouteType
+	return RouteTypeGeneric
 }
 
 func (r *GenericRoute[T]) Swagger() *openapi.RouteSwagger {
@@ -85,6 +85,10 @@ func (r *GenericRoute[T]) NewInParams(ctx *Context) []reflect.Value {
 }
 
 func (r *GenericRoute[T]) NewRequestModel() any {
+	return nil
+}
+
+func (r *GenericRoute[T]) NewQueryModel() any {
 	return nil
 }
 

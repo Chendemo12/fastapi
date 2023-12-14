@@ -389,10 +389,6 @@ type GroupRoute struct {
 	responseBinder *ParamBinder          // 响应体校验器，响应体肯定存在 ModelBindMethod
 }
 
-func (r *GroupRoute) lastInParamOffset() int {
-	return len(r.inParams) - 1
-}
-
 func (r *GroupRoute) Id() string { return r.swagger.Id() }
 
 func NewGroupRoute(swagger *openapi.RouteSwagger, method reflect.Method, group *GroupRouterMeta) *GroupRoute {
@@ -497,27 +493,33 @@ func (r *GroupRoute) scanInParams() (err error) {
 
 		// 入参最后一个视为请求体或查询参数
 		lastInParam := r.inParams[r.handlerInNum-FirstCustomInParamOffset]
-		if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
-			// 作为查询参数
-			switch lastInParam.SchemaType() {
-			case openapi.ObjectType:
-				// 如果为结构体,则结构体的每一个字段都将作为一个查询参数
+
+		switch lastInParam.SchemaType() {
+		case openapi.ObjectType:
+			if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
+				// 对于GET/DELETE 视为查询参数, 结构体的每一个字段都将作为一个查询参数
 				// TODO Future-231126.3: 请求体不支持time.Time;
 				r.swagger.QueryFields = append(r.swagger.QueryFields, openapi.StructToQModels(lastInParam.CopyPrototype())...)
-			case openapi.ArrayType:
-				// TODO Future-231126.6: 查询参数考虑是否要支持数组
-			default:
-				r.swagger.QueryFields = append(r.swagger.QueryFields, &openapi.QModel{
-					Name: lastInParam.QueryName(), // 手动指定一个查询参数名称
-					Tag: reflect.StructTag(fmt.Sprintf(`json:"%s" %s:"%s"`,
-						lastInParam.QueryName(), openapi.DefaultValidateTagName, openapi.DefaultParamRequiredLabel)), // 对于函数参数类型的查询参数,全部为必选的
-					DataType: lastInParam.SchemaType(),
-					Kind:     lastInParam.PrototypeKind,
-					InPath:   false,
-				})
+			} else {
+				// 对于 POST/PATCH/PUT 接口,如果是结构体或数组则作为请求体
+				r.swagger.RequestModel = openapi.NewBaseModelMeta(lastInParam)
 			}
-		} else { // 作为请求体
-			r.swagger.RequestModel = openapi.NewBaseModelMeta(lastInParam)
+		case openapi.ArrayType:
+			if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
+				// TODO Future-231126.6: 查询参数考虑是否要支持数组
+			} else {
+				r.swagger.RequestModel = openapi.NewBaseModelMeta(lastInParam)
+			}
+		default:
+			// 对于基本类型的参数,均作为查询参数
+			r.swagger.QueryFields = append(r.swagger.QueryFields, &openapi.QModel{
+				Name: lastInParam.QueryName(), // 手动指定一个查询参数名称
+				Tag: reflect.StructTag(fmt.Sprintf(`json:"%s" %s:"%s"`,
+					lastInParam.QueryName(), openapi.DefaultValidateTagName, openapi.DefaultParamRequiredLabel)), // 对于函数参数类型的查询参数,全部为必选的
+				DataType: lastInParam.SchemaType(),
+				Kind:     lastInParam.PrototypeKind,
+				InPath:   false,
+			})
 		}
 	}
 	return nil
@@ -574,8 +576,14 @@ func (r *GroupRoute) scanBinders() (err error) {
 	r.responseBinder = &ParamBinder{
 		Title:          r.swagger.ResponseModel.SchemaTitle(),
 		RouteParamType: openapi.RouteParamResponse,
-		Method:         InferBinderMethod(r.swagger.ResponseModel.Param, r.swagger.ResponseModel.Param.PrototypeKind, openapi.RouteParamResponse),
 		ResponseModel:  r.swagger.ResponseModel,
+	}
+
+	if r.swagger.ResponseModel.SchemaType().IsBaseType() {
+		// 对于其他类型的参数, 函数签名就已经保证了类型的正确性,无需手动校验
+		r.responseBinder.Method = &NothingBindMethod{}
+	} else {
+		r.responseBinder.Method = InferBinderMethod(r.swagger.ResponseModel.Param, r.swagger.ResponseModel.Param.PrototypeKind, openapi.RouteParamResponse)
 	}
 
 	// 初始化请求体验证方法
@@ -604,14 +612,19 @@ func (r *GroupRoute) scanBinders() (err error) {
 	return
 }
 
-func (r *GroupRoute) makeQueryStruct(ctx *Context, param *openapi.RouteParam) reflect.Value {
-	queryStruct := param.New(nil).Interface()
-	// TODO 从Context中读取值反序列化
-
-	return reflect.ValueOf(queryStruct)
+func (r *GroupRoute) NewQueryModel() any {
+	//var v reflect.Value
+	//if param.IsPtr {
+	//	v = reflect.New(param.Prototype.Elem())
+	//} else {
+	//	v = reflect.New(param.Prototype)
+	//}
+	//
+	//return reflect.ValueOf(value)
+	return nil
 }
 
-func (r *GroupRoute) RouteType() RouteType { return GroupRouteType }
+func (r *GroupRoute) RouteType() RouteType { return RouteTypeGroup }
 
 func (r *GroupRoute) Swagger() *openapi.RouteSwagger {
 	return r.swagger
@@ -631,35 +644,37 @@ func (r *GroupRoute) QueryBinders() []*ParamBinder {
 }
 
 func (r *GroupRoute) NewInParams(ctx *Context) []reflect.Value {
-	params := make([]reflect.Value, len(r.inParams)+2)
-	params[0] = r.group.routerValue
+	params := make([]reflect.Value, len(r.inParams)+2) // 接收器 + *Context
+	params[0] = r.group.routerValue                    // 接收器
 	params[1] = reflect.ValueOf(ctx)
 
 	// 处理查询参数
-	lastIn := r.lastInParamOffset()
-	lastInParam := r.inParams[lastIn]
-	for i, param := range r.inParams[:lastIn] {
-		if param.SchemaType().IsBaseType() {
-			// 匹配查询参数名称，对于最后一个参数是struct的情况，进行额外处理
-			instance := param.New(ctx.queryFields[param.QueryName()])
-			params[i+FirstCustomInParamOffset] = reflect.ValueOf(instance.Interface())
-		} else {
-			// 匹配到POST/PATCH/PUT方法的结构体查询参数
-			params[lastIn-1] = r.makeQueryStruct(ctx, r.inParams[lastIn-1])
+	for i, param := range r.inParams {
+		var instance reflect.Value
+
+		switch param.SchemaType() {
+		case openapi.ObjectType:
+			if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
+				instance = reflect.ValueOf(ctx.queryStruct)
+			} else {
+				if i == len(r.inParams)-1 { // 最后一个参数,解释为请求体,反之解释为查询参数
+					instance = reflect.ValueOf(ctx.requestModel)
+				} else {
+					// 匹配到POST/PATCH/PUT方法的结构体查询参数
+					instance = reflect.ValueOf(ctx.queryStruct)
+				}
+			}
+		case openapi.ArrayType: // array
+		default:
+			// 对于基本参数,只能是查询参数
+			instance = param.NewNotStruct(ctx.queryFields[param.QueryName()])
 		}
-	}
-	// 单独处理最后一个参数, 对于GET/DELETE是查询参数, 对于POST/PATCH/PUT是请求体
-	if r.swagger.Method == http.MethodGet || r.swagger.Method == http.MethodDelete {
-		if r.inParams[lastIn].DataType.IsBaseType() {
-			// TODO: err "reflect: Call using zero Value argument"
-			instance := lastInParam.New(ctx.queryFields[lastInParam.QueryName()])
-			//instance = reflect.New(lastInParam.Prototype)
-			params[lastIn] = reflect.ValueOf(instance.Interface())
+
+		if param.IsPtr {
+			params[i+FirstCustomInParamOffset] = instance
 		} else {
-			params[lastIn] = r.makeQueryStruct(ctx, lastInParam)
+			params[i+FirstCustomInParamOffset] = instance.Elem()
 		}
-	} else {
-		params[lastIn] = reflect.ValueOf(ctx.requestModel)
 	}
 
 	return params
@@ -673,12 +688,13 @@ func (r *GroupRoute) NewRequestModel() any {
 		return nil
 	}
 
-	return r.swagger.RequestModel.Param.New(nil).Interface()
+	return r.swagger.RequestModel.Param.NewNotStruct(nil).Interface()
 }
 
 // Call 调用API, 并将响应结果写入 Response 内
 func (r *GroupRoute) Call(ctx *Context) {
-	result := r.method.Func.Call(r.NewInParams(ctx))
+	params := r.NewInParams(ctx)
+	result := r.method.Func.Call(params)
 	// 是否存在错误
 	last := result[LastOutParamOffset]
 	if !last.IsValid() || last.IsNil() {

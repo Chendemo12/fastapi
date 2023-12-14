@@ -9,8 +9,8 @@ import (
 type RouteType string
 
 const (
-	GroupRouteType   RouteType = "GroupRoute"
-	GenericRouteType RouteType = "GenericRoute"
+	RouteTypeGroup   RouteType = "GroupRoute"
+	RouteTypeGeneric RouteType = "GenericRoute"
 )
 
 // RouteIface 路由定义
@@ -24,6 +24,7 @@ type RouteIface interface {
 	ResponseBinder() *ParamBinder             // 响应体的处理接口,响应体只有一个
 	NewInParams(ctx *Context) []reflect.Value // 创建一个完整的函数入参实例列表, 此方法会在完成请求参数校验 RequestBinders，QueryBinders 之后执行
 	NewRequestModel() any                     // 创建一个请求体实例,对于POST/PATCH/PUT, 即为 NewInParams 的最后一个元素; 对于GET/DELETE则为nil
+	NewQueryModel() any                       // 创建一个请求体实例,对于POST/PATCH/PUT, 即为 NewInParams 的最后一个元素; 对于GET/DELETE则为nil
 	Call(ctx *Context)                        // 调用API, 需要将响应结果写入 Response 内
 	Id() string
 }

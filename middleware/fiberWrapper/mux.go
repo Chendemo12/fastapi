@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/Chendemo12/fastapi"
 	"github.com/Chendemo12/fastapi-tool/helper"
+	"github.com/Chendemo12/fastapi-tool/logger"
 	"github.com/gofiber/fiber/v2"
 	echo "github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
@@ -15,6 +16,8 @@ import (
 	"sync"
 	"time"
 )
+
+var log logger.Iface = logger.NewDefaultLogger()
 
 type FiberMux struct {
 	one  *sync.Once
@@ -109,6 +112,10 @@ func (m *FiberMux) BindRoute(method, path string, handler fastapi.MuxHandler) er
 	}
 
 	return nil
+}
+
+func (m *FiberMux) SetLogger(logger logger.Iface) {
+	log = logger
 }
 
 type FiberContext struct {
@@ -232,19 +239,19 @@ func (c *FiberContext) JSON(statusCode int, data any) error {
 func customRecoverHandler(c *fiber.Ctx, e any) {
 	buf := make([]byte, 1024)
 	buf = buf[:runtime.Stack(buf, true)]
-	_ = helper.CombineStrings(
+	msg := helper.CombineStrings(
 		"Request RelativePath: ", c.Path(), fmt.Sprintf(", Error: %v, \n", e), string(buf),
 	)
-	//wrapper.Service().Logger().Error(msg)
+	log.Error(msg)
 }
 
 // customFiberErrorHandler 自定义fiber接口错误处理函数
 func customFiberErrorHandler(c *fiber.Ctx, e error) error {
-	//wrapper.logger.Warn(helper.CombineStrings(
-	//	"error happened during: '",
-	//	c.Method(), ": ", c.RelativePath(),
-	//	"', Msg: ", e.Error(),
-	//))
+	log.Warn(helper.CombineStrings(
+		"error happened during: '",
+		c.Method(), ": ", c.Path(),
+		"', Msg: ", e.Error(),
+	))
 	return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 		"code": fiber.StatusBadRequest,
 		"msg":  e.Error()},

@@ -165,6 +165,7 @@ func (f *Wrapper) resetRunMode(md bool) {
 
 // 绑定数据到路由器上
 func (f *Wrapper) wrap(mux MuxWrapper) *Wrapper {
+	mux.SetLogger(f.service.logger)
 	var err error
 	// 挂载路由到路由器上
 	for _, group := range f.groupRouters {
@@ -436,7 +437,7 @@ func cleanConfig(confs ...Config) Config {
 }
 
 // New 实例化一个默认 Wrapper, 此方法与 Create 不能同时使用
-// 与 Create 区别在于：Create 每次都会创建一个新的实例，New 多次调用获得的是同一个实例
+// 与 Create 区别在于：Create 每次都会创建一个新的实例，NewNotStruct 多次调用获得的是同一个实例
 // 语义相当于 __new__ 实现的单例
 func New(c ...Config) *Wrapper {
 	one.Do(func() {

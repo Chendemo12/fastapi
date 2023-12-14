@@ -122,7 +122,6 @@ func (r *RouteSwagger) scanPath() (err error) {
 func (r *RouteSwagger) Id() string { return r.api }
 
 // RouteParam 路由参数, 具体包含查询参数,路径参数,请求体参数和响应体参数
-// 目前参数不支持一下类型
 type RouteParam struct {
 	Prototype      reflect.Type   // 直接反射后获取的类型,未提取指针指向的类型
 	PrototypeKind  reflect.Kind   // 原始类型的参数类型
@@ -211,30 +210,30 @@ func (r *RouteParam) InnerSchema() []SchemaIface {
 	return m
 }
 
-// New 通过反射创建一个新的参数实例
-func (r *RouteParam) New(value any) (v reflect.Value) {
+// NewNotStruct 通过反射创建一个(非struct类型)新的参数实例
+func (r *RouteParam) NewNotStruct(value any) reflect.Value {
+	var v reflect.Value
 	if r.IsPtr {
 		v = reflect.New(r.Prototype.Elem())
 	} else {
 		v = reflect.New(r.Prototype)
 	}
+
 	// 此时v是个指针类型
-	elem := v.Elem()
-	kind := elem.Kind()
-	if elem.CanSet() {
-		switch kind {
-		case reflect.Array, reflect.Slice, reflect.Chan:
-			// TODO: 定义长度
+	if v.Elem().CanSet() {
+		switch v.Elem().Kind() {
 		case reflect.Bool:
-			elem.SetBool(value.(bool))
+			v.Elem().SetBool(value.(bool))
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			elem.SetInt(value.(int64))
+			v.Elem().SetInt(value.(int64))
 		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			elem.SetUint(value.(uint64))
+			v.Elem().SetUint(value.(uint64))
 		case reflect.Float64, reflect.Float32:
-			elem.SetFloat(value.(float64))
+			v.Elem().SetFloat(value.(float64))
 		case reflect.String:
-			elem.SetString(value.(string))
+			v.Elem().SetString(value.(string))
+		case reflect.Slice, reflect.Array:
+			// array
 		default:
 		}
 	}

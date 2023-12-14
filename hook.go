@@ -245,6 +245,12 @@ func queryParamsValidate(c *Context, route RouteIface, stopImmediately bool) {
 		c.response.StatusCode = http.StatusUnprocessableEntity
 		c.response.Content = &openapi.HTTPValidationError{Detail: ves}
 	}
+
+	queryStruct := route.NewQueryModel()
+	if queryStruct != nil {
+		// TODO 反序列化校验
+		//err := helper.JsonUnmarshal([]byte(""), value)
+	}
 }
 
 // 请求体校验
@@ -288,17 +294,17 @@ func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) {
 //	@return	*Response 校验结果, 若校验不通过则修改 Response.StatusCode 和 Response.Content
 func responseValidate(c *Context, route RouteIface, stopImmediately bool) (hasError bool) {
 	// 仅校验“非422的JSONResponse”
-	if c.response.Type == JsonResponseType {
+	if c.response.StatusCode != http.StatusUnprocessableEntity && c.response.Type == JsonResponseType {
 		// 内部返回的 422 也不再校验
-		if c.response.StatusCode != http.StatusUnprocessableEntity {
-			_, evs := route.ResponseBinder().Method.Validate(c.routeCtx, c.response.Content)
-			if len(evs) > 0 {
-				//校验不通过, 修改 Response.StatusCode 和 Response.Content
-				c.response.StatusCode = http.StatusUnprocessableEntity
-				c.response.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
-				c.response.Content = &openapi.HTTPValidationError{Detail: evs}
-			}
+		var evs []*openapi.ValidationError
+		_, evs = route.ResponseBinder().Method.Validate(c.routeCtx, c.response.Content)
+		if len(evs) > 0 {
+			//校验不通过, 修改 Response.StatusCode 和 Response.Content
+			c.response.StatusCode = http.StatusUnprocessableEntity
+			c.response.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
+			c.response.Content = &openapi.HTTPValidationError{Detail: evs}
 		}
 	}
+
 	return false
 }

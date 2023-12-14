@@ -31,6 +31,7 @@ type Context struct {
 	//	string 	=> string
 	// 	bool 	=> bool
 	queryFields  map[string]any `description:"查询参数, 仅记录存在值的查询参数"`
+	queryStruct  any            `description:"结构体查询参数"`
 	requestModel any            `description:"请求体"`
 	response     *Response      `description:"返回值,以减少函数间复制的开销"`
 }
