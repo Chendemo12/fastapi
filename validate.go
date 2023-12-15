@@ -7,6 +7,7 @@ import (
 	"github.com/Chendemo12/fastapi-tool/helper"
 	"github.com/Chendemo12/fastapi/openapi"
 	"github.com/go-playground/validator/v10"
+	jsoniter "github.com/json-iterator/go"
 	"reflect"
 	"strconv"
 	"strings"
@@ -25,6 +26,10 @@ const ( // error message
 )
 
 var defaultValidator = validator.New()
+
+func init() {
+	defaultValidator.SetTagName(openapi.DefaultValidateTagName)
+}
 
 var emptyLocList = []string{"response"}
 var whereServerError = map[string]any{"where error": "server"}
@@ -72,6 +77,7 @@ func (m *NothingBindMethod) Marshal(obj any) ([]byte, error) {
 func (m *NothingBindMethod) Unmarshal(stream []byte, obj any) (ves []*openapi.ValidationError) {
 	return
 }
+
 func (m *NothingBindMethod) New() any {
 	return nil
 }
@@ -284,8 +290,19 @@ func (m *BoolBindMethod) New() any {
 
 // JsonBindMethod json数据类型验证器,适用于泛型路由
 type JsonBindMethod[T any] struct {
-	Title string         `json:"title,omitempty"`
-	Where map[string]any `json:"-"` // whereClientError / whereServerError
+	Title          string `json:"title,omitempty"`
+	RouteParamType openapi.RouteParamType
+}
+
+func (m *JsonBindMethod[T]) where() map[string]any {
+	var where map[string]any
+	if m.RouteParamType == openapi.RouteParamResponse {
+		where = whereServerError
+	} else {
+		where = whereClientError
+	}
+
+	return where
 }
 
 func (m *JsonBindMethod[T]) Name() string { return "JsonBindMethod" }
@@ -298,7 +315,7 @@ func (m *JsonBindMethod[T]) Validate(ctx context.Context, data T) (T, []*openapi
 		ves := make([]*openapi.ValidationError, 0)
 		for _, verr := range vErr {
 			ves = append(ves, &openapi.ValidationError{
-				Ctx:  m.Where,
+				Ctx:  m.where(),
 				Msg:  verr.Error(),
 				Type: verr.Type().String(),
 				Loc:  []string{"body", verr.Field()},
@@ -317,7 +334,7 @@ func (m *JsonBindMethod[T]) Marshal(obj T) ([]byte, error) {
 func (m *JsonBindMethod[T]) Unmarshal(stream []byte, obj T) (ves []*openapi.ValidationError) {
 	err := helper.JsonUnmarshal(stream, obj)
 	if err != nil {
-		ves = append(ves, jsoniterUnmarshalErrorToValidationError(err))
+		ves = append(ves, jsoniterUnmarshalErrorToValidationError(err, m.RouteParamType))
 	}
 
 	return
@@ -329,7 +346,7 @@ func (m *JsonBindMethod[T]) New() any {
 }
 
 // 将jsoniter 的反序列化错误转换成 接口错误类型
-func jsoniterUnmarshalErrorToValidationError(err error) *openapi.ValidationError {
+func jsoniterUnmarshalErrorToValidationError(err error, loc openapi.RouteParamType) *openapi.ValidationError {
 	// jsoniter 的反序列化错误格式：
 	//
 	// jsoniter.iter.ReportError():224
@@ -346,7 +363,13 @@ func jsoniterUnmarshalErrorToValidationError(err error) *openapi.ValidationError
 	//		"sex": "F"
 	// 	}|...
 	msg := err.Error()
-	ve := &openapi.ValidationError{Loc: []string{"body"}, Ctx: whereClientError}
+	var where map[string]any
+	if loc == openapi.RouteParamResponse {
+		where = whereServerError
+	} else {
+		where = whereClientError
+	}
+	ve := &openapi.ValidationError{Loc: []string{string(loc)}, Ctx: where}
 	for i := 0; i < len(msg); i++ {
 		if msg[i:i+1] == ":" {
 			ve.Loc = append(ve.Loc, msg[:i])
@@ -364,6 +387,80 @@ func jsoniterUnmarshalErrorToValidationError(err error) *openapi.ValidationError
 	}
 
 	return ve
+}
+
+func validateErrorToValidationError(err error, loc openapi.RouteParamType) []*openapi.ValidationError {
+	var vErr validator.ValidationErrors // validator的校验错误信息
+
+	if ok := errors.As(err, &vErr); ok { // 模型验证错误
+		var where map[string]any
+		if loc == openapi.RouteParamResponse {
+			where = whereServerError
+		} else {
+			where = whereClientError
+		}
+
+		ves := make([]*openapi.ValidationError, 0)
+		for _, verr := range vErr {
+			ves = append(ves, &openapi.ValidationError{
+				Ctx:  where,
+				Msg:  verr.Error(),
+				Type: verr.Type().String(),
+				Loc:  []string{string(loc), verr.Field()},
+			})
+		}
+		return ves
+	}
+	return nil
+}
+
+var queryStructJsonConf = jsoniter.Config{
+	IndentionStep:                 0,                           // 指定格式化序列化输出时的空格缩进数量
+	EscapeHTML:                    false,                       // 转义输出HTML
+	MarshalFloatWith6Digits:       true,                        // 指定浮点数序列化输出时最多保留6位小数
+	ObjectFieldMustBeSimpleString: true,                        // 开启该选项后，反序列化过程中不会对你的json串中对象的字段字符串可能包含的转义进行处理，因此你应该保证你的待解析json串中对象的字段应该是简单的字符串(不包含转义)
+	SortMapKeys:                   false,                       // 指定map类型序列化输出时按照其key排序
+	UseNumber:                     false,                       // 指定反序列化时将数字(整数、浮点数)解析成json.Number类型
+	DisallowUnknownFields:         false,                       // 当开启该选项时，反序列化过程如果解析到未知字段，即在结构体的schema定义中找不到的字段时，不会跳过然后继续解析，而会返回错误
+	TagKey:                        openapi.DefaultQueryTagName, // 指定tag字符串，默认情况为"json"
+	OnlyTaggedField:               false,                       // 当开启该选项时，只有带上tag的结构体字段才会被序列化输出
+	ValidateJsonRawMessage:        false,                       // json.RawMessage类型的字段在序列化时会原封不动地进行输出。开启这个选项后，json-iterator会校验这种类型的字段包含的是否一个合法的json串，如果合法，原样输出；否则会输出"null"
+	CaseSensitive:                 false,                       // 开启该选项后，你的待解析json串中的对象的字段必须与你的schema定义的字段大小写严格一致
+}
+
+var queryStructJson = queryStructJsonConf.Froze()
+
+func NewStructQueryBinder(queryTag string, objType reflect.Type) *StructQueryBindMethod {
+	return &StructQueryBindMethod{
+		objType: objType,
+	}
+}
+
+// StructQueryBindMethod 结构体查询参数验证器
+type StructQueryBindMethod struct {
+	objType reflect.Type
+}
+
+func (m *StructQueryBindMethod) Unmarshal(params map[string]any, obj any) *openapi.ValidationError {
+	s, err := queryStructJson.Marshal(params)
+	if err != nil {
+		return jsoniterUnmarshalErrorToValidationError(err, openapi.RouteParamQuery)
+	}
+	err = queryStructJson.Unmarshal(s, obj)
+	if err != nil {
+
+		return jsoniterUnmarshalErrorToValidationError(err, openapi.RouteParamQuery)
+	}
+	return nil
+}
+
+func (m *StructQueryBindMethod) Validate(obj any) (any, []*openapi.ValidationError) {
+	err := defaultValidator.StructCtx(context.Background(), obj)
+	if err != nil {
+		ves := validateErrorToValidationError(err, openapi.RouteParamQuery)
+		return nil, ves
+	}
+	return obj, nil
 }
 
 // =================================== 👇 以下用于泛型的返回值校验 ===================================

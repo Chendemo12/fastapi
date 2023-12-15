@@ -273,7 +273,7 @@ func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) {
 
 		if err != nil {
 			c.Logger().Error(err)
-			vv := jsoniterUnmarshalErrorToValidationError(err)
+			vv := jsoniterUnmarshalErrorToValidationError(err, openapi.RouteParamRequest)
 			c.response.Content = &openapi.HTTPValidationError{Detail: []*openapi.ValidationError{vv}}
 			c.response.StatusCode = http.StatusUnprocessableEntity
 		} else {
