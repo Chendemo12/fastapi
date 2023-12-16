@@ -32,7 +32,7 @@ func (q *QModel) SchemaPkg() string { return q.Name }
 
 // JsonName 对于查询参数结构体，其文档名称 tag 为 query
 func (q *QModel) JsonName() string {
-	return utils.QueryFieldTag(q.Tag, DefaultQueryTagName, q.Name)
+	return utils.QueryFieldTag(q.Tag, QueryTagName, q.Name)
 }
 
 // SchemaDesc 结构体文档注释

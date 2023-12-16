@@ -94,7 +94,7 @@ func (m *BaseModelMeta) scanObject() (err error) {
 		field := rt.Field(i)
 		// 只要任一个字段具有validate标签，就需要校验模型的字段取值
 		// 结构体字段有此标签，但字段本身没有，无需考虑此情况
-		m.hasValidateTag = utils.QueryFieldTag(field.Tag, DefaultValidateTagName, "") != ""
+		m.hasValidateTag = utils.QueryFieldTag(field.Tag, ValidateTagName, "") != ""
 		// 此处无需过滤字段，文档生成时会过滤
 		argsType := &ArgsType{
 			fatherType: rt,
@@ -542,7 +542,7 @@ func (f *BaseModelField) Schema() (m map[string]any) {
 	}
 	// 以validate标签为准
 	validatorLabelsMap := map[string]string{}
-	validateTag := utils.QueryFieldTag(f.Tag, DefaultValidateTagName, "")
+	validateTag := utils.QueryFieldTag(f.Tag, ValidateTagName, "")
 
 	// 解析Tag
 	labels := strings.Split(validateTag, ",")

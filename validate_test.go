@@ -27,7 +27,7 @@ func TestQBinder_Bind(t *testing.T) {
 		{
 			name: "number-age-unmarshal",
 			fields: fields{
-				json: queryStructJsonConf.Froze(),
+				json: jsoniter.ConfigCompatibleWithStandardLibrary,
 			},
 			args: args{
 				params: map[string]any{
@@ -41,7 +41,7 @@ func TestQBinder_Bind(t *testing.T) {
 		{
 			name: "string-age-unmarshal",
 			fields: fields{
-				json: queryStructJsonConf.Froze(),
+				json: jsoniter.ConfigCompatibleWithStandardLibrary,
 			},
 			args: args{
 				params: map[string]any{
@@ -55,7 +55,7 @@ func TestQBinder_Bind(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := NewStructQueryBinder("", nil)
+			b := StructQueryBind{json: tt.fields.json}
 			if err := b.Unmarshal(tt.args.params, tt.args.obj); (err != nil) != tt.wantErr {
 				t.Errorf("Bind() error = %v, wantErr %v", err, tt.wantErr)
 			}

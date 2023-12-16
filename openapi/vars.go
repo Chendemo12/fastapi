@@ -19,10 +19,10 @@ type dict map[string]any
 
 // ValidationError 参数校验错误
 type ValidationError struct {
-	Ctx  map[string]any `json:"service,omitempty" description:"Service"`
-	Msg  string         `json:"msg" description:"Message" binding:"required"`
-	Type string         `json:"type" description:"Error Type" binding:"required"`
-	Loc  []string       `json:"loc" description:"Location" binding:"required"`
+	Loc  []string       `json:"loc" binding:"required" description:"参数定位"`
+	Type string         `json:"type" binding:"required" description:"参数类型"`
+	Msg  string         `json:"msg" binding:"required" description:"错误消息"`
+	Ctx  map[string]any `json:"service,omitempty" description:"附加消息"`
 }
 
 func (v *ValidationError) SchemaDesc() string { return "参数校验错误" }

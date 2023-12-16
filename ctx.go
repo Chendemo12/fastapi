@@ -119,7 +119,7 @@ func (c *Context) Done() <-chan struct{} {
 }
 
 // Logger 获取注册的日志句柄
-func (c *Context) Logger() logger.Iface { return c.svc.Logger() }
+func (c *Context) Logger() logger.Iface { return dLog }
 
 // Query 获取查询参数
 // 对于已经在路由处定义的查询参数，应首先从 Context.queryFields 内部读取；

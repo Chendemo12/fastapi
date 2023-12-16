@@ -56,10 +56,15 @@ func (f *Wrapper) Handler(ctx MuxContext) error {
 
 // 执行用户自定义钩子函数前的工作流
 func (c *Context) beforeWorkflow(route RouteIface, stopImmediately bool) {
+	var ves []*openapi.ValidationError
+
 	for _, link := range requestValidateLinks {
-		link(c, route, stopImmediately)
-		if c.response.Content != nil {
-			return // 当任意环节校验失败时,即终止下文环节
+		ves = link(c, route, stopImmediately)
+		if len(ves) > 0 { // 当任意环节校验失败时,即终止下文环节
+			c.response.StatusCode = http.StatusUnprocessableEntity
+			c.response.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
+			c.response.Content = &openapi.HTTPValidationError{Detail: ves}
+			break
 		}
 	}
 }
@@ -68,9 +73,16 @@ func (c *Context) beforeWorkflow(route RouteIface, stopImmediately bool) {
 
 // 主要是对响应体是否符合tag约束的校验，
 func (c *Context) afterWorkflow(route RouteIface, stopImmediately bool) {
+	var ves []*openapi.ValidationError
+
 	for _, link := range responseValidateLinks {
-		if link(c, route, stopImmediately) {
-			return // 当任意环节校验失败时,即终止下文环节
+		ves = link(c, route, stopImmediately)
+		if len(ves) > 0 { // 当任意环节校验失败时,即终止下文环节
+			// 校验不通过, 修改 Response.StatusCode 和 Response.Content
+			c.response.StatusCode = http.StatusUnprocessableEntity
+			c.response.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
+			c.response.Content = &openapi.HTTPValidationError{Detail: ves}
+			break
 		}
 	}
 }
@@ -134,19 +146,19 @@ func (c *Context) write() error {
 	}
 }
 
-var requestValidateLinks = []func(c *Context, route RouteIface, stopImmediately bool){
+var requestValidateLinks = []func(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError{
 	pathParamsValidate,  // 路径参数校验
 	queryParamsValidate, // 查询参数校验
 	requestBodyValidate, // 请求体自动校验
 }
 
-var responseValidateLinks = []func(c *Context, route RouteIface, stopImmediately bool) (hasError bool){
+var responseValidateLinks = []func(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError{
 	responseValidate, // 路由返回值校验
 }
 
 // 路径参数校验, 路径参数均为字符串类型，主要验证是否存在，不校验范围、值是否合理
 // 对于路径参数，如果缺少理论上不会匹配到相应的路由
-func pathParamsValidate(c *Context, route RouteIface, stopImmediately bool) {
+func pathParamsValidate(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError {
 	var ves []*openapi.ValidationError
 	// 路径参数校验
 	for _, p := range route.Swagger().PathFields {
@@ -166,10 +178,7 @@ func pathParamsValidate(c *Context, route RouteIface, stopImmediately bool) {
 		}
 	}
 
-	if len(ves) > 0 { // 存在缺失参数
-		c.response.StatusCode = http.StatusUnprocessableEntity
-		c.response.Content = &openapi.HTTPValidationError{Detail: ves}
-	}
+	return ves
 }
 
 // 查询参数校验
@@ -186,7 +195,7 @@ func pathParamsValidate(c *Context, route RouteIface, stopImmediately bool) {
 //		反之则在遇到第一个错误后就立刻返回错误消息
 //
 //	@return	*Response 校验结果, 若为nil则校验通过
-func queryParamsValidate(c *Context, route RouteIface, stopImmediately bool) {
+func queryParamsValidate(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError {
 	var ves []*openapi.ValidationError
 
 	// 验证是否缺少必选参数
@@ -212,14 +221,13 @@ func queryParamsValidate(c *Context, route RouteIface, stopImmediately bool) {
 	}
 
 	if len(ves) > 0 { // 存在缺失参数
-		c.response.StatusCode = http.StatusUnprocessableEntity
-		c.response.Content = &openapi.HTTPValidationError{Detail: ves}
+		return ves
 	}
 
 	// 根据数据类型转换并校验参数值，比如: 定义为int类型，但是参数值为“abc”，虽然是存在的但是不合法
 	// 转换规则按照 QModel 定义进行，只有转换成功后才进行校验
 	for _, binder := range route.QueryBinders() {
-		v, ok := c.queryFields[binder.Title]
+		v, ok := c.queryFields[binder.SchemaTitle()]
 		if !ok { // 此参数值不存在
 			continue
 		}
@@ -242,22 +250,33 @@ func queryParamsValidate(c *Context, route RouteIface, stopImmediately bool) {
 	}
 
 	if len(ves) > 0 { // 存在类型不匹配或范围越界参数
-		c.response.StatusCode = http.StatusUnprocessableEntity
-		c.response.Content = &openapi.HTTPValidationError{Detail: ves}
+		return ves
 	}
 
-	queryStruct := route.NewQueryModel()
-	if queryStruct != nil {
-		// TODO 反序列化校验
-		//err := helper.JsonUnmarshal([]byte(""), value)
+	// 验证结构体查询参数(如果存在)
+	obj := route.NewQueryModel()
+	if obj != nil {
+		if c.muxCtx.BindQueryNotImplemented() {
+			// 采用自定义实现
+			ves = BindQuery(c, route)
+		} else {
+			err := c.muxCtx.BindQuery(obj)
+			ves = ParseValidatorError(err, openapi.RouteParamQuery)
+		}
+		if len(ves) > 0 {
+			return ves
+		}
 	}
+	return nil
 }
 
 // 请求体校验
 //
 //	@return	*Response 校验结果, 若为nil则校验通过
-func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) {
+func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError {
 	var instance any
+	var ves []*openapi.ValidationError
+	var err error
 
 	switch route.Swagger().Method {
 	case http.MethodPost, http.MethodPut, http.MethodPatch:
@@ -267,44 +286,38 @@ func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) {
 	}
 
 	if instance != nil {
-		// 存在请求体,首先进行反序列化,之后校验参数是否合法,校验通过后绑定到 Context
-		err := c.muxCtx.BodyParser(instance)
 		c.response.Type = JsonResponseType
-
-		if err != nil {
-			c.Logger().Error(err)
-			vv := jsoniterUnmarshalErrorToValidationError(err, openapi.RouteParamRequest)
-			c.response.Content = &openapi.HTTPValidationError{Detail: []*openapi.ValidationError{vv}}
-			c.response.StatusCode = http.StatusUnprocessableEntity
-		} else {
-			value, ves := route.RequestBinders().Method.Validate(c.routeCtx, instance)
-			if len(ves) > 0 {
-				c.response.Content = &openapi.HTTPValidationError{Detail: ves}
-				c.response.StatusCode = http.StatusUnprocessableEntity
+		// 存在请求体,首先进行反序列化,之后校验参数是否合法,校验通过后绑定到 Context
+		if c.muxCtx.ShouldBindNotImplemented() {
+			err = c.muxCtx.BodyParser(instance)
+			if err != nil {
+				c.Logger().Error(err)
+				ve := ParseJsoniterError(err, openapi.RouteParamRequest)
+				ves = append(ves, ve)
 			} else {
-				// 校验通过
-				c.requestModel = value
+				// 反序列化成功,校验模型
+				c.requestModel, ves = route.RequestBinders().Method.Validate(c.routeCtx, instance)
 			}
+		} else {
+			err = c.muxCtx.ShouldBind(instance)
+			ves = ParseValidatorError(err, openapi.RouteParamRequest)
 		}
 	}
+
+	return ves
 }
 
 // 返回值校验root入口
 //
 //	@return	*Response 校验结果, 若校验不通过则修改 Response.StatusCode 和 Response.Content
-func responseValidate(c *Context, route RouteIface, stopImmediately bool) (hasError bool) {
+func responseValidate(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError {
 	// 仅校验“非422的JSONResponse”
 	if c.response.StatusCode != http.StatusUnprocessableEntity && c.response.Type == JsonResponseType {
 		// 内部返回的 422 也不再校验
-		var evs []*openapi.ValidationError
-		_, evs = route.ResponseBinder().Method.Validate(c.routeCtx, c.response.Content)
-		if len(evs) > 0 {
-			//校验不通过, 修改 Response.StatusCode 和 Response.Content
-			c.response.StatusCode = http.StatusUnprocessableEntity
-			c.response.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
-			c.response.Content = &openapi.HTTPValidationError{Detail: evs}
-		}
+		var ves []*openapi.ValidationError
+		_, ves = route.ResponseBinder().Method.Validate(c.routeCtx, c.response.Content)
+		return ves
 	}
 
-	return false
+	return nil
 }

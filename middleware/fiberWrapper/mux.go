@@ -5,22 +5,17 @@ import (
 	"fmt"
 	"github.com/Chendemo12/fastapi"
 	"github.com/Chendemo12/fastapi-tool/helper"
-	"github.com/Chendemo12/fastapi-tool/logger"
 	"github.com/gofiber/fiber/v2"
 	echo "github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"io"
-	"net"
 	"net/http"
 	"runtime"
 	"sync"
 	"time"
 )
 
-var log logger.Iface = logger.NewDefaultLogger()
-
 type FiberMux struct {
-	one  *sync.Once
 	App  *fiber.App
 	pool *sync.Pool
 }
@@ -28,7 +23,6 @@ type FiberMux struct {
 // NewWrapper 创建App实例
 func NewWrapper(app *fiber.App) *FiberMux {
 	return &FiberMux{
-		one:  &sync.Once{},
 		App:  app,
 		pool: &sync.Pool{New: func() any { return &FiberContext{} }},
 	}
@@ -37,7 +31,7 @@ func NewWrapper(app *fiber.App) *FiberMux {
 // Default 默认的fiber.App，已做好基本的参数配置
 func Default() *FiberMux {
 	app := fiber.New(fiber.Config{
-		Prefork:       false,                   // core.MultipleProcessEnabled, // 多进程模式
+		Prefork:       false,                   // 多进程模式
 		CaseSensitive: true,                    // 区分路由大小写
 		StrictRouting: true,                    // 严格路由
 		ServerHeader:  "FastApi",               // 服务器头
@@ -114,13 +108,45 @@ func (m *FiberMux) BindRoute(method, path string, handler fastapi.MuxHandler) er
 	return nil
 }
 
-func (m *FiberMux) SetLogger(logger logger.Iface) {
-	log = logger
-}
-
 type FiberContext struct {
 	ctx *fiber.Ctx
 }
+
+func (c *FiberContext) Method() string {
+	return c.ctx.Method()
+}
+
+func (c *FiberContext) Path() string {
+	return c.ctx.Route().Path
+}
+
+func (c *FiberContext) Query(key string, undefined ...string) string {
+	return c.ctx.Query(key, undefined...)
+}
+
+func (c *FiberContext) Params(key string, undefined ...string) string {
+	return c.ctx.Params(key, undefined...)
+}
+
+func (c *FiberContext) ContentType() string {
+	return string(c.ctx.Context().Request.Header.ContentType())
+}
+
+func (c *FiberContext) BindQuery(obj any) error {
+	return nil
+}
+
+func (c *FiberContext) BindQueryNotImplemented() bool {
+	return true
+}
+
+func (c *FiberContext) BodyParser(obj any) error { return c.ctx.BodyParser(obj) }
+
+func (c *FiberContext) Validate(obj any) error { return nil }
+
+func (c *FiberContext) ShouldBind(obj any) error { return nil }
+
+func (c *FiberContext) ShouldBindNotImplemented() bool { return true }
 
 func (c *FiberContext) SetCookie(cookie *http.Cookie) {
 	//TODO implement me
@@ -137,10 +163,14 @@ func (c *FiberContext) Get(key string, defaultValue ...string) string {
 	panic("implement me")
 }
 
-func (c *FiberContext) ClientIP() string {
+func (c *FiberContext) Set(key string, value any) {
 	//TODO implement me
 	panic("implement me")
 }
+
+func (c *FiberContext) ClientIP() string { return c.ctx.IP() }
+
+func (c *FiberContext) Status(statusCode int) { c.ctx.Status(statusCode) }
 
 func (c *FiberContext) SendStream(stream io.Reader, size ...int) error {
 	return c.ctx.SendStream(stream, size...)
@@ -161,9 +191,7 @@ func (c *FiberContext) TOML(code int, obj any) error {
 	panic("implement me")
 }
 
-func (c *FiberContext) Header(key, value string) {
-	c.ctx.Set(key, value)
-}
+func (c *FiberContext) Header(key, value string) { c.ctx.Set(key, value) }
 
 func (c *FiberContext) Redirect(code int, location string) error {
 	return c.ctx.Redirect(location, code)
@@ -184,16 +212,6 @@ func (c *FiberContext) FileAttachment(filepath, filename string) error {
 	panic("implement me")
 }
 
-func (c *FiberContext) RemoteAddr() net.Addr {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (c *FiberContext) Set(key string, value any) {
-	//TODO implement me
-	panic("implement me")
-}
-
 func (c *FiberContext) XML(code int, content any) error {
 	c.Status(code)
 	return c.ctx.XML(content)
@@ -201,30 +219,6 @@ func (c *FiberContext) XML(code int, content any) error {
 
 func (c *FiberContext) SendString(s string) error {
 	return c.ctx.SendString(s)
-}
-
-func (c *FiberContext) Method() string {
-	return c.ctx.Method()
-}
-
-func (c *FiberContext) Path() string {
-	return c.ctx.Route().Path
-}
-
-func (c *FiberContext) BodyParser(model any) error {
-	return c.ctx.BodyParser(model)
-}
-
-func (c *FiberContext) Query(key string, undefined ...string) string {
-	return c.ctx.Query(key, undefined...)
-}
-
-func (c *FiberContext) Params(key string, undefined ...string) string {
-	return c.ctx.Params(key, undefined...)
-}
-
-func (c *FiberContext) Status(statusCode int) {
-	c.ctx.Status(statusCode)
 }
 
 func (c *FiberContext) Write(p []byte) (int, error) {
@@ -242,12 +236,12 @@ func customRecoverHandler(c *fiber.Ctx, e any) {
 	msg := helper.CombineStrings(
 		"Request RelativePath: ", c.Path(), fmt.Sprintf(", Error: %v, \n", e), string(buf),
 	)
-	log.Error(msg)
+	fastapi.Logger().Error(msg)
 }
 
 // customFiberErrorHandler 自定义fiber接口错误处理函数
 func customFiberErrorHandler(c *fiber.Ctx, e error) error {
-	log.Warn(helper.CombineStrings(
+	fastapi.Logger().Warn(helper.CombineStrings(
 		"error happened during: '",
 		c.Method(), ": ", c.Path(),
 		"', Msg: ", e.Error(),

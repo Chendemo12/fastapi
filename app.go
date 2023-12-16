@@ -61,11 +61,6 @@ func (f *Wrapper) initService() *Wrapper {
 		f.conf.Version = "1.0.0"
 	}
 
-	// 初始化日志logger logger.NewLogger
-	if f.service.logger == nil {
-		f.service.logger = logger.NewLogger(os.Stdout, "", log.LstdFlags|log.Lshortfile)
-	}
-
 	f.pool = &sync.Pool{
 		New: func() interface{} {
 			c := new(Context)
@@ -145,6 +140,7 @@ func (f *Wrapper) initMux() *Wrapper {
 // 启动前，必须显式的初始化Wrapper的基本配置，若初始化中发生异常则panic
 func (f *Wrapper) initialize() *Wrapper {
 	helper.SetJsonEngine(jsoniter.ConfigCompatibleWithStandardLibrary)
+	LazyInit()
 
 	f.initService()
 	f.initRoutes()
@@ -165,7 +161,6 @@ func (f *Wrapper) resetRunMode(md bool) {
 
 // 绑定数据到路由器上
 func (f *Wrapper) wrap(mux MuxWrapper) *Wrapper {
-	mux.SetLogger(f.service.logger)
 	var err error
 	// 挂载路由到路由器上
 	for _, group := range f.groupRouters {

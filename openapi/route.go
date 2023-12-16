@@ -109,7 +109,7 @@ func (r *RouteSwagger) scanPath() (err error) {
 			qm.Name = p[1:]
 			// 通过Tag标识这是一个必须的参数: `validate:"required"`
 			qm.Tag = reflect.StructTag(fmt.Sprintf(`json:"%s" %s:"%s"`,
-				qm.Name, DefaultValidateTagName, DefaultParamRequiredLabel))
+				qm.Name, ValidateTagName, ParamRequiredLabel))
 
 			r.PathFields = append(r.PathFields, qm)
 			continue

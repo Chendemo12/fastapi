@@ -483,7 +483,7 @@ func (r *GroupRoute) scanInParams() (err error) {
 				r.swagger.QueryFields = append(r.swagger.QueryFields, &openapi.QModel{
 					Name: param.QueryName(), // 手动指定一个查询参数名称
 					Tag: reflect.StructTag(fmt.Sprintf(`json:"%s" %s:"%s"`,
-						param.QueryName(), openapi.DefaultValidateTagName, openapi.DefaultParamRequiredLabel)), // 对于函数参数类型的查询参数,全部为必选的
+						param.QueryName(), openapi.ValidateTagName, openapi.ParamRequiredLabel)), // 对于函数参数类型的查询参数,全部为必选的
 					DataType: param.SchemaType(),
 					Kind:     param.PrototypeKind,
 					InPath:   false,
@@ -515,7 +515,7 @@ func (r *GroupRoute) scanInParams() (err error) {
 			r.swagger.QueryFields = append(r.swagger.QueryFields, &openapi.QModel{
 				Name: lastInParam.QueryName(), // 手动指定一个查询参数名称
 				Tag: reflect.StructTag(fmt.Sprintf(`json:"%s" %s:"%s"`,
-					lastInParam.QueryName(), openapi.DefaultValidateTagName, openapi.DefaultParamRequiredLabel)), // 对于函数参数类型的查询参数,全部为必选的
+					lastInParam.QueryName(), openapi.ValidateTagName, openapi.ParamRequiredLabel)), // 对于函数参数类型的查询参数,全部为必选的
 				DataType: lastInParam.SchemaType(),
 				Kind:     lastInParam.PrototypeKind,
 				InPath:   false,

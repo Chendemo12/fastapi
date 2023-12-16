@@ -23,8 +23,8 @@ type RouteIface interface {
 	RequestBinders() *ParamBinder             // 请求体的处理接口,请求体也只有一个
 	ResponseBinder() *ParamBinder             // 响应体的处理接口,响应体只有一个
 	NewInParams(ctx *Context) []reflect.Value // 创建一个完整的函数入参实例列表, 此方法会在完成请求参数校验 RequestBinders，QueryBinders 之后执行
+	NewQueryModel() any                       // 创建一个结构体查询参数实例,对于POST/PATCH/PUT, 即为 NewInParams 的最后一个元素; 对于GET/DELETE则为nil
 	NewRequestModel() any                     // 创建一个请求体实例,对于POST/PATCH/PUT, 即为 NewInParams 的最后一个元素; 对于GET/DELETE则为nil
-	NewQueryModel() any                       // 创建一个请求体实例,对于POST/PATCH/PUT, 即为 NewInParams 的最后一个元素; 对于GET/DELETE则为nil
 	Call(ctx *Context)                        // 调用API, 需要将响应结果写入 Response 内
 	Id() string
 }
@@ -55,6 +55,31 @@ func (b *BaseModel) SchemaType() openapi.DataType { return openapi.ObjectType }
 func (b *BaseModel) IsRequired() bool { return true }
 
 // ================================================================================
+
+// BindQuery 将查询参数绑定到一个结构体上
+func BindQuery(c *Context, route RouteIface) []*openapi.ValidationError {
+	obj := route.NewQueryModel()
+	if obj == nil {
+		return nil
+	}
+
+	values := map[string]any{}
+	for _, q := range route.Swagger().QueryFields {
+		if q.InStruct {
+			v, ok := c.queryFields[q.SchemaTitle()]
+			if ok {
+				values[q.SchemaTitle()] = v
+			}
+		}
+	}
+
+	_, ves := structQueryBind.Bind(values, obj)
+	if len(ves) > 0 {
+		return ves
+	}
+
+	return nil
+}
 
 // InferBinderMethod 利用反射推断参数的校验器
 func InferBinderMethod(param openapi.SchemaIface, prototypeKind reflect.Kind, modelType openapi.RouteParamType) ModelBindMethod {

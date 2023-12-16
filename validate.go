@@ -25,11 +25,8 @@ const ( // error message
 	QueryPsIsEmpty     = "Query must not be empty"
 )
 
-var defaultValidator = validator.New()
-
-func init() {
-	defaultValidator.SetTagName(openapi.DefaultValidateTagName)
-}
+var defaultValidator *validator.Validate
+var structQueryBind *StructQueryBind
 
 var emptyLocList = []string{"response"}
 var whereServerError = map[string]any{"where error": "server"}
@@ -41,7 +38,7 @@ type ValidateMethod interface {
 
 type ModelBindMethod interface {
 	Name() string // 名称
-	// Validate TODO: 考虑将data转换为 []byte类型
+	// Validate
 	// 校验方法，对于响应首先校验，然后在 Marshal；对于请求，首先 Unmarshal 然后再校验
 	// 对于不需要ctx参数的校验方法可默认设置为nil
 	// data 为需要验证的数据模型，如果验证通过，则第一个返回值为做了类型转换的data
@@ -334,7 +331,7 @@ func (m *JsonBindMethod[T]) Marshal(obj T) ([]byte, error) {
 func (m *JsonBindMethod[T]) Unmarshal(stream []byte, obj T) (ves []*openapi.ValidationError) {
 	err := helper.JsonUnmarshal(stream, obj)
 	if err != nil {
-		ves = append(ves, jsoniterUnmarshalErrorToValidationError(err, m.RouteParamType))
+		ves = append(ves, ParseJsoniterError(err, m.RouteParamType))
 	}
 
 	return
@@ -345,122 +342,39 @@ func (m *JsonBindMethod[T]) New() any {
 	return value
 }
 
-// 将jsoniter 的反序列化错误转换成 接口错误类型
-func jsoniterUnmarshalErrorToValidationError(err error, loc openapi.RouteParamType) *openapi.ValidationError {
-	// jsoniter 的反序列化错误格式：
-	//
-	// jsoniter.iter.ReportError():224
-	//
-	// 	iter.Error = fmt.Errorf("%s: %s, error found in #%v byte of ...|%s|..., bigger context ...|%s|...",
-	//		operation, msg, iter.head-peekStart, parsing, context)
-	//
-	// 	err.Error():
-	//
-	// 	main.SimpleForm.name: ReadString: expmuxCtxts " or n, but found 2, error found in #10 byte of ...| "name": 23,
-	//		"a|..., bigger context ...|{
-	//		"name": 23,
-	//		"age": "23",
-	//		"sex": "F"
-	// 	}|...
-	msg := err.Error()
-	var where map[string]any
-	if loc == openapi.RouteParamResponse {
-		where = whereServerError
-	} else {
-		where = whereClientError
-	}
-	ve := &openapi.ValidationError{Loc: []string{string(loc)}, Ctx: where}
-	for i := 0; i < len(msg); i++ {
-		if msg[i:i+1] == ":" {
-			ve.Loc = append(ve.Loc, msg[:i])
-			break
-		}
-	}
-	if msgs := strings.Split(msg, jsoniterUnmarshalErrorSeparator); len(msgs) > 0 {
-		err = helper.JsonUnmarshal([]byte(msgs[jsonErrorFormIndex]), &ve.Ctx)
-		if err == nil {
-			ve.Msg = msgs[jsonErrorFieldMsgIndex][len(ve.Loc[1])+2:]
-			if s := strings.Split(ve.Msg, ":"); len(s) > 0 {
-				ve.Type = s[0]
-			}
-		}
-	}
-
-	return ve
+// StructQueryBind 结构体查询参数验证器
+type StructQueryBind struct {
+	json jsoniter.API
 }
 
-func validateErrorToValidationError(err error, loc openapi.RouteParamType) []*openapi.ValidationError {
-	var vErr validator.ValidationErrors // validator的校验错误信息
+func (m *StructQueryBind) Unmarshal(params map[string]any, obj any) *openapi.ValidationError {
+	s, err := m.json.Marshal(params)
+	if err != nil {
+		return ParseJsoniterError(err, openapi.RouteParamQuery)
+	}
+	err = m.json.Unmarshal(s, obj)
+	if err != nil {
 
-	if ok := errors.As(err, &vErr); ok { // 模型验证错误
-		var where map[string]any
-		if loc == openapi.RouteParamResponse {
-			where = whereServerError
-		} else {
-			where = whereClientError
-		}
-
-		ves := make([]*openapi.ValidationError, 0)
-		for _, verr := range vErr {
-			ves = append(ves, &openapi.ValidationError{
-				Ctx:  where,
-				Msg:  verr.Error(),
-				Type: verr.Type().String(),
-				Loc:  []string{string(loc), verr.Field()},
-			})
-		}
-		return ves
+		return ParseJsoniterError(err, openapi.RouteParamQuery)
 	}
 	return nil
 }
 
-var queryStructJsonConf = jsoniter.Config{
-	IndentionStep:                 0,                           // 指定格式化序列化输出时的空格缩进数量
-	EscapeHTML:                    false,                       // 转义输出HTML
-	MarshalFloatWith6Digits:       true,                        // 指定浮点数序列化输出时最多保留6位小数
-	ObjectFieldMustBeSimpleString: true,                        // 开启该选项后，反序列化过程中不会对你的json串中对象的字段字符串可能包含的转义进行处理，因此你应该保证你的待解析json串中对象的字段应该是简单的字符串(不包含转义)
-	SortMapKeys:                   false,                       // 指定map类型序列化输出时按照其key排序
-	UseNumber:                     false,                       // 指定反序列化时将数字(整数、浮点数)解析成json.Number类型
-	DisallowUnknownFields:         false,                       // 当开启该选项时，反序列化过程如果解析到未知字段，即在结构体的schema定义中找不到的字段时，不会跳过然后继续解析，而会返回错误
-	TagKey:                        openapi.DefaultQueryTagName, // 指定tag字符串，默认情况为"json"
-	OnlyTaggedField:               false,                       // 当开启该选项时，只有带上tag的结构体字段才会被序列化输出
-	ValidateJsonRawMessage:        false,                       // json.RawMessage类型的字段在序列化时会原封不动地进行输出。开启这个选项后，json-iterator会校验这种类型的字段包含的是否一个合法的json串，如果合法，原样输出；否则会输出"null"
-	CaseSensitive:                 false,                       // 开启该选项后，你的待解析json串中的对象的字段必须与你的schema定义的字段大小写严格一致
-}
-
-var queryStructJson = queryStructJsonConf.Froze()
-
-func NewStructQueryBinder(queryTag string, objType reflect.Type) *StructQueryBindMethod {
-	return &StructQueryBindMethod{
-		objType: objType,
-	}
-}
-
-// StructQueryBindMethod 结构体查询参数验证器
-type StructQueryBindMethod struct {
-	objType reflect.Type
-}
-
-func (m *StructQueryBindMethod) Unmarshal(params map[string]any, obj any) *openapi.ValidationError {
-	s, err := queryStructJson.Marshal(params)
-	if err != nil {
-		return jsoniterUnmarshalErrorToValidationError(err, openapi.RouteParamQuery)
-	}
-	err = queryStructJson.Unmarshal(s, obj)
-	if err != nil {
-
-		return jsoniterUnmarshalErrorToValidationError(err, openapi.RouteParamQuery)
-	}
-	return nil
-}
-
-func (m *StructQueryBindMethod) Validate(obj any) (any, []*openapi.ValidationError) {
+func (m *StructQueryBind) Validate(obj any) (any, []*openapi.ValidationError) {
 	err := defaultValidator.StructCtx(context.Background(), obj)
 	if err != nil {
-		ves := validateErrorToValidationError(err, openapi.RouteParamQuery)
+		ves := ParseValidatorError(err, openapi.RouteParamQuery)
 		return nil, ves
 	}
 	return obj, nil
+}
+
+func (m *StructQueryBind) Bind(params map[string]any, obj any) (any, []*openapi.ValidationError) {
+	ve := m.Unmarshal(params, obj)
+	if ve != nil {
+		return nil, []*openapi.ValidationError{ve}
+	}
+	return m.Validate(obj)
 }
 
 // =================================== 👇 以下用于泛型的返回值校验 ===================================
@@ -566,4 +480,89 @@ func modelCannotBeArrayResponse(name ...string) *openapi.ValidationError {
 	}
 
 	return ve
+}
+
+// ParseJsoniterError 将jsoniter 的反序列化错误转换成 接口错误类型
+func ParseJsoniterError(err error, loc openapi.RouteParamType) *openapi.ValidationError {
+	if err == nil {
+		return nil
+	}
+	// jsoniter 的反序列化错误格式：
+	//
+	// jsoniter.iter.ReportError():224
+	//
+	// 	iter.Error = fmt.Errorf("%s: %s, error found in #%v byte of ...|%s|..., bigger context ...|%s|...",
+	//		operation, msg, iter.head-peekStart, parsing, context)
+	//
+	// 	err.Error():
+	//
+	// 	main.SimpleForm.name: ReadString: expmuxCtxts " or n, but found 2, error found in #10 byte of ...| "name": 23,
+	//		"a|..., bigger context ...|{
+	//		"name": 23,
+	//		"age": "23",
+	//		"sex": "F"
+	// 	}|...
+	msg := err.Error()
+	var where map[string]any
+	if loc == openapi.RouteParamResponse {
+		where = whereServerError
+	} else {
+		where = whereClientError
+	}
+	ve := &openapi.ValidationError{Loc: []string{string(loc)}, Ctx: where}
+	for i := 0; i < len(msg); i++ {
+		if msg[i:i+1] == ":" {
+			ve.Loc = append(ve.Loc, msg[:i])
+			break
+		}
+	}
+	if msgs := strings.Split(msg, jsoniterUnmarshalErrorSeparator); len(msgs) > 0 {
+		err = helper.JsonUnmarshal([]byte(msgs[jsonErrorFormIndex]), &ve.Ctx)
+		if err == nil {
+			ve.Msg = msgs[jsonErrorFieldMsgIndex][len(ve.Loc[1])+2:]
+			if s := strings.Split(ve.Msg, ":"); len(s) > 0 {
+				ve.Type = s[0]
+			}
+		}
+	}
+
+	return ve
+}
+
+// ParseValidatorError 解析Validator的错误消息
+// 如果不存在错误,则返回nil; 如果 err 是 validator.ValidationErrors 的错误, 则解析并返回详细的错误原因,反之则返回模糊的错误原因
+func ParseValidatorError(err error, loc openapi.RouteParamType) []*openapi.ValidationError {
+	if err == nil {
+		return nil
+	}
+
+	var vErr validator.ValidationErrors // validator的校验错误信息
+	var ves []*openapi.ValidationError
+	var where map[string]any
+
+	if loc == openapi.RouteParamResponse {
+		where = whereServerError
+	} else {
+		where = whereClientError
+	}
+
+	if ok := errors.As(err, &vErr); ok { // Validator的模型验证错误
+		for _, verr := range vErr {
+			ves = append(ves, &openapi.ValidationError{
+				Ctx:  where,
+				Msg:  verr.Error(),
+				Type: verr.Type().String(),
+				Loc:  []string{string(loc), verr.Field()},
+			})
+		}
+	} else {
+		ves = append(ves, &openapi.ValidationError{
+			Ctx:  where,
+			Msg:  err.Error(),
+			Type: string(openapi.ObjectType),
+			Loc:  []string{string(loc)},
+		})
+	}
+
+	return ves
 }

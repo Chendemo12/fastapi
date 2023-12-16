@@ -550,12 +550,10 @@ func ReflectKindToType(kind reflect.Kind) (name DataType) {
 
 // IsFieldRequired 从tag中判断此字段是否是必须的
 func IsFieldRequired(tag reflect.StructTag) bool {
-	for _, name := range []string{GinValidateTagName, DefaultValidateTagName} {
-		bindings := strings.Split(utils.QueryFieldTag(tag, name, ""), ",") // binding 存在多个值
-		for i := 0; i < len(bindings); i++ {
-			if strings.TrimSpace(bindings[i]) == DefaultParamRequiredLabel {
-				return true
-			}
+	bindings := strings.Split(utils.QueryFieldTag(tag, ValidateTagName, ""), ",") // binding 存在多个值
+	for i := 0; i < len(bindings); i++ {
+		if strings.TrimSpace(bindings[i]) == ParamRequiredLabel {
+			return true
 		}
 	}
 

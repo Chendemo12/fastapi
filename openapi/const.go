@@ -4,6 +4,15 @@ import "reflect"
 
 const ApiVersion = "3.1.0"
 
+var (
+	ValidateTagName    = "validate"
+	QueryTagName       = "query"
+	JsonTagName        = "json"
+	DescriptionTagName = "description"
+	DefaultValueTagNam = "default"
+	ParamRequiredLabel = requiredTag
+)
+
 type DataType string
 
 func (m DataType) IsBaseType() bool {
@@ -50,16 +59,6 @@ const (
 
 // RouteMethodSeparator 路由分隔符，用于分割路由方法和路径
 const RouteMethodSeparator = "=|_0#0_|="
-
-const (
-	DefaultValidateTagName    = "validate"
-	GinValidateTagName        = "binding"
-	DefaultQueryTagName       = "query"
-	DefaultJsonTagName        = "json"
-	DefaultParamRequiredLabel = requiredTag
-	DescriptionTagName        = "description"
-	DefaultValueTagNam        = "default"
-)
 
 // 用于swagger的一些静态文件，来自FastApi
 const (

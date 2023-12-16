@@ -1,9 +1,7 @@
 package fastapi
 
 import (
-	"github.com/Chendemo12/fastapi-tool/logger"
 	"io"
-	"net"
 	"net/http"
 	"time"
 )
@@ -19,27 +17,31 @@ type MuxWrapper interface {
 	ShutdownWithTimeout(timeout time.Duration) error
 	// BindRoute 注册路由
 	BindRoute(method, path string, handler MuxHandler) error
-	// SetLogger 设置日志句柄
-	SetLogger(logger logger.Iface)
 }
 
 // MuxContext Web引擎的 Context，例如 fiber.Ctx, gin.Context
 type MuxContext interface {
 	Method() string                                // [重要方法]获得当前请求方法，取为为 http.MethodGet, http.MethodPost 等
 	Path() string                                  // [重要方法]获的当前请求的路由模式，而非请求Url
+	ContentType() string                           // Content-Type
 	Header(key, value string)                      // 添加响应头
-	SetCookie(cookie *http.Cookie)                 // 添加cookie
 	Cookie(name string) (string, error)            // 读取cookie
 	Query(key string, undefined ...string) string  // 解析查询参数
 	Params(key string, undefined ...string) string // 解析路径参数
 
+	BodyParser(obj any) error       // 反序列化到 obj 上,作用等同于Unmarshal
+	Validate(obj any) error         // 校验请求体, error应为 validator.ValidationErrors 类型
+	ShouldBind(obj any) error       // 反序列化并校验请求体 = BodyParser + Validate, error 应为validator.ValidationErrors 类型
+	BindQuery(obj any) error        // 绑定请求参数到 obj 上, error应为 validator.ValidationErrors 类型
+	ShouldBindNotImplemented() bool // mux 没有实现 ShouldBind 方法, 此情况下会采用替代实现
+	BindQueryNotImplemented() bool  // mux 没有实现 BindQuery 方法, 此情况下会采用替代实现
+
 	Set(key string, value any)                     // Set用于存储专门用于此上下文的新键/值对，如果以前没有使用c.Keys，它也会延迟初始化它
 	Get(key string, defaultValue ...string) string // 从上下文中读取键/值对
+	SetCookie(cookie *http.Cookie)                 // 添加cookie
 	Redirect(code int, location string) error      // 重定向
 
-	BodyParser(model any) error // 解析请求体并绑定到结构体model上,作用等同于Unmarshal
-	RemoteAddr() net.Addr       // RemoteIP解析来自Request的IP。RemoteAddr，规范化并返回IP(不带端口)。
-	ClientIP() string           // ClientIP实现了一个最佳努力算法来返回真实的客户端IP。
+	ClientIP() string // ClientIP实现了一个最佳努力算法来返回真实的客户端IP。
 
 	Status(code int)                                               // 设置响应状态码
 	Write(p []byte) (int, error)                                   // 写入响应字节流,当此方法执行完毕时应中断后续流程
