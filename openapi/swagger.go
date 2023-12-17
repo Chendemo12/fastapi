@@ -108,9 +108,9 @@ type ParameterSchema struct {
 
 // Parameter 路径参数或者查询参数
 type Parameter struct {
-	ParameterBase
 	Default any              `json:"default,omitempty" description:"默认值"`
 	Schema  *ParameterSchema `json:"schema,omitempty" description:"字段模型"`
+	ParameterBase
 }
 
 func (p *Parameter) FromQModel(model *QModel) *Parameter {

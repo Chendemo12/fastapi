@@ -11,11 +11,11 @@ import (
 // BaseModelMeta 所有数据模型 ModelSchema 的元信息
 type BaseModelMeta struct {
 	Param          *RouteParam
+	doc            map[string]any    `description:"模型文档"`
+	itemModel      *BaseModelMeta    `description:"当此模型为数组时, 记录内部元素的模型,同样可能是个数组"`
 	Description    string            `description:"模型描述"`
 	fields         []*BaseModelField `description:"结构体字段"`
-	doc            map[string]any    `description:"模型文档"`
 	innerModels    []*BaseModelField `description:"子模型, 对于未命名结构体，给其指定一个结构体名称"`
-	itemModel      *BaseModelMeta    `description:"当此模型为数组时, 记录内部元素的模型,同样可能是个数组"`
 	hasValidateTag bool              `description:"是否具有validate标签"`
 }
 
@@ -485,6 +485,7 @@ func (m *BaseModelMeta) HasValidateTag() bool { return m.hasValidateTag }
 // 基本数据模型, 此模型不可再分, 同时也是 ModelSchema 的字段类型
 // 但此类型不再递归记录,仅记录一个关联模型为基本
 type BaseModelField struct {
+	rType       reflect.Type      `description:"反射字段类型"`
 	Pkg         string            `description:"包名.结构体名.字段名"`
 	Name        string            `json:"name" description:"字段名称"`
 	Type        DataType          `json:"type" description:"openapi 数据类型"`
@@ -493,7 +494,6 @@ type BaseModelField struct {
 	ItemRef     string            `description:"子元素类型, 仅Type=array/object时有效"`
 	Exported    bool              `description:"是否是导出字段"`
 	Anonymous   bool              `description:"是否是嵌入字段"`
-	rType       reflect.Type      `description:"反射字段类型"`
 }
 
 // Schema 生成字段的详细描述信息
@@ -657,8 +657,8 @@ func (f *BaseModelField) InnerSchema() []SchemaIface {
 }
 
 type ArgsType struct {
-	field      reflect.StructField `description:"字段信息"`
 	fatherType reflect.Type        `description:"父结构体类型"`
+	field      reflect.StructField `description:"字段信息"`
 	depth      int                 `description:"层级数"`
 }
 

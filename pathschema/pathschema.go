@@ -197,8 +197,8 @@ func (s AddSuffix) Split(relativePath string) []string {
 //
 // 如果格式化方案为空，则效果等同于 Original
 type Composition struct {
-	schemas []RoutePathSchema
 	linker  string
+	schemas []RoutePathSchema
 }
 
 func (s *Composition) Name() string { return "Composition" }

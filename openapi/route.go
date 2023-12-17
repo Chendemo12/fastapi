@@ -12,26 +12,26 @@ import (
 
 // RouteSwagger 路由文档定义，所有类型的路由均包含此部分
 type RouteSwagger struct {
-	Url                 string         `json:"url" description:"完整请求路由"` // 此路由为函数定义时的路由
-	RelativePath        string         `json:"relative_path" description:"相对路由"`
-	Method              string         `json:"method" description:"请求方法"`
+	RequestModel        *BaseModelMeta `description:"请求体元数据"`
+	ResponseModel       *BaseModelMeta `description:"响应体元数据"`
 	Summary             string         `json:"summary" description:"摘要描述"`
+	Url                 string         `json:"url" description:"完整请求路由"`
 	Description         string         `json:"description" description:"详细描述"`
+	Method              string         `json:"method" description:"请求方法"`
+	RelativePath        string         `json:"relative_path" description:"相对路由"`
+	RequestContentType  string         `json:"request_content_type,omitempty" description:"请求体类型, 仅在 application/json 情况下才进行请求体校验"`
+	ResponseContentType string         `json:"response_content_type,omitempty" description:"响应体类型, 仅在 application/json 情况下才进行响应体校验"`
+	Api                 string         `description:"用作唯一标识"`
 	Tags                []string       `json:"tags" description:"路由标签"`
 	PathFields          []*QModel      `json:"-" description:"路径参数"`
 	QueryFields         []*QModel      `json:"-" description:"查询参数"`
-	RequestModel        *BaseModelMeta `description:"请求体元数据"` // 请求体也只有一个, 当 method 为 GET和DELETE 时无请求体
-	ResponseModel       *BaseModelMeta `description:"响应体元数据"` // 响应体只有一个
-	RequestContentType  string         `description:"请求体类型, 仅在 application/json 情况下才进行请求体校验"`
-	ResponseContentType string         `description:"响应体类型, 仅在 application/json 情况下才进行响应体校验"`
 	Deprecated          bool           `json:"deprecated" description:"是否禁用"`
-	api                 string         // 用作唯一标识
 }
 
 func (r *RouteSwagger) Init() (err error) {
 	r.RequestContentType = MIMEApplicationJSON
 	r.ResponseContentType = MIMEApplicationJSON
-	r.api = CreateRouteIdentify(r.Method, r.Url)
+	r.Api = CreateRouteIdentify(r.Method, r.Url)
 
 	// 由于查询参数和请求体需要从方法入参中提取, 以及响应体需要从方法出参中提取,因此在上层进行解析
 	if r.ResponseModel == nil { // 返回值不允许为nil, 此处错误为上层忘记初始化模型参数
@@ -124,20 +124,20 @@ func (r *RouteSwagger) scanPath() (err error) {
 	return
 }
 
-func (r *RouteSwagger) Id() string { return r.api }
+func (r *RouteSwagger) Id() string { return r.Api }
 
 // RouteParam 路由参数, 具体包含查询参数,路径参数,请求体参数和响应体参数
 type RouteParam struct {
-	Prototype      reflect.Type   // 直接反射后获取的类型,未提取指针指向的类型
-	PrototypeKind  reflect.Kind   // 原始类型的参数类型
-	IsPtr          bool           // 标识 Prototype 是否是指针类型
-	IsNil          bool           // TODO Future: what to do
-	Name           string         // 名称
-	Pkg            string         // 包含包名,如果是结构体则为: 包名.结构体名, 处理了指针
-	DataType       DataType       // 如果是指针,则为指针指向的类型定义
-	RouteParamType RouteParamType // 参数路由类型, 并非完全准确, 只在限制范围内访问
-	Index          int            // 参数处于方法中的原始位置,可通过 method.RouteType.In(Index) 或 method.RouteType.Out(Index) 反向获得此参数
-	T              ModelSchema    // TODO Future-231126.5: 泛型路由注册
+	Prototype      reflect.Type   `description:"直接反射后获取的类型,未提取指针指向的类型"`
+	T              ModelSchema    `description:"泛型路由"`
+	Name           string         `description:"名称"`
+	Pkg            string         `description:"包含包名,如果是结构体则为: 包名.结构体名, 处理了指针"`
+	DataType       DataType       `description:"如果是指针,则为指针指向的类型定义"`
+	RouteParamType RouteParamType `description:"参数路由类型, 并非完全准确, 只在限制范围内访问"`
+	PrototypeKind  reflect.Kind   `description:"原始类型的参数类型"`
+	Index          int            `description:"参数处于方法中的原始位置,可通过 method.RouteType.In(Index) 或 method.RouteType.Out(Index) 反向获得此参数"`
+	IsPtr          bool           `description:"标识 Prototype 是否是指针类型"`
+	IsNil          bool           `description:"todo"`
 }
 
 func NewRouteParam(rt reflect.Type, index int, paramType RouteParamType) *RouteParam {

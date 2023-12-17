@@ -8,16 +8,16 @@ import (
 
 // QModel 查询参数或路径参数元数据, 此类型对应于swagger中的: openapi.Parameter
 type QModel struct {
-	Name      string            `json:"name,omitempty" description:"字段名称"` // 如果是结构体参数则为字段名
-	Kind      reflect.Kind      `json:"Kind,omitempty" description:"反射类型"`
-	DataType  DataType          `json:"data_type,omitempty" description:"openapi 数据类型"`
-	Required  bool              `json:"required,omitempty" description:"是否必须"`
-	Tag       reflect.StructTag `json:"tag,omitempty" description:"TAG"` // 仅在结构体作为查询参数时有效
-	InPath    bool              `json:"in_path,omitempty" description:"是否是路径参数"`
-	InStruct  bool              `json:"in_struct,omitempty" description:"是否是结构体字段参数"`
-	jsonName  string
-	queryName string
-	desc      string
+	Name     string            `json:"name,omitempty" description:"字段名称"`
+	DataType DataType          `json:"data_type,omitempty" description:"openapi 数据类型"`
+	Tag      reflect.StructTag `json:"tag,omitempty" description:"TAG"`
+	JName    string            `json:"json_name,omitempty" description:"json标签名"`
+	QName    string            `json:"query_name,omitempty" description:"query标签名"`
+	Desc     string            `json:"description,omitempty" description:"参数描述"`
+	Kind     reflect.Kind      `json:"Kind,omitempty" description:"反射类型"`
+	Required bool              `json:"required,omitempty" description:"是否必须"`
+	InPath   bool              `json:"in_path,omitempty" description:"是否是路径参数"`
+	InStruct bool              `json:"in_struct,omitempty" description:"是否是结构体字段参数"`
 }
 
 // Init 解析并缓存字段名
@@ -28,13 +28,13 @@ func (q *QModel) Init() (err error) {
 		q.Required = IsFieldRequired(q.Tag)
 	}
 	// 解析并缓存字段名
-	q.desc = utils.QueryFieldTag(q.Tag, DescriptionTagName, q.Name)
-	q.queryName = utils.QueryFieldTag(q.Tag, QueryTagName, utils.QueryFieldTag(q.Tag, JsonTagName, q.SchemaTitle()))
+	q.Desc = utils.QueryFieldTag(q.Tag, DescriptionTagName, q.Name)
+	q.QName = utils.QueryFieldTag(q.Tag, QueryTagName, utils.QueryFieldTag(q.Tag, JsonTagName, q.SchemaTitle()))
 
 	if q.InStruct {
-		q.jsonName = q.queryName
+		q.JName = q.QName
 	} else {
-		q.jsonName = utils.QueryFieldTag(q.Tag, JsonTagName, q.SchemaTitle())
+		q.JName = utils.QueryFieldTag(q.Tag, JsonTagName, q.SchemaTitle())
 	}
 
 	return
@@ -46,10 +46,10 @@ func (q *QModel) SchemaPkg() string { return q.Name }
 
 // JsonName 对于查询参数结构体，其文档名称 tag 默认为 query
 // query -> json -> fieldName
-func (q *QModel) JsonName() string { return q.jsonName }
+func (q *QModel) JsonName() string { return q.JName }
 
 // SchemaDesc 结构体文档注释
-func (q *QModel) SchemaDesc() string { return q.desc }
+func (q *QModel) SchemaDesc() string { return q.Desc }
 
 // SchemaType 模型类型
 func (q *QModel) SchemaType() DataType { return q.DataType }

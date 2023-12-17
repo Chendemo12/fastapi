@@ -32,12 +32,12 @@ type RouteIface interface {
 
 // ParamBinder 参数验证模型
 type ParamBinder struct {
-	Title          string `json:"title,omitempty"`
-	RouteParamType openapi.RouteParamType
 	Method         ModelBindMethod        `json:"-"`
-	QModel         *openapi.QModel        `json:"-"` // 以下字段三选一
+	QModel         *openapi.QModel        `json:"-"`
 	RequestModel   *openapi.BaseModelMeta `json:"-"`
 	ResponseModel  *openapi.BaseModelMeta `json:"-"`
+	Title          string                 `json:"title,omitempty"`
+	RouteParamType openapi.RouteParamType
 }
 
 // BaseModel 基本数据模型, 对于上层的路由定义其请求体和响应体都应为继承此结构体的结构体

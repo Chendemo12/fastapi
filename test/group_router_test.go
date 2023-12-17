@@ -155,10 +155,10 @@ type CPU struct {
 }
 
 type BoardCard struct {
-	Serial    string    `json:"serial" validate:"required" description:"序列号"`
-	PcieSlots int       `json:"pcie_slots"`
 	Cpu       *CPU      `json:"cpu"`
+	Serial    string    `json:"serial" validate:"required" description:"序列号"`
 	Tunnels   []*Tunnel `json:"tunnels" description:"通道信息"`
+	PcieSlots int       `json:"pcie_slots"`
 }
 
 func (r *ResponseModelRouter) ReturnNormalStructGet(c *fastapi.Context) (*BoardCard, error) {
@@ -192,8 +192,8 @@ func (r *ResponseModelRouter) GetTunnels(c *fastapi.Context) ([]*Tunnel, error) 
 }
 
 type Child struct {
-	Age  int
 	Name string
+	Age  int
 }
 
 func (r *ResponseModelRouter) GetChildren(c *fastapi.Context) ([]*Child, error) {
@@ -268,14 +268,14 @@ type IPModel struct {
 func (m IPModel) SchemaDesc() string { return "IP信息" }
 
 type DomainRecord struct {
-	Timestamp int64 `json:"timestamp" description:"时间戳"`
-	IP        struct {
+	IP struct {
 		Record *IPModel `json:"record" description:"解析记录"`
 	} `json:"ip"`
 	Addresses []struct {
 		Host string `json:"host"`
 		Port string `json:"port"`
 	} `json:"addresses" description:"主机地址"`
+	Timestamp int64 `json:"timestamp" description:"时间戳"`
 }
 
 func (r *ResponseModelRouter) GetMoreComplexModel(c *fastapi.Context) (*DomainRecord, error) {

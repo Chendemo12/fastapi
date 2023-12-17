@@ -413,13 +413,13 @@ func TestUnixDash_Split(t *testing.T) {
 
 func TestComposition_Name(t *testing.T) {
 	type fields struct {
-		schemas []RoutePathSchema
 		linker  string
+		schemas []RoutePathSchema
 	}
 	tests := []struct {
 		name   string
-		fields fields
 		want   string
+		fields fields
 	}{
 		{
 			name:   "Composition",
@@ -442,8 +442,8 @@ func TestComposition_Name(t *testing.T) {
 
 func TestComposition_Split(t *testing.T) {
 	type fields struct {
-		schemas []RoutePathSchema
 		linker  string
+		schemas []RoutePathSchema
 	}
 	type args struct {
 		relativePath string
@@ -580,9 +580,9 @@ func TestLowercaseFirstLetter(t *testing.T) {
 
 func TestFormat(t *testing.T) {
 	type args struct {
+		schema       RoutePathSchema
 		prefix       string
 		relativePath string
-		schema       RoutePathSchema
 	}
 	tests := []struct {
 		name string

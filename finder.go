@@ -9,10 +9,10 @@ type Finder[T RouteIface] interface {
 }
 
 type IndexFinder[T RouteIface] struct {
-	prototype  T
-	elementNum int
+	prototype  T                   `description:"todo"`
+	calc       func(id string) int `description:"输入索引获得元素所在集合的下标"`
 	cache      []T
-	calc       func(id string) int // 输入索引获得元素所在集合的下标
+	elementNum int
 }
 
 func (f *IndexFinder[T]) Init(items []T) {
@@ -75,9 +75,9 @@ func (f *IndexFinder[T]) crc(data []byte) int {
 }
 
 type SimpleFinder[T RouteIface] struct {
-	prototype  T // 空值
-	elementNum int
+	prototype  T
 	cache      []T
+	elementNum int
 }
 
 func (s *SimpleFinder[T]) Init(items []T) {

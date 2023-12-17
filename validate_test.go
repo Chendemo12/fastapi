@@ -19,9 +19,9 @@ func TestQBinder_Bind(t *testing.T) {
 		obj    any
 	}
 	tests := []struct {
-		name    string
-		fields  fields
 		args    args
+		fields  fields
+		name    string
 		wantErr bool
 	}{
 		{

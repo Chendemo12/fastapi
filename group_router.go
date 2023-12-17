@@ -128,10 +128,10 @@ type Scanner interface {
 // GroupRouterMeta 反射构建路由组的元信息
 type GroupRouterMeta struct {
 	router      GroupRouter
-	routes      []*GroupRoute
-	pkg         string // 包名.结构体名
-	tags        []string
 	routerValue reflect.Value
+	pkg         string `description:"结构体.包名"`
+	routes      []*GroupRoute
+	tags        []string
 }
 
 // NewGroupRouteMeta 构建一个路由组的主入口
@@ -376,17 +376,17 @@ const (
 type GroupRoute struct {
 	swagger        *openapi.RouteSwagger
 	group          *GroupRouterMeta
-	method         reflect.Method        // 路由方法所属的结构体方法, 用于API调用
-	index          int                   // 当前方法所属的结构体方法的偏移量
-	handlerInNum   int                   // 路由函数入参数量, 入参数量可以不固定,但第一个必须是 Context，如果>1:则最后一个视为请求体(Post/Patch/Post)或查询参数(Get/Delete)
-	handlerOutNum  int                   // 路由函数出参数量, 出参数量始终为2,最后一个必须是 error
-	structQuery    int                   // 结构体查询参数在 inParams 中的索引
-	inParams       []*openapi.RouteParam // 不包含第一个 Context 但包含最后一个“查询参数结构体”或“请求体”, 因此 handlerInNum - len(inParams) = 1
-	outParams      *openapi.RouteParam   // 不包含最后一个 error, 因此只有一个出参
-	queryParamMode QueryParamMode        // 查询参数的定义模式
-	queryBinders   []*ParamBinder        // 查询参数，路径参数的校验器，不存在参数则为 NothingBindMethod
 	requestBinder  *ParamBinder          // 请求题校验器，不存在请求题则为 NothingBindMethod
 	responseBinder *ParamBinder          // 响应体校验器，响应体肯定存在 ModelBindMethod
+	outParams      *openapi.RouteParam   // 不包含最后一个 error, 因此只有一个出参
+	queryParamMode QueryParamMode        // 查询参数的定义模式
+	method         reflect.Method        // 路由方法所属的结构体方法, 用于API调用
+	queryBinders   []*ParamBinder        // 查询参数，路径参数的校验器，不存在参数则为 NothingBindMethod
+	inParams       []*openapi.RouteParam // 不包含第一个 Context 但包含最后一个“查询参数结构体”或“请求体”, 因此 handlerInNum - len(inParams) = 1
+	index          int                   // 当前方法所属的结构体方法的偏移量
+	structQuery    int                   // 结构体查询参数在 inParams 中的索引
+	handlerInNum   int                   // 路由函数入参数量, 入参数量可以不固定,但第一个必须是 Context，如果>1:则最后一个视为请求体(Post/Patch/Post)或查询参数(Get/Delete)
+	handlerOutNum  int                   // 路由函数出参数量, 出参数量始终为2,最后一个必须是 error
 }
 
 func (r *GroupRoute) Id() string { return r.swagger.Id() }
