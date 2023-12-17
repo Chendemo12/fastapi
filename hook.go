@@ -149,6 +149,7 @@ func (c *Context) write() error {
 var requestValidateLinks = []func(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError{
 	pathParamsValidate,  // 路径参数校验
 	queryParamsValidate, // 查询参数校验
+	queryStructValidate, // 结构体查询参数校验
 	requestBodyValidate, // 请求体自动校验
 }
 
@@ -162,8 +163,9 @@ func pathParamsValidate(c *Context, route RouteIface, stopImmediately bool) []*o
 	var ves []*openapi.ValidationError
 	// 路径参数校验
 	for _, p := range route.Swagger().PathFields {
-		value := c.muxCtx.Params(p.SchemaTitle(), "")
-		c.pathFields[p.SchemaTitle()] = value // 存储路径参数，即便是空字符串
+		// 对于路径参数，JsonName 和 SchemaTitle 一致
+		value := c.muxCtx.Params(p.JsonName(), "")
+		c.pathFields[p.JsonName()] = value // 存储路径参数，即便是空字符串
 
 		if value == "" { // 路径参数都是必须的
 			ves = append(ves, &openapi.ValidationError{
@@ -194,21 +196,21 @@ func pathParamsValidate(c *Context, route RouteIface, stopImmediately bool) []*o
 //		如果 stopImmediately=false, 则全部校验完成后再统一返回
 //		反之则在遇到第一个错误后就立刻返回错误消息
 //
-//	@return	*Response 校验结果, 若为nil则校验通过
+//	@return []*openapi.ValidationError 校验结果, 若为nil则校验通过
 func queryParamsValidate(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError {
 	var ves []*openapi.ValidationError
 
 	// 验证是否缺少必选参数
 	for _, q := range route.Swagger().QueryFields {
-		value := c.muxCtx.Query(q.SchemaTitle(), "")
+		value := c.muxCtx.Query(q.JsonName(), "")
 		if value != "" {
 			// 记录传入参数值，如果是空字符串则不记录，否则会影响 Query 方法的使用
-			c.queryFields[q.SchemaTitle()] = value
+			c.queryFields[q.JsonName()] = value
 		} else {
 			if q.IsRequired() {
 				// 但是此查询参数设置为必选
 				ves = append(ves, &openapi.ValidationError{
-					Loc:  []string{"query", q.SchemaTitle()},
+					Loc:  []string{"query", q.JsonName()},
 					Msg:  QueryPsIsEmpty,
 					Type: string(q.DataType),
 					Ctx:  whereClientError,
@@ -227,7 +229,7 @@ func queryParamsValidate(c *Context, route RouteIface, stopImmediately bool) []*
 	// 根据数据类型转换并校验参数值，比如: 定义为int类型，但是参数值为“abc”，虽然是存在的但是不合法
 	// 转换规则按照 QModel 定义进行，只有转换成功后才进行校验
 	for _, binder := range route.QueryBinders() {
-		v, ok := c.queryFields[binder.SchemaTitle()]
+		v, ok := c.queryFields[binder.QModel.JsonName()]
 		if !ok { // 此参数值不存在
 			continue
 		}
@@ -236,7 +238,7 @@ func queryParamsValidate(c *Context, route RouteIface, stopImmediately bool) []*
 		value, err := binder.Method.Validate(c.routeCtx, sv)
 		if err != nil {
 			ves = append(ves, &openapi.ValidationError{
-				Loc:  []string{"query", binder.SchemaTitle()},
+				Loc:  []string{"query", binder.QModel.JsonName()},
 				Msg:  fmt.Sprintf("value: '%s' is not a number", sv),
 				Type: string(binder.QModel.SchemaType()),
 				Ctx:  whereClientError,
@@ -245,34 +247,34 @@ func queryParamsValidate(c *Context, route RouteIface, stopImmediately bool) []*
 				break
 			}
 		} else {
-			c.queryFields[binder.SchemaTitle()] = value
+			c.queryFields[binder.QModel.JsonName()] = value
 		}
 	}
 
-	if len(ves) > 0 { // 存在类型不匹配或范围越界参数
-		return ves
+	return ves
+}
+
+// 验证结构体查询参数(如果存在)
+func queryStructValidate(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError {
+	if !route.HasStructQuery() { // 不存在
+		return nil
 	}
 
-	// 验证结构体查询参数(如果存在)
-	obj := route.NewQueryModel()
-	if obj != nil {
-		if c.muxCtx.BindQueryNotImplemented() {
-			// 采用自定义实现
-			ves = BindQuery(c, route)
-		} else {
-			err := c.muxCtx.BindQuery(obj)
-			ves = ParseValidatorError(err, openapi.RouteParamQuery)
-		}
-		if len(ves) > 0 {
-			return ves
-		}
+	obj := route.NewStructQuery()
+	var ves []*openapi.ValidationError
+	if c.muxCtx.BindQueryNotImplemented() {
+		// 采用自定义实现
+		ves = BindStructQuery(c, route)
+	} else {
+		err := c.muxCtx.BindQuery(obj)
+		ves = ParseValidatorError(err, openapi.RouteParamQuery)
 	}
-	return nil
+	c.queryStruct = obj // 关联参数
+
+	return ves
 }
 
 // 请求体校验
-//
-//	@return	*Response 校验结果, 若为nil则校验通过
 func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError {
 	var instance any
 	var ves []*openapi.ValidationError
@@ -293,6 +295,7 @@ func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) []*
 			if err != nil {
 				c.Logger().Error(err)
 				ve := ParseJsoniterError(err, openapi.RouteParamRequest)
+				ve.Ctx[modelDescLabel] = route.Swagger().RequestModel.SchemaDesc()
 				ves = append(ves, ve)
 			} else {
 				// 反序列化成功,校验模型
@@ -301,6 +304,9 @@ func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) []*
 		} else {
 			err = c.muxCtx.ShouldBind(instance)
 			ves = ParseValidatorError(err, openapi.RouteParamRequest)
+			if len(ves) > 0 {
+				ves[0].Ctx[modelDescLabel] = route.Swagger().RequestModel.SchemaDesc()
+			}
 		}
 	}
 
@@ -308,14 +314,15 @@ func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) []*
 }
 
 // 返回值校验root入口
-//
-//	@return	*Response 校验结果, 若校验不通过则修改 Response.StatusCode 和 Response.Content
 func responseValidate(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError {
 	// 仅校验“非422的JSONResponse”
 	if c.response.StatusCode != http.StatusUnprocessableEntity && c.response.Type == JsonResponseType {
 		// 内部返回的 422 也不再校验
 		var ves []*openapi.ValidationError
 		_, ves = route.ResponseBinder().Method.Validate(c.routeCtx, c.response.Content)
+		if len(ves) > 0 {
+			ves[0].Ctx[modelDescLabel] = route.Swagger().ResponseModel.SchemaDesc()
+		}
 		return ves
 	}
 

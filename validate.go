@@ -29,12 +29,10 @@ var defaultValidator *validator.Validate
 var structQueryBind *StructQueryBind
 
 var emptyLocList = []string{"response"}
-var whereServerError = map[string]any{"where error": "server"}
-var whereClientError = map[string]any{"where error": "client"}
-
-type ValidateMethod interface {
-	V(obj any) *openapi.ValidationError
-}
+var modelDescLabel = "param description"
+var whereErrorLabel = "where error"
+var whereServerError = map[string]any{whereErrorLabel: "server"}
+var whereClientError = map[string]any{whereErrorLabel: "client"}
 
 type ModelBindMethod interface {
 	Name() string // 名称
@@ -288,16 +286,18 @@ func (m *BoolBindMethod) New() any {
 // JsonBindMethod json数据类型验证器,适用于泛型路由
 type JsonBindMethod[T any] struct {
 	Title          string `json:"title,omitempty"`
+	ModelDesc      string `json:"model_desc,omitempty"`
 	RouteParamType openapi.RouteParamType
 }
 
 func (m *JsonBindMethod[T]) where() map[string]any {
 	var where map[string]any
 	if m.RouteParamType == openapi.RouteParamResponse {
-		where = whereServerError
+		where[whereErrorLabel] = whereServerError[whereErrorLabel]
 	} else {
-		where = whereClientError
+		where[whereErrorLabel] = whereClientError[whereErrorLabel]
 	}
+	where[modelDescLabel] = m.ModelDesc
 
 	return where
 }
@@ -482,6 +482,16 @@ func modelCannotBeArrayResponse(name ...string) *openapi.ValidationError {
 	return ve
 }
 
+// =================================== 👇 methods ===================================
+
+func newValidateErrorCtx(where map[string]any, key, value string) map[string]any {
+	m := map[string]any{}
+	m[whereErrorLabel] = where[whereErrorLabel]
+	m[key] = value
+
+	return m
+}
+
 // ParseJsoniterError 将jsoniter 的反序列化错误转换成 接口错误类型
 func ParseJsoniterError(err error, loc openapi.RouteParamType) *openapi.ValidationError {
 	if err == nil {
@@ -549,7 +559,7 @@ func ParseValidatorError(err error, loc openapi.RouteParamType) []*openapi.Valid
 	if ok := errors.As(err, &vErr); ok { // Validator的模型验证错误
 		for _, verr := range vErr {
 			ves = append(ves, &openapi.ValidationError{
-				Ctx:  where,
+				Ctx:  newValidateErrorCtx(where, "error tag", verr.Tag()),
 				Msg:  verr.Error(),
 				Type: verr.Type().String(),
 				Loc:  []string{string(loc), verr.Field()},

@@ -6,23 +6,37 @@ import (
 	"unicode"
 )
 
-// QModel 查询参数或路径参数元数据, 此类型会进一步转换为 openapi.Parameter
+// QModel 查询参数或路径参数元数据, 此类型对应于swagger中的: openapi.Parameter
 type QModel struct {
-	Name     string            `json:"name,omitempty" description:"字段名称"` // 如果是通过结构体生成,则为json标签名称
-	Kind     reflect.Kind      `json:"Kind,omitempty" description:"反射类型"`
-	DataType DataType          `json:"data_type,omitempty" description:"openapi 数据类型"`
-	Required bool              `json:"required,omitempty" description:"是否必须"`
-	Tag      reflect.StructTag `json:"tag,omitempty" description:"TAG"` // 仅在结构体作为查询参数时有效
-	InPath   bool              `json:"in_path,omitempty" description:"是否是路径参数"`
-	InStruct bool              `json:"in_struct,omitempty" description:"是否是结构体字段参数"`
+	Name      string            `json:"name,omitempty" description:"字段名称"` // 如果是结构体参数则为字段名
+	Kind      reflect.Kind      `json:"Kind,omitempty" description:"反射类型"`
+	DataType  DataType          `json:"data_type,omitempty" description:"openapi 数据类型"`
+	Required  bool              `json:"required,omitempty" description:"是否必须"`
+	Tag       reflect.StructTag `json:"tag,omitempty" description:"TAG"` // 仅在结构体作为查询参数时有效
+	InPath    bool              `json:"in_path,omitempty" description:"是否是路径参数"`
+	InStruct  bool              `json:"in_struct,omitempty" description:"是否是结构体字段参数"`
+	jsonName  string
+	queryName string
+	desc      string
 }
 
+// Init 解析并缓存字段名
 func (q *QModel) Init() (err error) {
 	if q.InPath {
 		q.Required = true // 路径参数都是必须的
 	} else {
 		q.Required = IsFieldRequired(q.Tag)
 	}
+	// 解析并缓存字段名
+	q.desc = utils.QueryFieldTag(q.Tag, DescriptionTagName, q.Name)
+	q.queryName = utils.QueryFieldTag(q.Tag, QueryTagName, utils.QueryFieldTag(q.Tag, JsonTagName, q.SchemaTitle()))
+
+	if q.InStruct {
+		q.jsonName = q.queryName
+	} else {
+		q.jsonName = utils.QueryFieldTag(q.Tag, JsonTagName, q.SchemaTitle())
+	}
+
 	return
 }
 
@@ -30,15 +44,12 @@ func (q *QModel) SchemaTitle() string { return q.Name }
 
 func (q *QModel) SchemaPkg() string { return q.Name }
 
-// JsonName 对于查询参数结构体，其文档名称 tag 为 query
-func (q *QModel) JsonName() string {
-	return utils.QueryFieldTag(q.Tag, QueryTagName, q.Name)
-}
+// JsonName 对于查询参数结构体，其文档名称 tag 默认为 query
+// query -> json -> fieldName
+func (q *QModel) JsonName() string { return q.jsonName }
 
 // SchemaDesc 结构体文档注释
-func (q *QModel) SchemaDesc() string {
-	return utils.QueryFieldTag(q.Tag, DescriptionTagName, q.Name)
-}
+func (q *QModel) SchemaDesc() string { return q.desc }
 
 // SchemaType 模型类型
 func (q *QModel) SchemaType() DataType { return q.DataType }
@@ -92,6 +103,7 @@ func StructToQModels(rt reflect.Type) []*QModel {
 	}
 
 	// 当此model作为查询参数时，此struct的每一个字段都将作为一个查询参数
+	// 对于字段类型，仅支持基本类型和time类型，不能为结构体类型
 	m := make([]*QModel, 0, rt.NumField())
 	for i := 0; i < rt.NumField(); i++ {
 		field := rt.Field(i)
@@ -107,6 +119,7 @@ func StructToQModels(rt reflect.Type) []*QModel {
 			continue
 		}
 
+		// TODO: Future-231126.3: 请求体不支持time.Time;
 		m = append(m, &QModel{
 			Name:     field.Name,
 			Tag:      field.Tag,

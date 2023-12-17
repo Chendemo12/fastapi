@@ -88,8 +88,12 @@ func (r *GenericRoute[T]) NewRequestModel() any {
 	return nil
 }
 
-func (r *GenericRoute[T]) NewQueryModel() any {
+func (r *GenericRoute[T]) NewStructQuery() any {
 	return nil
+}
+
+func (r *GenericRoute[T]) HasStructQuery() bool {
+	return true
 }
 
 func (r *GenericRoute[T]) Call(ctx *Context) {

@@ -18,10 +18,10 @@ type RouteSwagger struct {
 	Summary       string         `json:"summary" description:"摘要描述"`
 	Description   string         `json:"description" description:"详细描述"`
 	Tags          []string       `json:"tags" description:"路由标签"`
+	PathFields    []*QModel      `json:"-" description:"路径参数"`
+	QueryFields   []*QModel      `json:"-" description:"查询参数"`
 	RequestModel  *BaseModelMeta `description:"请求体元数据"` // 请求体也只有一个, 当 method 为 GET和DELETE 时无请求体
 	ResponseModel *BaseModelMeta `description:"响应体元数据"` // 响应体只有一个
-	QueryFields   []*QModel      `json:"-" description:"查询参数"`
-	PathFields    []*QModel      `json:"-" description:"路径参数"`
 	Deprecated    bool           `json:"deprecated" description:"是否禁用"`
 	api           string         // 用作唯一标识
 }
@@ -90,14 +90,14 @@ func (r *RouteSwagger) scanPath() (err error) {
 
 		// GET: /api/clipboard/:day?num  	=> day为路径参数,num为查询参数
 		// GET: /api/clipboard/:day/?num	=> day为路径参数,num为查询参数
-		qm := &QModel{DataType: StringType, InPath: false}
+		qm := &QModel{DataType: StringType, Kind: reflect.String, InPath: false, InStruct: false}
 
 		if strings.HasPrefix(p, pathschema.OptionalQueryParamPrefix) {
 			// 发现查询参数
 			// 通过路由组定义的方法即便通过了重载也不应包含查询参数, 但泛型路由定义方式将支持
 			qm.Name = p[1:]
-			// 通过Tag标识这不是一个必须的参数
-			qm.Tag = reflect.StructTag(`json:"` + qm.Name + `,omitempty"`)
+			// 通过Tag标识这不是一个必须的参数, `json:"eventType,omitempty" query:"eventType"`
+			qm.Tag = reflect.StructTag(fmt.Sprintf(`json:"%s,omitempty" %s:"%s"`, qm.Name, QueryTagName, qm.Name))
 
 			r.QueryFields = append(r.QueryFields, qm)
 			continue
@@ -107,7 +107,7 @@ func (r *RouteSwagger) scanPath() (err error) {
 			// 识别到路径参数
 			qm.InPath = true
 			qm.Name = p[1:]
-			// 通过Tag标识这是一个必须的参数: `validate:"required"`
+			// 通过Tag标识这是一个必须的参数: `json:"eventType" validate:"required"`
 			qm.Tag = reflect.StructTag(fmt.Sprintf(`json:"%s" %s:"%s"`,
 				qm.Name, ValidateTagName, ParamRequiredLabel))
 

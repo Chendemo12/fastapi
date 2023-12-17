@@ -23,8 +23,9 @@ type RouteIface interface {
 	RequestBinders() *ParamBinder             // 请求体的处理接口,请求体也只有一个
 	ResponseBinder() *ParamBinder             // 响应体的处理接口,响应体只有一个
 	NewInParams(ctx *Context) []reflect.Value // 创建一个完整的函数入参实例列表, 此方法会在完成请求参数校验 RequestBinders，QueryBinders 之后执行
-	NewQueryModel() any                       // 创建一个结构体查询参数实例,对于POST/PATCH/PUT, 即为 NewInParams 的最后一个元素; 对于GET/DELETE则为nil
+	NewStructQuery() any                      // 创建一个结构体查询参数实例,对于POST/PATCH/PUT, 即为 NewInParams 的最后一个元素; 对于GET/DELETE则为nil
 	NewRequestModel() any                     // 创建一个请求体实例,对于POST/PATCH/PUT, 即为 NewInParams 的最后一个元素; 对于GET/DELETE则为nil
+	HasStructQuery() bool                     // 是否存在结构体查询参数，如果存在则会调用 NewStructQuery 获得结构体实例
 	Call(ctx *Context)                        // 调用API, 需要将响应结果写入 Response 内
 	Id() string
 }
@@ -38,8 +39,6 @@ type ParamBinder struct {
 	RequestModel   *openapi.BaseModelMeta `json:"-"`
 	ResponseModel  *openapi.BaseModelMeta `json:"-"`
 }
-
-func (b *ParamBinder) SchemaTitle() string { return b.Title }
 
 // BaseModel 基本数据模型, 对于上层的路由定义其请求体和响应体都应为继承此结构体的结构体
 // 在 OpenApi 文档模型中,此模型的类型始终为 "object"
@@ -56,9 +55,9 @@ func (b *BaseModel) IsRequired() bool { return true }
 
 // ================================================================================
 
-// BindQuery 将查询参数绑定到一个结构体上
-func BindQuery(c *Context, route RouteIface) []*openapi.ValidationError {
-	obj := route.NewQueryModel()
+// BindStructQuery 将查询参数绑定到一个结构体上
+func BindStructQuery(c *Context, route RouteIface) []*openapi.ValidationError {
+	obj := route.NewStructQuery()
 	if obj == nil {
 		return nil
 	}
@@ -66,9 +65,9 @@ func BindQuery(c *Context, route RouteIface) []*openapi.ValidationError {
 	values := map[string]any{}
 	for _, q := range route.Swagger().QueryFields {
 		if q.InStruct {
-			v, ok := c.queryFields[q.SchemaTitle()]
+			v, ok := c.queryFields[q.JsonName()]
 			if ok {
-				values[q.SchemaTitle()] = v
+				values[q.JsonName()] = v
 			}
 		}
 	}
@@ -158,9 +157,9 @@ func InferBinderMethod(param openapi.SchemaIface, prototypeKind reflect.Kind, mo
 		binder = &NothingBindMethod{}
 	case reflect.Struct:
 		if modelType == openapi.RouteParamResponse {
-			binder = &JsonBindMethod[any]{Title: param.SchemaTitle(), RouteParamType: modelType}
+			binder = &JsonBindMethod[any]{Title: param.SchemaTitle(), ModelDesc: param.SchemaDesc(), RouteParamType: modelType}
 		} else {
-			binder = &JsonBindMethod[any]{Title: param.SchemaTitle(), RouteParamType: modelType}
+			binder = &JsonBindMethod[any]{Title: param.SchemaTitle(), ModelDesc: param.SchemaDesc(), RouteParamType: modelType}
 		}
 	default:
 		binder = &NothingBindMethod{}
