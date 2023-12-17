@@ -251,6 +251,22 @@ func (r *RouteParam) QueryName() string {
 	return fmt.Sprintf("%s%d", r.Name, r.Index)
 }
 
+// ElemKind 获得子元素的真实类型
+// 如果是指针类型,则上浮获得实际元素的类型; 如果是数组/切片类型, 则获得元素的类型
+// 如果是 [][]any 类型的,则为[]any类型
+func (r *RouteParam) ElemKind() reflect.Kind {
+	rt := r.CopyPrototype()
+	if rt.Kind() == reflect.Array || rt.Kind() == reflect.Slice {
+		return rt.Elem().Kind()
+	}
+
+	for rt.Kind() == reflect.Ptr {
+		rt = rt.Elem()
+	}
+
+	return rt.Kind()
+}
+
 // RouteParamType 路由参数类型
 type RouteParamType string
 

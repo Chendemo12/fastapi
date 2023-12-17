@@ -61,6 +61,7 @@ func (c *Context) beforeWorkflow(route RouteIface, stopImmediately bool) {
 	for _, link := range requestValidateLinks {
 		ves = link(c, route, stopImmediately)
 		if len(ves) > 0 { // 当任意环节校验失败时,即终止下文环节
+			c.response.Type = JsonResponseType
 			c.response.StatusCode = http.StatusUnprocessableEntity
 			c.response.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
 			c.response.Content = &openapi.HTTPValidationError{Detail: ves}
@@ -278,7 +279,7 @@ func structQueryValidate(c *Context, route RouteIface, stopImmediately bool) []*
 		ves = structQueryBind.Bind(values, instance)
 	} else {
 		err := c.muxCtx.BindQuery(instance)
-		ves = ParseValidatorError(err, openapi.RouteParamQuery)
+		ves = ParseValidatorError(err, openapi.RouteParamQuery, "")
 	}
 
 	c.queryStruct = instance // 关联参数
@@ -304,13 +305,11 @@ func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) []*
 	}
 
 	if instance != nil {
-		c.response.Type = JsonResponseType
 		// 存在请求体,首先进行反序列化,之后校验参数是否合法,校验通过后绑定到 Context
 		if c.muxCtx.ShouldBindNotImplemented() {
 			err = c.muxCtx.BodyParser(instance)
 			if err != nil {
-				c.Logger().Error(err)
-				ve := ParseJsoniterError(err, openapi.RouteParamRequest)
+				ve := ParseJsoniterError(err, openapi.RouteParamRequest, route.Swagger().RequestModel.SchemaTitle())
 				ve.Ctx[modelDescLabel] = route.Swagger().RequestModel.SchemaDesc()
 				ves = append(ves, ve)
 			} else {
@@ -319,7 +318,7 @@ func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) []*
 			}
 		} else {
 			err = c.muxCtx.ShouldBind(instance)
-			ves = ParseValidatorError(err, openapi.RouteParamRequest)
+			ves = ParseValidatorError(err, openapi.RouteParamRequest, route.Swagger().RequestModel.SchemaTitle())
 			if len(ves) > 0 {
 				ves[0].Ctx[modelDescLabel] = route.Swagger().RequestModel.SchemaDesc()
 			}
@@ -334,6 +333,7 @@ func responseValidate(c *Context, route RouteIface, stopImmediately bool) []*ope
 	if c.response.StatusCode == http.StatusOK && c.response.Type == JsonResponseType {
 		// 内部返回的 422 也不再校验
 		var ves []*openapi.ValidationError
+		// TODO: 此校验浪费性能,可以通过某种方式绕过
 		_, ves = route.ResponseBinder().Method.Validate(c.routeCtx, c.response.Content)
 		if len(ves) > 0 {
 			ves[0].Ctx[modelDescLabel] = route.Swagger().ResponseModel.SchemaDesc()

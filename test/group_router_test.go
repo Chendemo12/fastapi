@@ -100,12 +100,15 @@ type RegisterForm struct {
 
 func (r *RegisterForm) SchemaDesc() string { return "注册表单" }
 
-func (r *RequestBodyRouter) RegisterPost(c *fastapi.Context, location string, form *RegisterForm) (string, error) {
-	return "123456789", nil
+func (r *RequestBodyRouter) RegisterPost(c *fastapi.Context, location string, form *RegisterForm) (*RegisterForm, error) {
+	return form, nil
 }
 
-func (r *RequestBodyRouter) RegisterWithParamPost(c *fastapi.Context, name *Name, form *RegisterForm) (string, error) {
-	return "123456789", nil
+func (r *RequestBodyRouter) RegisterWithParamPost(c *fastapi.Context, name *Name, form *RegisterForm) (*Name, error) {
+	return &Name{
+		Father: name.Father,
+		Name:   name.Name,
+	}, nil
 }
 
 func (r *RequestBodyRouter) StringQueryParamPatch(c *fastapi.Context, name string) (string, error) {

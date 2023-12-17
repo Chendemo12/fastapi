@@ -589,7 +589,8 @@ func (r *GroupRoute) scanBinders() (err error) {
 		// 对于其他类型的参数, 函数签名就已经保证了类型的正确性,无需手动校验
 		r.responseBinder.Method = &NothingBindMethod{}
 	} else {
-		r.responseBinder.Method = InferBinderMethod(r.swagger.ResponseModel.Param, r.swagger.ResponseModel.Param.PrototypeKind, openapi.RouteParamResponse)
+		r.responseBinder.Method = InferBinderMethod(r.swagger.ResponseModel.Param,
+			r.swagger.ResponseModel.Param.ElemKind(), openapi.RouteParamResponse)
 	}
 
 	// 初始化请求体验证方法
@@ -601,7 +602,8 @@ func (r *GroupRoute) scanBinders() (err error) {
 	}
 	if r.swagger.RequestModel != nil {
 		r.responseBinder.Title = r.swagger.RequestModel.SchemaTitle()
-		r.requestBinder.Method = InferBinderMethod(r.swagger.RequestModel.Param, r.swagger.RequestModel.Param.PrototypeKind, openapi.RouteParamRequest)
+		r.requestBinder.Method = InferBinderMethod(r.swagger.RequestModel.Param,
+			r.swagger.ResponseModel.Param.ElemKind(), openapi.RouteParamRequest)
 	}
 
 	// 构建查询参数验证器
@@ -625,18 +627,12 @@ func (r *GroupRoute) Swagger() *openapi.RouteSwagger {
 	return r.swagger
 }
 
-func (r *GroupRoute) ResponseBinder() *ParamBinder {
-	return r.responseBinder
-}
+func (r *GroupRoute) ResponseBinder() *ParamBinder { return r.responseBinder }
 
-func (r *GroupRoute) RequestBinders() *ParamBinder {
-	return r.responseBinder
-}
+func (r *GroupRoute) RequestBinders() *ParamBinder { return r.requestBinder }
 
 // QueryBinders 查询参数校验方法
-func (r *GroupRoute) QueryBinders() []*ParamBinder {
-	return r.queryBinders
-}
+func (r *GroupRoute) QueryBinders() []*ParamBinder { return r.queryBinders }
 
 func (r *GroupRoute) HasStructQuery() bool { return r.structQuery != -1 }
 

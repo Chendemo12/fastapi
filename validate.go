@@ -31,6 +31,7 @@ var structQueryBind *StructQueryBind
 var emptyLocList = []string{"response"}
 var modelDescLabel = "param description"
 var whereErrorLabel = "where error"
+var validateErrorTagLabel = "tag"
 var whereServerError = map[string]any{whereErrorLabel: "server"}
 var whereClientError = map[string]any{whereErrorLabel: "client"}
 
@@ -290,14 +291,17 @@ type JsonBindMethod[T any] struct {
 	RouteParamType openapi.RouteParamType
 }
 
-func (m *JsonBindMethod[T]) where() map[string]any {
-	var where map[string]any
+func (m *JsonBindMethod[T]) where(key, value string) map[string]any {
+	var where = make(map[string]any)
 	if m.RouteParamType == openapi.RouteParamResponse {
 		where[whereErrorLabel] = whereServerError[whereErrorLabel]
 	} else {
 		where[whereErrorLabel] = whereClientError[whereErrorLabel]
 	}
 	where[modelDescLabel] = m.ModelDesc
+	if key != "" {
+		where[key] = value
+	}
 
 	return where
 }
@@ -312,10 +316,10 @@ func (m *JsonBindMethod[T]) Validate(ctx context.Context, data T) (T, []*openapi
 		ves := make([]*openapi.ValidationError, 0)
 		for _, verr := range vErr {
 			ves = append(ves, &openapi.ValidationError{
-				Ctx:  m.where(),
+				Ctx:  m.where(validateErrorTagLabel, verr.Tag()),
 				Msg:  verr.Error(),
 				Type: verr.Type().String(),
-				Loc:  []string{"body", verr.Field()},
+				Loc:  []string{"body", m.Title, verr.Field()},
 			})
 		}
 		var n T
@@ -331,7 +335,8 @@ func (m *JsonBindMethod[T]) Marshal(obj T) ([]byte, error) {
 func (m *JsonBindMethod[T]) Unmarshal(stream []byte, obj T) (ves []*openapi.ValidationError) {
 	err := helper.JsonUnmarshal(stream, obj)
 	if err != nil {
-		ves = append(ves, ParseJsoniterError(err, m.RouteParamType))
+		ve := ParseJsoniterError(err, m.RouteParamType, m.Title)
+		ves = append(ves, ve)
 	}
 
 	return
@@ -350,11 +355,11 @@ type StructQueryBind struct {
 func (m *StructQueryBind) Unmarshal(params map[string]any, obj any) *openapi.ValidationError {
 	s, err := m.json.Marshal(params)
 	if err != nil {
-		return ParseJsoniterError(err, openapi.RouteParamQuery)
+		return ParseJsoniterError(err, openapi.RouteParamQuery, "")
 	}
 	err = m.json.Unmarshal(s, obj)
 	if err != nil {
-		return ParseJsoniterError(err, openapi.RouteParamQuery)
+		return ParseJsoniterError(err, openapi.RouteParamQuery, "")
 	}
 	return nil
 }
@@ -362,7 +367,7 @@ func (m *StructQueryBind) Unmarshal(params map[string]any, obj any) *openapi.Val
 func (m *StructQueryBind) Validate(obj any) []*openapi.ValidationError {
 	err := defaultValidator.StructCtx(context.Background(), obj)
 	if err != nil {
-		ves := ParseValidatorError(err, openapi.RouteParamQuery)
+		ves := ParseValidatorError(err, openapi.RouteParamQuery, "")
 		return ves
 	}
 	return nil
@@ -492,7 +497,7 @@ func newValidateErrorCtx(where map[string]any, key, value string) map[string]any
 }
 
 // ParseJsoniterError 将jsoniter 的反序列化错误转换成 接口错误类型
-func ParseJsoniterError(err error, loc openapi.RouteParamType) *openapi.ValidationError {
+func ParseJsoniterError(err error, loc openapi.RouteParamType, objName string) *openapi.ValidationError {
 	if err == nil {
 		return nil
 	}
@@ -512,13 +517,17 @@ func ParseJsoniterError(err error, loc openapi.RouteParamType) *openapi.Validati
 	//		"sex": "F"
 	// 	}|...
 	msg := err.Error()
-	var where map[string]any
+	var where = make(map[string]any)
 	if loc == openapi.RouteParamResponse {
 		where = whereServerError
 	} else {
 		where = whereClientError
 	}
 	ve := &openapi.ValidationError{Loc: []string{string(loc)}, Ctx: where}
+	if objName != "" {
+		ve.Loc = append(ve.Loc, objName)
+	}
+
 	for i := 0; i < len(msg); i++ {
 		if msg[i:i+1] == ":" {
 			ve.Loc = append(ve.Loc, msg[:i])
@@ -540,14 +549,14 @@ func ParseJsoniterError(err error, loc openapi.RouteParamType) *openapi.Validati
 
 // ParseValidatorError 解析Validator的错误消息
 // 如果不存在错误,则返回nil; 如果 err 是 validator.ValidationErrors 的错误, 则解析并返回详细的错误原因,反之则返回模糊的错误原因
-func ParseValidatorError(err error, loc openapi.RouteParamType) []*openapi.ValidationError {
+func ParseValidatorError(err error, loc openapi.RouteParamType, objName string) []*openapi.ValidationError {
 	if err == nil {
 		return nil
 	}
 
 	var vErr validator.ValidationErrors // validator的校验错误信息
 	var ves []*openapi.ValidationError
-	var where map[string]any
+	var where = make(map[string]any)
 
 	if loc == openapi.RouteParamResponse {
 		where = whereServerError
@@ -557,12 +566,17 @@ func ParseValidatorError(err error, loc openapi.RouteParamType) []*openapi.Valid
 
 	if ok := errors.As(err, &vErr); ok { // Validator的模型验证错误
 		for _, verr := range vErr {
-			ves = append(ves, &openapi.ValidationError{
-				Ctx:  newValidateErrorCtx(where, "error tag", verr.Tag()),
+			ve := &openapi.ValidationError{
+				Ctx:  newValidateErrorCtx(where, validateErrorTagLabel, verr.Tag()),
 				Msg:  verr.Error(),
 				Type: verr.Type().String(),
-				Loc:  []string{string(loc), verr.Field()},
-			})
+			}
+			if objName != "" {
+				ve.Loc = []string{string(loc), objName, verr.Field()}
+			} else {
+				ve.Loc = []string{string(loc), verr.Field()}
+			}
+			ves = append(ves, ve)
 		}
 	} else {
 		ves = append(ves, &openapi.ValidationError{
