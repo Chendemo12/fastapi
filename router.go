@@ -55,31 +55,6 @@ func (b *BaseModel) IsRequired() bool { return true }
 
 // ================================================================================
 
-// BindStructQuery 将查询参数绑定到一个结构体上
-func BindStructQuery(c *Context, route RouteIface) []*openapi.ValidationError {
-	obj := route.NewStructQuery()
-	if obj == nil {
-		return nil
-	}
-
-	values := map[string]any{}
-	for _, q := range route.Swagger().QueryFields {
-		if q.InStruct {
-			v, ok := c.queryFields[q.JsonName()]
-			if ok {
-				values[q.JsonName()] = v
-			}
-		}
-	}
-
-	_, ves := structQueryBind.Bind(values, obj)
-	if len(ves) > 0 {
-		return ves
-	}
-
-	return nil
-}
-
 // InferBinderMethod 利用反射推断参数的校验器
 func InferBinderMethod(param openapi.SchemaIface, prototypeKind reflect.Kind, modelType openapi.RouteParamType) ModelBindMethod {
 	if param == nil {

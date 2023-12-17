@@ -149,7 +149,7 @@ func (c *Context) write() error {
 var requestValidateLinks = []func(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError{
 	pathParamsValidate,  // 路径参数校验
 	queryParamsValidate, // 查询参数校验
-	queryStructValidate, // 结构体查询参数校验
+	structQueryValidate, // 结构体查询参数校验
 	requestBodyValidate, // 请求体自动校验
 }
 
@@ -255,27 +255,43 @@ func queryParamsValidate(c *Context, route RouteIface, stopImmediately bool) []*
 }
 
 // 验证结构体查询参数(如果存在)
-func queryStructValidate(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError {
+func structQueryValidate(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError {
 	if !route.HasStructQuery() { // 不存在
 		return nil
 	}
 
-	obj := route.NewStructQuery()
 	var ves []*openapi.ValidationError
+	var instance = route.NewStructQuery()
+
 	if c.muxCtx.BindQueryNotImplemented() {
 		// 采用自定义实现
-		ves = BindStructQuery(c, route)
+		values := map[string]any{}
+		for _, q := range route.Swagger().QueryFields {
+			if q.InStruct {
+				v, ok := c.queryFields[q.JsonName()]
+				if ok {
+					values[q.JsonName()] = v
+				}
+			}
+		}
+
+		ves = structQueryBind.Bind(values, instance)
 	} else {
-		err := c.muxCtx.BindQuery(obj)
+		err := c.muxCtx.BindQuery(instance)
 		ves = ParseValidatorError(err, openapi.RouteParamQuery)
 	}
-	c.queryStruct = obj // 关联参数
+
+	c.queryStruct = instance // 关联参数
 
 	return ves
 }
 
 // 请求体校验
 func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError {
+	if route.Swagger().RequestContentType != openapi.MIMEApplicationJSON {
+		return nil
+	}
+
 	var instance any
 	var ves []*openapi.ValidationError
 	var err error
@@ -313,10 +329,9 @@ func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) []*
 	return ves
 }
 
-// 返回值校验root入口
+// 返回值校验入口, 仅校验“200的JSONResponse”
 func responseValidate(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError {
-	// 仅校验“非422的JSONResponse”
-	if c.response.StatusCode != http.StatusUnprocessableEntity && c.response.Type == JsonResponseType {
+	if c.response.StatusCode == http.StatusOK && c.response.Type == JsonResponseType {
 		// 内部返回的 422 也不再校验
 		var ves []*openapi.ValidationError
 		_, ves = route.ResponseBinder().Method.Validate(c.routeCtx, c.response.Content)

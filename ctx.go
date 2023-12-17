@@ -122,8 +122,16 @@ func (c *Context) Done() <-chan struct{} {
 func (c *Context) Logger() logger.Iface { return dLog }
 
 // Query 获取查询参数
-// 对于已经在路由处定义的查询参数，应首先从 Context.queryFields 内部读取；
+// 对于已经在路由处定义的查询参数，首先从 Context.queryFields 内部读取
 // 对于没有定义的其他查询参数则调用低层 MuxContext 进行解析
+//
+//	对于路由处定义的查询参数，参数类型会按照以下规则进行转换：
+//
+//	int 	=> int64
+//	uint 	=> uint64
+//	float 	=> float64
+//	string 	=> string
+//	bool 	=> bool
 func (c *Context) Query(name string, undefined ...string) any {
 	v, ok := c.queryFields[name]
 	if ok {
@@ -134,23 +142,15 @@ func (c *Context) Query(name string, undefined ...string) any {
 }
 
 // PathField 获取路径参数
-// 对于已经在路由处定义的路径参数，应首先从 Context.pathFields 内部读取；
+// 对于已经在路由处定义的路径参数，首先从 Context.pathFields 内部读取；
 // 对于没有定义的其他查询参数则调用低层 MuxContext 进行解析
-//
-// 对于查询参数，参数类型会按照以下规则进行转换：
-//
-//	int 	=> int64
-//	uint 	=> uint64
-//	float 	=> float64
-//	string 	=> string
-//	bool 	=> bool
 func (c *Context) PathField(name string, undefined ...string) string {
 	v, ok := c.pathFields[name]
 	if ok {
 		return v
 	}
 
-	return c.muxCtx.Query(name, undefined...)
+	return c.muxCtx.Params(name, undefined...)
 }
 
 // ================================ 路由组路由方法 ================================

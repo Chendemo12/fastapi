@@ -12,22 +12,27 @@ import (
 
 // RouteSwagger 路由文档定义，所有类型的路由均包含此部分
 type RouteSwagger struct {
-	Url           string         `json:"url" description:"完整请求路由"` // 此路由为函数定义时的路由
-	RelativePath  string         `json:"relative_path" description:"相对路由"`
-	Method        string         `json:"method" description:"请求方法"`
-	Summary       string         `json:"summary" description:"摘要描述"`
-	Description   string         `json:"description" description:"详细描述"`
-	Tags          []string       `json:"tags" description:"路由标签"`
-	PathFields    []*QModel      `json:"-" description:"路径参数"`
-	QueryFields   []*QModel      `json:"-" description:"查询参数"`
-	RequestModel  *BaseModelMeta `description:"请求体元数据"` // 请求体也只有一个, 当 method 为 GET和DELETE 时无请求体
-	ResponseModel *BaseModelMeta `description:"响应体元数据"` // 响应体只有一个
-	Deprecated    bool           `json:"deprecated" description:"是否禁用"`
-	api           string         // 用作唯一标识
+	Url                 string         `json:"url" description:"完整请求路由"` // 此路由为函数定义时的路由
+	RelativePath        string         `json:"relative_path" description:"相对路由"`
+	Method              string         `json:"method" description:"请求方法"`
+	Summary             string         `json:"summary" description:"摘要描述"`
+	Description         string         `json:"description" description:"详细描述"`
+	Tags                []string       `json:"tags" description:"路由标签"`
+	PathFields          []*QModel      `json:"-" description:"路径参数"`
+	QueryFields         []*QModel      `json:"-" description:"查询参数"`
+	RequestModel        *BaseModelMeta `description:"请求体元数据"` // 请求体也只有一个, 当 method 为 GET和DELETE 时无请求体
+	ResponseModel       *BaseModelMeta `description:"响应体元数据"` // 响应体只有一个
+	RequestContentType  string         `description:"请求体类型, 仅在 application/json 情况下才进行请求体校验"`
+	ResponseContentType string         `description:"响应体类型, 仅在 application/json 情况下才进行响应体校验"`
+	Deprecated          bool           `json:"deprecated" description:"是否禁用"`
+	api                 string         // 用作唯一标识
 }
 
 func (r *RouteSwagger) Init() (err error) {
+	r.RequestContentType = MIMEApplicationJSON
+	r.ResponseContentType = MIMEApplicationJSON
 	r.api = CreateRouteIdentify(r.Method, r.Url)
+
 	// 由于查询参数和请求体需要从方法入参中提取, 以及响应体需要从方法出参中提取,因此在上层进行解析
 	if r.ResponseModel == nil { // 返回值不允许为nil, 此处错误为上层忘记初始化模型参数
 		return errors.New("ResponseModel is not init")

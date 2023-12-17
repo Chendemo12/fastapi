@@ -354,25 +354,24 @@ func (m *StructQueryBind) Unmarshal(params map[string]any, obj any) *openapi.Val
 	}
 	err = m.json.Unmarshal(s, obj)
 	if err != nil {
-
 		return ParseJsoniterError(err, openapi.RouteParamQuery)
 	}
 	return nil
 }
 
-func (m *StructQueryBind) Validate(obj any) (any, []*openapi.ValidationError) {
+func (m *StructQueryBind) Validate(obj any) []*openapi.ValidationError {
 	err := defaultValidator.StructCtx(context.Background(), obj)
 	if err != nil {
 		ves := ParseValidatorError(err, openapi.RouteParamQuery)
-		return nil, ves
+		return ves
 	}
-	return obj, nil
+	return nil
 }
 
-func (m *StructQueryBind) Bind(params map[string]any, obj any) (any, []*openapi.ValidationError) {
+func (m *StructQueryBind) Bind(params map[string]any, obj any) []*openapi.ValidationError {
 	ve := m.Unmarshal(params, obj)
 	if ve != nil {
-		return nil, []*openapi.ValidationError{ve}
+		return []*openapi.ValidationError{ve}
 	}
 	return m.Validate(obj)
 }
