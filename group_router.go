@@ -577,7 +577,7 @@ func (r *GroupRoute) scanQueryParamMode() (err error) {
 	return
 }
 
-// 此方法需在 scanInParams , scanOutParams , scanQueryParamMode 执行完成之后执行
+// 此方法需在 scanInParams, scanOutParams, scanQueryParamMode 执行完成之后执行
 func (r *GroupRoute) scanBinders() (err error) {
 	r.responseBinder = &ParamBinder{
 		Title:          r.swagger.ResponseModel.SchemaTitle(),
@@ -658,7 +658,7 @@ func (r *GroupRoute) NewInParams(ctx *Context) []reflect.Value {
 		var instance reflect.Value
 
 		switch param.SchemaType() {
-		case openapi.ObjectType:
+		case openapi.ObjectType, openapi.ArrayType:
 			if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
 				instance = reflect.ValueOf(ctx.queryStruct)
 			} else {
@@ -669,7 +669,6 @@ func (r *GroupRoute) NewInParams(ctx *Context) []reflect.Value {
 					instance = reflect.ValueOf(ctx.queryStruct)
 				}
 			}
-		case openapi.ArrayType: // array
 
 		default:
 			// 对于基本参数,只能是查询参数

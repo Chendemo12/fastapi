@@ -2,6 +2,7 @@ package test
 
 import (
 	"errors"
+	"fmt"
 	"github.com/Chendemo12/fastapi"
 	"github.com/Chendemo12/fastapi/middleware/fiberWrapper"
 	"testing"
@@ -109,6 +110,10 @@ func (r *RequestBodyRouter) RegisterWithParamPost(c *fastapi.Context, name *Name
 		Father: name.Father,
 		Name:   name.Name,
 	}, nil
+}
+
+func (r *RequestBodyRouter) ArrayRequestBodyPost(c *fastapi.Context, names []*Name) ([]*Name, error) {
+	return nil, errors.New(fmt.Sprintf("(array request) always return error, length: %d", len(names)))
 }
 
 func (r *RequestBodyRouter) StringQueryParamPatch(c *fastapi.Context, name string) (string, error) {

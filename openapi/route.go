@@ -237,8 +237,6 @@ func (r *RouteParam) NewNotStruct(value any) reflect.Value {
 			v.Elem().SetFloat(value.(float64))
 		case reflect.String:
 			v.Elem().SetString(value.(string))
-		case reflect.Slice, reflect.Array:
-			// array
 		default:
 		}
 	}

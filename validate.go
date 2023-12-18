@@ -287,7 +287,6 @@ func (m *BoolBindMethod) New() any {
 // JsonBindMethod json数据类型验证器,适用于泛型路由
 type JsonBindMethod[T any] struct {
 	Title          string `json:"title,omitempty"`
-	ModelDesc      string `json:"model_desc,omitempty"`
 	RouteParamType openapi.RouteParamType
 }
 
@@ -298,7 +297,6 @@ func (m *JsonBindMethod[T]) where(key, value string) map[string]any {
 	} else {
 		where[whereErrorLabel] = whereClientError[whereErrorLabel]
 	}
-	where[modelDescLabel] = m.ModelDesc
 	if key != "" {
 		where[key] = value
 	}
