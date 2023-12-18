@@ -461,7 +461,7 @@ func (r *GroupRoute) scanInParams() (err error) {
 		return nil
 	}
 
-	// TODO: Future-231203.9: POST/PATCH/PUT方法最多支持2个结构体参数
+	// TODO: Future-231203.9: 限制POST/PATCH/PUT方法最多支持2个结构体参数
 
 	if r.handlerInNum > FirstInParamOffset { // 存在自定义参数
 		// 掐头去尾,获得查询参数,GET/DELETE 必须为基本数据类型
@@ -510,7 +510,11 @@ func (r *GroupRoute) scanInParams() (err error) {
 			}
 		case openapi.ArrayType:
 			if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
-				// TODO Future-231126.6: 查询参数考虑是否要支持数组
+				// 查询参数不支持数组
+				return errors.New(fmt.Sprintf(
+					"method: '%s' param: '%s', index: %d, query param not support array",
+					r.group.pkg+"."+r.method.Name, lastInParam.Pkg, lastInParam.Index,
+				))
 			} else {
 				r.swagger.RequestModel = openapi.NewBaseModelMeta(lastInParam)
 			}
