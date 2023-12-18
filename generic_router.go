@@ -101,6 +101,10 @@ func (r *GenericRoute[T]) Call(ctx *Context) {
 	panic("implement me")
 }
 
+func (r *GenericRoute[T]) ResponseValidate(c *Context, stopImmediately bool) []*openapi.ValidationError {
+	return nil
+}
+
 func (r *GenericRoute[T]) Init() (err error) {
 	//TODO implement me
 	panic("implement me")

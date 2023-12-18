@@ -27,6 +27,7 @@ type RouteIface interface {
 	NewRequestModel() any                     // 创建一个请求体实例,对于POST/PATCH/PUT, 即为 NewInParams 的最后一个元素; 对于GET/DELETE则为nil
 	HasStructQuery() bool                     // 是否存在结构体查询参数，如果存在则会调用 NewStructQuery 获得结构体实例
 	Call(ctx *Context)                        // 调用API, 需要将响应结果写入 Response 内
+	ResponseValidate(c *Context, stopImmediately bool) []*openapi.ValidationError
 	Id() string
 }
 

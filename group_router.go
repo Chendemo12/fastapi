@@ -712,3 +712,18 @@ func (r *GroupRoute) Call(ctx *Context) {
 		ctx.response.Content = err.Error()
 	}
 }
+
+// ResponseValidate 仅校验“200的JSONResponse”
+func (r *GroupRoute) ResponseValidate(c *Context, stopImmediately bool) []*openapi.ValidationError {
+	if (c.response.StatusCode == http.StatusOK || c.response.StatusCode == 0) && c.response.Type == JsonResponseType {
+		// 内部返回的 422 也不再校验
+		var ves []*openapi.ValidationError
+		// TODO: 此校验浪费性能,可以通过某种方式绕过
+		_, ves = r.ResponseBinder().Method.Validate(c.routeCtx, c.response.Content)
+		if len(ves) > 0 {
+			ves[0].Ctx[modelDescLabel] = r.Swagger().ResponseModel.SchemaDesc()
+		}
+		return ves
+	}
+	return nil
+}

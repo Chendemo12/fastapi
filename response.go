@@ -2,7 +2,6 @@ package fastapi
 
 import (
 	"github.com/Chendemo12/fastapi/openapi"
-	"net/http"
 	"sync"
 )
 
@@ -16,7 +15,6 @@ const (
 	FileResponseType
 	ErrResponseType
 	HtmlResponseType
-	AdvancedResponseType
 )
 
 // Response 范型路由返回值
@@ -36,7 +34,7 @@ func AcquireResponse() *Response {
 	r := responsePool.Get().(*Response)
 	r.Type = JsonResponseType
 	r.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
-	r.StatusCode = http.StatusOK
+	r.StatusCode = 0
 
 	return r
 }

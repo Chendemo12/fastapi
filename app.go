@@ -35,7 +35,7 @@ type Wrapper struct {
 	genericRoutes []RouteIface       `description:"泛型路由对象"`
 	events        []*Event           `description:"启动和关闭事件"`
 	finder        Finder[RouteIface] `description:"路由对象查找器"`
-	previousDeps  []MiddlewareHandle `description:"在接口参数校验前执行的中间件"` // TODO Future-231126.4: 路由前后中间件
+	previousDeps  []MiddlewareHandle `description:"在接口参数校验前执行的中间件"`
 	afterDeps     []MiddlewareHandle `description:"在接口参数校验成功后执行的中间件"`
 }
 

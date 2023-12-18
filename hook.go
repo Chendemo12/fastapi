@@ -7,7 +7,13 @@ import (
 	"net/http"
 )
 
-type MiddlewareHandle func() // 中间件函数
+// MiddlewareHandle 中间件函数
+//
+// 由于 Wrapper 的核心实现类似于装饰器,而非常规的中间件,因此应当通过 Wrapper 来定义中间件, 以避免通过 MuxWrapper 注册的中间件对 Wrapper 产生副作用;
+// 此处中间件有校验前中间件和校验后中间件,分别通过 Wrapper.UsePrevious 和 Wrapper.UseAfter 注册;
+// 当请求参数校验失败时不会执行 Wrapper.UseAfter 中间件, 请求参数会在 Wrapper.UsePrevious 执行完成之后被触发;
+// 如果中间件要终止后续的流程,应返回 error, 错误消息会作为消息体返回给客户端, 响应状态码默认为400,可通过 Context.Status 进行修改;
+type MiddlewareHandle func(c *Context) error
 
 // Handler 路由函数，实现逻辑类似于中间件
 //
@@ -32,7 +38,22 @@ func (f *Wrapper) Handler(ctx MuxContext) error {
 	wrapperCtx := f.acquireCtx(ctx)
 	defer f.releaseCtx(wrapperCtx)
 
-	// TODO Future: 校验前中间件
+	// 校验前中间件
+	var err error
+	for _, fc := range f.previousDeps {
+		err = fc(wrapperCtx)
+		if err != nil {
+			// 中间件中断执行
+			if wrapperCtx.response.StatusCode == 0 {
+				wrapperCtx.response.StatusCode = http.StatusBadRequest
+				wrapperCtx.response.Content = err.Error()
+			} else {
+				wrapperCtx.response.Content = err.Error()
+			}
+			return wrapperCtx.write()
+		}
+	}
+
 	// 路由前的校验,此校验会就地修改 Context.response
 	wrapperCtx.beforeWorkflow(route, f.conf.StopImmediatelyWhenErrorOccurs)
 	if wrapperCtx.response.Content != nil {
@@ -40,8 +61,20 @@ func (f *Wrapper) Handler(ctx MuxContext) error {
 		return wrapperCtx.write()
 	}
 
-	// TODO Future: 执行校验后中间件
-
+	// 执行校验后中间件
+	for _, fc := range f.afterDeps {
+		err = fc(wrapperCtx)
+		if err != nil {
+			// 中间件中断执行
+			if wrapperCtx.response.StatusCode == 0 {
+				wrapperCtx.response.StatusCode = http.StatusBadRequest
+				wrapperCtx.response.Content = err.Error()
+			} else {
+				wrapperCtx.response.Content = err.Error()
+			}
+			return wrapperCtx.write()
+		}
+	}
 	//
 	// 全部校验完成，执行处理函数并获取返回值, 此处已经完成全部请求参数的校验，调用失败也存在返回值
 	route.Call(wrapperCtx)
@@ -102,17 +135,21 @@ func (c *Context) write() error {
 		return c.muxCtx.SendString("OK")
 	}
 
-	// 自定义函数存在返回值
-	c.muxCtx.Status(c.response.StatusCode) // 设置一下响应头
-
 	if c.response.StatusCode == http.StatusUnprocessableEntity {
 		// 校验不通过，直接返回错误信息
 		return c.muxCtx.JSON(http.StatusUnprocessableEntity, c.response.Content)
 	}
 
+	// 自定义函数存在返回值, 首先设置一下响应头
+	if c.response.StatusCode == 0 {
+		c.muxCtx.Status(http.StatusOK)
+	} else {
+		c.muxCtx.Status(c.response.StatusCode)
+	}
+
 	switch c.response.Type {
 
-	case JsonResponseType: // Json类型
+	case JsonResponseType, ErrResponseType: // Json类型
 		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
 
 	case StringResponseType:
@@ -124,18 +161,11 @@ func (c *Context) write() error {
 		//return c.muxCtx.Render(c.response.StatusCode, bytes.NewReader(c.response.Content.(string)))
 		return nil
 
-	case ErrResponseType:
-		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
-
-	case StreamResponseType: // 返回字节流
-		return c.muxCtx.SendStream(c.response.Content.(io.Reader))
-
 	case FileResponseType: // 返回一个文件
 		return c.muxCtx.File(c.response.Content.(string))
 
-	case AdvancedResponseType:
-		//return c.response.Content.(openapi.MuxHandler)(c.muxCtx)
-		return nil
+	case StreamResponseType: // 返回字节流
+		return c.muxCtx.SendStream(c.response.Content.(io.Reader))
 
 	case CustomResponseType:
 		c.muxCtx.Header(openapi.HeaderContentType, c.response.ContentType)
@@ -328,18 +358,7 @@ func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) []*
 	return ves
 }
 
-// 返回值校验入口, 仅校验“200的JSONResponse”
+// 返回值校验入口
 func responseValidate(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError {
-	if c.response.StatusCode == http.StatusOK && c.response.Type == JsonResponseType {
-		// 内部返回的 422 也不再校验
-		var ves []*openapi.ValidationError
-		// TODO: 此校验浪费性能,可以通过某种方式绕过
-		_, ves = route.ResponseBinder().Method.Validate(c.routeCtx, c.response.Content)
-		if len(ves) > 0 {
-			ves[0].Ctx[modelDescLabel] = route.Swagger().ResponseModel.SchemaDesc()
-		}
-		return ves
-	}
-
-	return nil
+	return route.ResponseValidate(c, stopImmediately)
 }
