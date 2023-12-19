@@ -1,14 +1,11 @@
 package fastapi
 
 import (
-	"context"
 	"errors"
-	"fmt"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/Chendemo12/fastapi-tool/cronjob"
 	"github.com/Chendemo12/fastapi-tool/logger"
 )
 
@@ -34,36 +31,6 @@ func NewCtx() *ServiceContext {
 	conf.HTTP.Port = "8099"
 
 	return &ServiceContext{Conf: conf, Logger: logger.NewDefaultLogger()}
-}
-
-// Clock 定时任务
-type Clock struct {
-	cronjob.Job
-}
-
-func (c *Clock) String() string          { return "Clock" }
-func (c *Clock) Interval() time.Duration { return time.Second * 1 }
-func (c *Clock) Do(_ context.Context) error {
-	fmt.Println("current second:", time.Now().Second())
-	return nil
-}
-
-func TestWrapper_AddCronjob(t *testing.T) {
-	svc := NewCtx()
-	app := New(Config{
-		Version:     "1.0.0",
-		Description: "",
-		Title:       "FastApi Example",
-		Debug:       true,
-	})
-	app.AddCronjob(&Clock{})
-
-	go func() {
-		time.Sleep(10 * time.Second)
-		app.Shutdown()
-	}()
-
-	app.Run(svc.Conf.HTTP.Host, svc.Conf.HTTP.Port) // 阻塞运行
 }
 
 func TestWrapper_DumpPID(t *testing.T) {

@@ -15,7 +15,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Chendemo12/fastapi-tool/cronjob"
 	"github.com/Chendemo12/fastapi-tool/logger"
 )
 
@@ -277,13 +276,6 @@ func (f *Wrapper) Use(middleware ...MiddlewareHandle) *Wrapper {
 	return f.UseAfter(middleware...)
 }
 
-// AddCronjob 添加定时任务(循环调度任务)
-// 此任务会在各种初始化及启动事件全部执行完成之后触发
-func (f *Wrapper) AddCronjob(jobs ...cronjob.CronJob) *Wrapper {
-	f.service.scheduler.Add(jobs...)
-	return f
-}
-
 // ActivateHotSwitch 创建一个热开关，监听信号量(默认值：30)，用来改变程序调试开关状态
 func (f *Wrapper) ActivateHotSwitch(s ...int) *Wrapper {
 	var st = HotSwitchSigint
@@ -374,8 +366,6 @@ func (f *Wrapper) Run(host, port string) {
 	f.isStarted <- struct{}{} // 解除阻塞上层的任务
 	f.service.Logger().Debug("HTTP server listening on: " + f.service.Addr())
 
-	// 在各种初始化及启动事件执行完成之后触发
-	f.service.scheduler.Run()
 	close(f.isStarted)
 
 	go func() {
@@ -452,7 +442,6 @@ func Create(c Config) *Wrapper {
 
 	sc := &Service{}
 	sc.ctx, sc.cancel = context.WithCancel(context.Background())
-	sc.scheduler = cronjob.NewScheduler(sc.ctx, nil)
 
 	app := &Wrapper{
 		conf: &Profile{

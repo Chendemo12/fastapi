@@ -2,7 +2,6 @@ package fastapi
 
 import (
 	"context"
-	"github.com/Chendemo12/fastapi-tool/cronjob"
 	"github.com/Chendemo12/fastapi-tool/logger"
 	"github.com/Chendemo12/fastapi/openapi"
 	"github.com/go-playground/validator/v10"
@@ -43,11 +42,10 @@ type Event struct {
 // 此对象由Wrapper启动时自动创建，此对象不应被修改，组合和嵌入，
 // 但可通过 setUserSVC 接口设置自定义的上下文信息，并在每一个路由钩子函数中可得
 type Service struct {
-	ctx       context.Context    `description:"根Context"`
-	openApi   *openapi.OpenApi   `description:"模型文档"`
-	cancel    context.CancelFunc `description:"取消函数"`
-	scheduler *cronjob.Scheduler `description:"定时任务"`
-	addr      string             `description:"绑定地址"`
+	ctx     context.Context    `description:"根Context"`
+	openApi *openapi.OpenApi   `description:"模型文档"`
+	cancel  context.CancelFunc `description:"取消函数"`
+	addr    string             `description:"绑定地址"`
 }
 
 // 替换日志句柄
@@ -73,9 +71,6 @@ func (s *Service) Logger() logger.Iface { return dLog }
 
 // Done 监听程序是否退出或正在关闭，仅当程序关闭时解除阻塞
 func (s *Service) Done() <-chan struct{} { return s.ctx.Done() }
-
-// Scheduler 获取内部调度器
-func (s *Service) Scheduler() *cronjob.Scheduler { return s.scheduler }
 
 func LazyInit() {
 	// 初始化默认结构体验证器
