@@ -18,6 +18,7 @@ type QModel struct {
 	Required bool              `json:"required,omitempty" description:"是否必须"`
 	InPath   bool              `json:"in_path,omitempty" description:"是否是路径参数"`
 	InStruct bool              `json:"in_struct,omitempty" description:"是否是结构体字段参数"`
+	IsTime   bool              `json:"is_time,omitempty" description:"是否是时间类型"`
 }
 
 // Init 解析并缓存字段名
@@ -82,6 +83,9 @@ func (q *QModel) Schema() (m map[string]any) {
 	} else {
 		m["in"] = "query"
 	}
+	if q.IsTime {
+		m["format"] = "date-time"
+	}
 
 	return
 }
@@ -115,19 +119,26 @@ func StructToQModels(rt reflect.Type) []*QModel {
 		}
 		// 此结构体的任意字段有且仅支持 基本数据类型
 		dataType := ReflectKindToType(field.Type.Kind())
-		if !dataType.IsBaseType() {
-			continue
-		}
-
-		// TODO: Future-231126.3: 请求体不支持time.Time;
-		m = append(m, &QModel{
+		qm := &QModel{
 			Name:     field.Name,
 			Tag:      field.Tag,
 			DataType: dataType,
 			Kind:     field.Type.Kind(),
 			InPath:   false,
 			InStruct: true,
-		})
+		}
+
+		switch dataType {
+		case ArrayType: // 不支持数组类型的查询参数
+		case ObjectType:
+			if field.Type.String() == TimePkg { // time.Time
+				qm.DataType = StringType
+				qm.IsTime = true
+			}
+		default:
+		}
+
+		m = append(m, qm)
 	}
 	return m
 }

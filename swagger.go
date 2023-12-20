@@ -13,7 +13,7 @@ func (f *Wrapper) registerRouteDoc() *Wrapper {
 	// 注册路由组数据模型
 	for _, group := range f.groupRouters {
 		for _, route := range group.Routes() {
-			f.service.openApi.RegisterFrom(route.Swagger())
+			f.openApi.RegisterFrom(route.Swagger())
 		}
 	}
 
@@ -43,7 +43,7 @@ func (f *Wrapper) registerRouteHandle() *Wrapper {
 	err = f.Mux().BindRoute(http.MethodGet, openapi.JsonUrl,
 		func(ctx MuxContext) error {
 			ctx.Header(openapi.HeaderContentType, openapi.MIMEApplicationJSONCharsetUTF8)
-			_, err := ctx.Write(f.service.openApi.Schema())
+			_, err := ctx.Write(f.openApi.Schema())
 			return err
 		},
 	)

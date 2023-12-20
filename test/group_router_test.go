@@ -79,8 +79,16 @@ type Name struct {
 	Name   string `query:"name" description:"姓名"`                       // 可选查询参数
 }
 
+type DateTime struct {
+	Birthday time.Time `query:"birthday" description:"出生日期"` // 日期时间类型
+}
+
 func (r *QueryParamRouter) StructQueryParamDelete(c *fastapi.Context, param *Name) (string, error) {
 	return param.Father + " " + param.Name, nil
+}
+
+func (r *QueryParamRouter) TimeQueryParamGet(c *fastapi.Context, day time.Time, param *DateTime) (time.Time, error) {
+	return day, nil
 }
 
 // ============================================================================
@@ -247,7 +255,7 @@ func (r *ResponseModelRouter) GetComplexModel(c *fastapi.Context) (*EnosData, er
 
 func routeCtxCancel(s *fastapi.Context) *fastapi.Response {
 	cl := s.Logger() // 当路由执行完毕退出时, ctx将被释放
-	ctx := s.DisposableCtx()
+	ctx := s.Context()
 
 	go func() {
 		for {
@@ -326,13 +334,15 @@ func TestNew(t *testing.T) {
 		Debug:       true,
 	})
 
+	// 底层采用fiber
 	app.SetMux(fiberWrapper.Default())
 
+	// 创建路由
 	app.IncludeRouter(&BaseTypeRouter{}).
 		IncludeRouter(&QueryParamRouter{}).
 		IncludeRouter(&RequestBodyRouter{}).
 		IncludeRouter(&ResponseModelRouter{}).
-		IncludeRouter(fastapi.NewBaseRouter(app.Config()))
+		IncludeRouter(fastapi.NewBaseRouter(app.Config())) // 开启默认基础路由
 
 	app.Run("0.0.0.0", "8099") // 阻塞运行
 }

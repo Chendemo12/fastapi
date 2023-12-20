@@ -132,11 +132,16 @@ func InferBinderMethod(param openapi.SchemaIface, prototypeKind reflect.Kind, mo
 	case reflect.String:
 		binder = &NothingBindMethod{}
 	case reflect.Struct:
-		if modelType == openapi.RouteParamResponse {
-			binder = &JsonBindMethod[any]{Title: param.SchemaTitle(), RouteParamType: modelType}
+		if param.SchemaPkg() == openapi.TimePkg {
+			binder = &DateTimeBindMethod{Title: param.SchemaTitle()}
 		} else {
-			binder = &JsonBindMethod[any]{Title: param.SchemaTitle(), RouteParamType: modelType}
+			if modelType == openapi.RouteParamResponse {
+				binder = &JsonBindMethod[any]{Title: param.SchemaTitle(), RouteParamType: modelType}
+			} else {
+				binder = &JsonBindMethod[any]{Title: param.SchemaTitle(), RouteParamType: modelType}
+			}
 		}
+
 	default:
 		binder = &NothingBindMethod{}
 	}

@@ -5,6 +5,7 @@ package fastapi
 
 import (
 	"github.com/Chendemo12/fastapi-tool/helper"
+	"github.com/Chendemo12/fastapi-tool/logger"
 	"github.com/Chendemo12/fastapi/utils"
 )
 
@@ -25,3 +26,5 @@ var (
 var (
 	F = helper.CombineStrings
 )
+
+func Logger() logger.Iface { return dLog }

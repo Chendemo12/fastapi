@@ -137,6 +137,7 @@ type RouteParam struct {
 	PrototypeKind  reflect.Kind   `description:"原始类型的参数类型"`
 	Index          int            `description:"参数处于方法中的原始位置,可通过 method.RouteType.In(Index) 或 method.RouteType.Out(Index) 反向获得此参数"`
 	IsPtr          bool           `description:"标识 Prototype 是否是指针类型"`
+	IsTime         bool           `description:"是否是时间类型"`
 	IsNil          bool           `description:"todo"`
 }
 
@@ -176,6 +177,11 @@ func (r *RouteParam) Init() (err error) {
 	if strings.HasPrefix(r.Pkg, "struct {") || r.Prototype.Name() == "" {
 		// 对于匿名字段, 此处无法重命名，只能由外部重命名, 通过 Rename 方法重命名
 	}
+
+	if r.Pkg == TimePkg {
+		r.DataType = StringType
+	}
+
 	return nil
 }
 

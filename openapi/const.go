@@ -88,6 +88,13 @@ const AnonymousModelNameConnector = "_"
 
 const ReminderWhenResponseModelIsNil = " `| 路由未明确定义返回值，文档处缺省为map类型，实际可以是任意类型`"
 
+const TimePkg = "time.Time"
+const ( // 针对时间类型的查询参数格式化选项
+	TimeParamSchemaFormat     = "time"
+	DateParamSchemaFormat     = "date"
+	DateTimeParamSchemaFormat = "date-time"
+)
+
 // InnerModelsName 特殊的内部模型名称
 var InnerModelsName = []string{
 	"BaseModel",

@@ -8,7 +8,6 @@ import (
 	"github.com/go-playground/validator/v10"
 	"io"
 	"net/http"
-	"time"
 )
 
 // Context 路由上下文信息, 也是钩子函数的操作句柄
@@ -16,9 +15,8 @@ import (
 // 此结构体内包含了响应体 Response 以减少在路由处理过程中的内存分配和复制
 //
 //	注意: 当一个路由被执行完毕时, 路由函数中的 Context 将被立刻释放回收, 因此在return之后对
-//	Context 的任何引用都是不对的, 若需在return之后监听 Context.DisposableCtx() 则应该显式的复制或派生
+//	Context 的任何引用都是不对的, 若需在return之后监听 Context.Context() 则应该显式的复制或派生
 type Context struct {
-	svc         *Service           `description:"service"`
 	muxCtx      MuxContext         `description:"路由器Context"`
 	routeCtx    context.Context    `description:"获取针对此次请求的唯一context"`
 	routeCancel context.CancelFunc `description:"获取针对此次请求的唯一取消函数"`
@@ -44,7 +42,7 @@ func (f *Wrapper) acquireCtx(ctx MuxContext) *Context {
 	c.response = AcquireResponse()
 	// 为每一个路由创建一个独立的ctx, 允许不启用此功能
 	if !f.conf.ContextAutomaticDerivationDisabled {
-		c.routeCtx, c.routeCancel = context.WithCancel(f.service.ctx)
+		c.routeCtx, c.routeCancel = context.WithCancel(f.ctx)
 	}
 	c.pathFields = map[string]string{}
 	c.queryFields = map[string]any{}
@@ -70,43 +68,17 @@ func (f *Wrapper) releaseCtx(ctx *Context) {
 
 // ================================ 公共方法 ================================
 
-func (c *Context) Deadline() (deadline time.Time, ok bool) {
-	if c.routeCtx != nil {
-		return c.routeCtx.Deadline()
-	}
-	return c.svc.ctx.Deadline()
-}
-
-func (c *Context) Err() error {
-	if c.routeCtx != nil {
-		return c.routeCtx.Err()
-	}
-	return nil
-}
-
-func (c *Context) Value(key any) any {
-	if c.routeCtx != nil {
-		return c.routeCtx.Value(key)
-	}
-	return nil
-}
-
-// Service 获取 Wrapper 的 Service 服务依赖信息
-//
-//	@return	Service 服务依赖信息
-func (c *Context) Service() *Service { return c.svc }
-
 // MuxContext 获取web引擎的上下文
 func (c *Context) MuxContext() MuxContext { return c.muxCtx }
 
-// DisposableCtx 针对此次请求的唯一context, 当路由执行完毕返回时,将会自动关闭
+// Context 针对此次请求的唯一context, 当路由执行完毕返回时,将会自动关闭
 // <如果 ContextAutomaticDerivationDisabled = true 则异常>
 // 为每一个请求创建一个新的 context.Context 其代价是非常高的，因此允许通过设置关闭此功能
 //
 //	@return	context.Context 唯一context
-func (c *Context) DisposableCtx() context.Context { return c.routeCtx }
+func (c *Context) Context() context.Context { return c.routeCtx }
 
-// Done 监听 DisposableCtx 是否完成退出
+// Done 监听 Context 是否完成退出
 // <如果 ContextAutomaticDerivationDisabled = true 则异常>
 //
 //	@return	chan struct{} 是否退出

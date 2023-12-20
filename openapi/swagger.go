@@ -102,8 +102,9 @@ type ParameterBase struct {
 }
 
 type ParameterSchema struct {
-	Type  DataType `json:"type" description:"数据类型"`
-	Title string   `json:"title"`
+	Type   DataType `json:"type" description:"数据类型"`
+	Title  string   `json:"title"`
+	Format string   `json:"format,omitempty" description:"针对特殊类型的格式化参数"`
 }
 
 // Parameter 路径参数或者查询参数
@@ -121,6 +122,10 @@ func (p *Parameter) FromQModel(model *QModel) *Parameter {
 	p.Schema = &ParameterSchema{
 		Type:  model.SchemaType(),
 		Title: model.SchemaTitle(),
+	}
+	if model.IsTime { // 时间类型支持
+		p.Schema.Type = StringType
+		p.Schema.Format = DateTimeParamSchemaFormat
 	}
 
 	if model.InPath {

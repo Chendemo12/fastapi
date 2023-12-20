@@ -142,9 +142,7 @@ func (c *Context) write() error {
 
 	// 自定义函数存在返回值, 首先设置一下响应头
 	if c.response.StatusCode == 0 {
-		c.muxCtx.Status(http.StatusOK)
-	} else {
-		c.muxCtx.Status(c.response.StatusCode)
+		c.response.StatusCode = http.StatusOK
 	}
 
 	switch c.response.Type {
@@ -153,26 +151,32 @@ func (c *Context) write() error {
 		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
 
 	case StringResponseType:
+		c.muxCtx.Status(c.response.StatusCode)
 		return c.muxCtx.SendString(c.response.Content.(string))
 
 	case HtmlResponseType: // 返回HTML页面
+		c.muxCtx.Status(c.response.StatusCode)
 		// 设置返回类型
 		c.muxCtx.Header(openapi.HeaderContentType, openapi.MIMETextHTMLCharsetUTF8)
 		//return c.muxCtx.Render(c.response.StatusCode, bytes.NewReader(c.response.Content.(string)))
 		return nil
 
 	case FileResponseType: // 返回一个文件
+		c.muxCtx.Status(c.response.StatusCode)
 		return c.muxCtx.File(c.response.Content.(string))
 
 	case StreamResponseType: // 返回字节流
+		c.muxCtx.Status(c.response.StatusCode)
 		return c.muxCtx.SendStream(c.response.Content.(io.Reader))
 
 	case CustomResponseType:
+		c.muxCtx.Status(c.response.StatusCode)
 		c.muxCtx.Header(openapi.HeaderContentType, c.response.ContentType)
 		_, err := c.muxCtx.Write(c.response.Content.([]byte))
 		return err
 
 	default:
+		c.muxCtx.Status(c.response.StatusCode)
 		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
 	}
 }

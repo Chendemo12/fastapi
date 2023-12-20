@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const ( // error message
@@ -23,6 +24,13 @@ const ( // error message
 	ModelCannotArray   = "The return value cannot be a array"
 	PathPsIsEmpty      = "Path must not be empty"
 	QueryPsIsEmpty     = "Query must not be empty"
+)
+
+const ( // json序列化错误, 关键信息的序号
+	jsoniterUnmarshalErrorSeparator = "|" // 序列化错误信息分割符, 定义于 validator/validator_instance.orSeparator
+	jsonErrorFieldMsgIndex          = 0   // 错误原因
+	jsonErrorFieldNameFormIndex     = 1   // 序列化错误的字段和值
+	jsonErrorFormIndex              = 3   // 接收到的数据
 )
 
 var defaultValidator *validator.Validate
@@ -254,11 +262,11 @@ func (m *BoolBindMethod) Name() string { return "BoolBindMethod" }
 
 // Validate data 为字符串类型
 func (m *BoolBindMethod) Validate(ctx context.Context, data any) (any, []*openapi.ValidationError) {
-	var ves []*openapi.ValidationError
 	sv := data.(string)
 
 	atob, err := strconv.ParseBool(sv)
 	if err != nil {
+		var ves []*openapi.ValidationError
 		ves = append(ves, &openapi.ValidationError{
 			Loc:  []string{"query", m.Title},
 			Msg:  fmt.Sprintf("value: '%s' is not a bool", sv),
@@ -344,6 +352,146 @@ func (m *JsonBindMethod[T]) New() any {
 	var value = new(T)
 	return value
 }
+
+// TimeBindMethod 时间校验方法
+type TimeBindMethod struct {
+	Title string `json:"title,omitempty" description:"查询参数名"`
+}
+
+func (m *TimeBindMethod) Name() string { return "TimeBindMethod" }
+
+// Validate 验证一个字符串是否是一个有效的时间字符串
+// @return time.Time
+func (m *TimeBindMethod) Validate(ctx context.Context, data any) (any, []*openapi.ValidationError) {
+	sv := data.(string) // 肯定是string类型
+
+	var err error
+	var t time.Time
+	layouts := []string{time.TimeOnly, time.Kitchen}
+	for _, layout := range layouts {
+		t, err = time.Parse(layout, sv)
+		if err == nil {
+			return t, nil
+		}
+	}
+
+	var ves []*openapi.ValidationError
+	ves = append(ves, &openapi.ValidationError{
+		Loc:  []string{"query", m.Title},
+		Msg:  fmt.Sprintf("value: '%s' is not a time, err:%v", sv, err),
+		Type: string(openapi.StringType),
+		Ctx:  whereClientError,
+	})
+	return nil, ves
+}
+
+func (m *TimeBindMethod) Marshal(obj any) ([]byte, error) {
+	t, ok := obj.(time.Time)
+	if ok {
+		return []byte(t.Format(time.TimeOnly)), nil
+	}
+	return nil, errors.New("obj is not a time")
+}
+
+// Unmarshal time 类型不支持反序列化
+func (m *TimeBindMethod) Unmarshal(stream []byte, obj any) (ves []*openapi.ValidationError) {
+	return nil
+}
+
+func (m *TimeBindMethod) New() any { return nil }
+
+// DateBindMethod 日期校验
+type DateBindMethod struct {
+	Title string `json:"title,omitempty" description:"查询参数名"`
+}
+
+func (m *DateBindMethod) Name() string { return "DateBindMethod" }
+
+func (m *DateBindMethod) Validate(ctx context.Context, data any) (any, []*openapi.ValidationError) {
+	sv := data.(string) // 肯定是string类型
+
+	var err error
+	var t time.Time
+	layouts := []string{time.DateOnly}
+	for _, layout := range layouts {
+		t, err = time.Parse(layout, sv)
+		if err == nil {
+			return t, nil
+		}
+	}
+
+	var ves []*openapi.ValidationError
+	ves = append(ves, &openapi.ValidationError{
+		Loc:  []string{"query", m.Title},
+		Msg:  fmt.Sprintf("value: '%s' is not a date, err:%v", sv, err),
+		Type: string(openapi.StringType),
+		Ctx:  whereClientError,
+	})
+	return nil, ves
+}
+
+func (m *DateBindMethod) Marshal(obj any) ([]byte, error) {
+	t, ok := obj.(time.Time)
+	if ok {
+		return []byte(t.Format(time.DateOnly)), nil
+	}
+	return nil, errors.New("obj is not a date")
+}
+
+func (m *DateBindMethod) Unmarshal(stream []byte, obj any) (ves []*openapi.ValidationError) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *DateBindMethod) New() any { return nil }
+
+// DateTimeBindMethod 日期时间校验
+type DateTimeBindMethod struct {
+	Title string `json:"title,omitempty" description:"查询参数名"`
+}
+
+func (m *DateTimeBindMethod) Name() string { return "DateTimeBindMethod" }
+
+func (m *DateTimeBindMethod) Validate(ctx context.Context, data any) (any, []*openapi.ValidationError) {
+	sv := data.(string) // 肯定是string类型
+
+	var err error
+	var t time.Time
+	// 按照常用频率排序
+	layouts := []string{time.DateTime, time.RFC3339, time.DateOnly, time.TimeOnly, time.Kitchen, time.RFC3339Nano,
+		time.RFC822, time.ANSIC, time.UnixDate, time.RubyDate, time.RFC822Z, time.RFC850,
+		time.RFC1123, time.RFC1123Z, time.Stamp, time.StampMilli, time.StampMicro, time.StampNano,
+	}
+	for _, layout := range layouts {
+		t, err = time.Parse(layout, sv)
+		if err == nil {
+			return t, nil
+		}
+	}
+
+	var ves []*openapi.ValidationError
+	ves = append(ves, &openapi.ValidationError{
+		Loc:  []string{"query", m.Title},
+		Msg:  fmt.Sprintf("value: '%s' is not a datetime, err:%v", sv, err),
+		Type: string(openapi.StringType),
+		Ctx:  whereClientError,
+	})
+	return nil, ves
+}
+
+func (m *DateTimeBindMethod) Marshal(obj any) ([]byte, error) {
+	t, ok := obj.(time.Time)
+	if ok {
+		return []byte(t.Format(time.DateTime)), nil
+	}
+	return nil, errors.New("obj is not a datetime")
+}
+
+func (m *DateTimeBindMethod) Unmarshal(stream []byte, obj any) (ves []*openapi.ValidationError) {
+	return nil
+}
+
+func (m *DateTimeBindMethod) New() any { return nil }
 
 // StructQueryBind 结构体查询参数验证器
 type StructQueryBind struct {
@@ -586,4 +734,26 @@ func ParseValidatorError(err error, loc openapi.RouteParamType, objName string) 
 	}
 
 	return ves
+}
+
+func LazyInit() {
+	// 初始化默认结构体验证器
+	defaultValidator = validator.New()
+	defaultValidator.SetTagName(openapi.ValidateTagName)
+
+	// 初始化结构体查询参数方法
+	var queryStructJsonConf = jsoniter.Config{
+		IndentionStep:                 0,                    // 指定格式化序列化输出时的空格缩进数量
+		EscapeHTML:                    false,                // 转义输出HTML
+		MarshalFloatWith6Digits:       true,                 // 指定浮点数序列化输出时最多保留6位小数
+		ObjectFieldMustBeSimpleString: true,                 // 开启该选项后，反序列化过程中不会对你的json串中对象的字段字符串可能包含的转义进行处理，因此你应该保证你的待解析json串中对象的字段应该是简单的字符串(不包含转义)
+		SortMapKeys:                   false,                // 指定map类型序列化输出时按照其key排序
+		UseNumber:                     false,                // 指定反序列化时将数字(整数、浮点数)解析成json.Number类型
+		DisallowUnknownFields:         false,                // 当开启该选项时，反序列化过程如果解析到未知字段，即在结构体的schema定义中找不到的字段时，不会跳过然后继续解析，而会返回错误
+		TagKey:                        openapi.QueryTagName, // 指定tag字符串，默认情况为"json"
+		OnlyTaggedField:               false,                // 当开启该选项时，只有带上tag的结构体字段才会被序列化输出
+		ValidateJsonRawMessage:        false,                // json.RawMessage类型的字段在序列化时会原封不动地进行输出。开启这个选项后，json-iterator会校验这种类型的字段包含的是否一个合法的json串，如果合法，原样输出；否则会输出"null"
+		CaseSensitive:                 false,                // 开启该选项后，你的待解析json串中的对象的字段必须与你的schema定义的字段大小写严格一致
+	}
+	structQueryBind = &StructQueryBind{json: queryStructJsonConf.Froze()}
 }

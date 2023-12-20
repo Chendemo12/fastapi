@@ -20,14 +20,36 @@ import (
 
 var one = &sync.Once{}
 var wrapper *Wrapper = nil // 默认实例
+var dLog logger.Iface = logger.NewDefaultLogger()
 
+// HotSwitchSigint 默认热调试开关
+const HotSwitchSigint = 30
+
+// EventKind 事件类型
+type EventKind string
+
+const (
+	StartupEvent  EventKind = "startup"
+	ShutdownEvent EventKind = "shutdown"
+)
+
+// Event 事件
+type Event struct {
+	Fc   func()
+	Type EventKind // 事件类型：startup 或 shutdown
+}
 type FastApi = Wrapper
 
 // Wrapper 服务对象，本质是一个包装器
+//
+//	# usage
+//	./test/group_router_test.go
 type Wrapper struct {
 	conf          *Profile           `description:"配置项"`
-	service       *Service           `description:"全局服务依赖"`
+	openApi       *openapi.OpenApi   `description:"模型文档"`
 	pool          *sync.Pool         `description:"Wrapper.Context资源池"`
+	ctx           context.Context    `description:"根Context"`
+	cancel        context.CancelFunc `description:"取消函数"`
 	mux           MuxWrapper         `description:"后端路由器"`
 	isStarted     chan struct{}      `description:"标记程序是否完成启动"`
 	groupRouters  []*GroupRouterMeta `description:"路由组对象"`
@@ -54,8 +76,6 @@ type Profile struct {
 }
 
 func (f *Wrapper) initService() *Wrapper {
-	f.service.addr = net.JoinHostPort(f.conf.Host, f.conf.Port)
-
 	if f.conf.Version == "" {
 		f.conf.Version = "1.0.0"
 	}
@@ -63,7 +83,6 @@ func (f *Wrapper) initService() *Wrapper {
 	f.pool = &sync.Pool{
 		New: func() interface{} {
 			c := new(Context)
-			c.svc = f.service
 			return c
 		},
 	}
@@ -117,7 +136,7 @@ func (f *Wrapper) initFinder() *Wrapper {
 
 // 创建 OpenApi Swagger 文档, 必须等上层注册完路由之后才能调用
 func (f *Wrapper) initSwagger() *Wrapper {
-	f.service.openApi = openapi.NewOpenApi(f.Config().Title, f.Config().Version, f.Config().Description)
+	f.openApi = openapi.NewOpenApi(f.Config().Title, f.Config().Version, f.Config().Description)
 	if !f.conf.SwaggerDisabled || f.conf.Debug {
 		f.registerRouteDoc()
 		f.registerRouteHandle()
@@ -147,7 +166,7 @@ func (f *Wrapper) initialize() *Wrapper {
 	f.initMux()
 	f.initSwagger() // === 必须最后调用
 
-	f.service.Logger().Debug(
+	f.Logger().Debug(
 		"Run at: " + utils.Ternary[string](f.conf.Debug, "Development", "Production"),
 	)
 	return f
@@ -167,7 +186,7 @@ func (f *Wrapper) wrap(mux MuxWrapper) *Wrapper {
 			err = mux.BindRoute(route.Swagger().Method, route.Swagger().Url, f.Handler)
 			if err != nil {
 				// 此时日志已初始化完毕
-				f.Service().Logger().Error(fmt.Sprintf(
+				f.Logger().Error(fmt.Sprintf(
 					"route: '%s:%s' bind failed, %v", route.Swagger().Method, route.Swagger().Url, err,
 				))
 			}
@@ -178,7 +197,7 @@ func (f *Wrapper) wrap(mux MuxWrapper) *Wrapper {
 		err = mux.BindRoute(route.Swagger().Method, route.Swagger().Url, f.Handler)
 		if err != nil {
 			// 此时日志已初始化完毕
-			f.Service().Logger().Error(fmt.Sprintf(
+			f.Logger().Error(fmt.Sprintf(
 				"route: '%s:%s' bind failed, %v", route.Swagger().Method, route.Swagger().Url, err,
 			))
 		}
@@ -191,7 +210,7 @@ func (f *Wrapper) wrap(mux MuxWrapper) *Wrapper {
 
 func (f *Wrapper) Config() Config {
 	return Config{
-		Logger:                         f.service.Logger(),
+		Logger:                         dLog,
 		Version:                        f.conf.Version,
 		Description:                    f.conf.Description,
 		Title:                          f.conf.Title,
@@ -202,8 +221,14 @@ func (f *Wrapper) Config() Config {
 	}
 }
 
-// Service 获取Wrapper全局服务依赖
-func (f *Wrapper) Service() *Service { return f.service }
+// Logger 获取日志句柄
+func (f *Wrapper) Logger() logger.Iface { return dLog }
+
+// Done 监听程序是否退出或正在关闭，仅当程序关闭时解除阻塞
+func (f *Wrapper) Done() <-chan struct{} { return f.ctx.Done() }
+
+// Ctx 根 context
+func (f *Wrapper) Ctx() context.Context { return f.ctx }
 
 // Mux 获取路由器
 func (f *Wrapper) Mux() MuxWrapper { return f.mux }
@@ -239,7 +264,7 @@ func (f *Wrapper) OnEvent(kind EventKind, fc func()) *Wrapper {
 //
 //	@param	logger	logger.Iface	日志句柄
 func (f *Wrapper) SetLogger(logger logger.Iface) *Wrapper {
-	f.service.setLogger(logger)
+	dLog = logger
 	return f
 }
 
@@ -289,7 +314,7 @@ func (f *Wrapper) ActivateHotSwitch(s ...int) *Wrapper {
 	go func() {
 		for {
 			select {
-			case <-f.Service().Done():
+			case <-f.Done():
 				return
 			case <-swt:
 				if f.conf.Debug {
@@ -297,7 +322,7 @@ func (f *Wrapper) ActivateHotSwitch(s ...int) *Wrapper {
 				} else {
 					f.resetRunMode(true)
 				}
-				f.service.Logger().Debug(
+				dLog.Debug(
 					"Hot-switch received, convert to: ", utils.Ternary[string](f.conf.Debug, "Development", "Production"),
 				)
 			}
@@ -323,7 +348,7 @@ func (f *Wrapper) DisableSwagAutoCreate() *Wrapper {
 
 // Shutdown 平滑关闭
 func (f *Wrapper) Shutdown() {
-	f.service.cancel() // 标记结束
+	f.cancel() // 标记结束
 
 	// 执行关机前事件
 	for _, event := range f.events {
@@ -364,12 +389,13 @@ func (f *Wrapper) Run(host, port string) {
 	}
 
 	f.isStarted <- struct{}{} // 解除阻塞上层的任务
-	f.service.Logger().Debug("HTTP server listening on: " + f.service.Addr())
+	addr := net.JoinHostPort(f.conf.Host, f.conf.Port)
+	dLog.Debug("HTTP server listening on: " + addr)
 
 	close(f.isStarted)
 
 	go func() {
-		log.Fatal(f.mux.Listen(f.service.Addr()))
+		log.Fatal(f.mux.Listen(addr))
 	}()
 
 	// 关闭开关, buffered
@@ -440,9 +466,6 @@ func New(c ...Config) *Wrapper {
 func Create(c Config) *Wrapper {
 	conf := cleanConfig(c)
 
-	sc := &Service{}
-	sc.ctx, sc.cancel = context.WithCancel(context.Background())
-
 	app := &Wrapper{
 		conf: &Profile{
 			Title:           conf.Title,
@@ -452,7 +475,6 @@ func Create(c Config) *Wrapper {
 			SwaggerDisabled: conf.DisableSwagAutoCreate,
 			ShutdownTimeout: time.Duration(conf.ShutdownTimeout) * time.Second,
 		},
-		service:       sc,
 		genericRoutes: make([]RouteIface, 0),
 		groupRouters:  make([]*GroupRouterMeta, 0),
 		isStarted:     make(chan struct{}, 1),
@@ -460,6 +482,7 @@ func Create(c Config) *Wrapper {
 		afterDeps:     make([]MiddlewareHandle, 0),
 		events:        make([]*Event, 0),
 	}
+	app.ctx, app.cancel = context.WithCancel(context.Background())
 
 	if conf.Description != "" {
 		app.SetDescription(conf.Description)
