@@ -16,19 +16,19 @@ import (
 )
 
 type FiberMux struct {
-	App  *fiber.App
+	app  *fiber.App
 	pool *sync.Pool
 }
 
 // NewWrapper 创建App实例
 func NewWrapper(app *fiber.App) *FiberMux {
 	return &FiberMux{
-		App:  app,
+		app:  app,
 		pool: &sync.Pool{New: func() any { return &FiberContext{} }},
 	}
 }
 
-// Default 默认的fiber.App，已做好基本的参数配置
+// Default 默认的fiber.app，已做好基本的参数配置
 func Default() *FiberMux {
 	app := fiber.New(fiber.Config{
 		Prefork:       false,                   // 多进程模式
@@ -59,6 +59,8 @@ func Default() *FiberMux {
 	return NewWrapper(app)
 }
 
+func (m *FiberMux) App() *fiber.App { return m.app }
+
 func (m *FiberMux) AcquireCtx(c *fiber.Ctx) *FiberContext {
 	obj := m.pool.Get().(*FiberContext)
 	obj.ctx = c
@@ -72,33 +74,33 @@ func (m *FiberMux) ReleaseCtx(c *FiberContext) {
 }
 
 func (m *FiberMux) Listen(addr string) error {
-	return m.App.Listen(addr)
+	return m.app.Listen(addr)
 }
 
 func (m *FiberMux) ShutdownWithTimeout(timeout time.Duration) error {
-	return m.App.ShutdownWithTimeout(timeout)
+	return m.app.ShutdownWithTimeout(timeout)
 }
 
 func (m *FiberMux) BindRoute(method, path string, handler fastapi.MuxHandler) error {
 	switch method {
 	case http.MethodGet:
-		m.App.Get(path, func(ctx *fiber.Ctx) error {
+		m.app.Get(path, func(ctx *fiber.Ctx) error {
 			return handler(&FiberContext{ctx: ctx})
 		})
 	case http.MethodPost:
-		m.App.Post(path, func(ctx *fiber.Ctx) error {
+		m.app.Post(path, func(ctx *fiber.Ctx) error {
 			return handler(&FiberContext{ctx: ctx})
 		})
 	case http.MethodDelete:
-		m.App.Delete(path, func(ctx *fiber.Ctx) error {
+		m.app.Delete(path, func(ctx *fiber.Ctx) error {
 			return handler(&FiberContext{ctx: ctx})
 		})
 	case http.MethodPatch:
-		m.App.Patch(path, func(ctx *fiber.Ctx) error {
+		m.app.Patch(path, func(ctx *fiber.Ctx) error {
 			return handler(&FiberContext{ctx: ctx})
 		})
 	case http.MethodPut:
-		m.App.Put(path, func(ctx *fiber.Ctx) error {
+		m.app.Put(path, func(ctx *fiber.Ctx) error {
 			return handler(&FiberContext{ctx: ctx})
 		})
 	default:
@@ -149,8 +151,29 @@ func (c *FiberContext) ShouldBind(obj any) error { return nil }
 func (c *FiberContext) ShouldBindNotImplemented() bool { return true }
 
 func (c *FiberContext) SetCookie(cookie *http.Cookie) {
-	//TODO implement me
-	panic("implement me")
+	ck := &fiber.Cookie{
+		Name:        cookie.Name,
+		Value:       cookie.Value,
+		Path:        cookie.Path,
+		Domain:      cookie.Domain,
+		MaxAge:      cookie.MaxAge,
+		Expires:     cookie.Expires,
+		Secure:      cookie.Secure,
+		HTTPOnly:    cookie.HttpOnly,
+		SessionOnly: false,
+	}
+
+	switch cookie.SameSite {
+	case http.SameSiteDefaultMode:
+		ck.SameSite = fiber.CookieSameSiteDisabled
+	case http.SameSiteLaxMode:
+		ck.SameSite = fiber.CookieSameSiteLaxMode
+	case http.SameSiteStrictMode:
+		ck.SameSite = fiber.CookieSameSiteStrictMode
+	case http.SameSiteNoneMode:
+		ck.SameSite = fiber.CookieSameSiteNoneMode
+	}
+	c.ctx.Cookie(ck)
 }
 
 func (c *FiberContext) Cookie(name string) (string, error) {
@@ -187,8 +210,7 @@ func (c *FiberContext) YAML(code int, obj any) error {
 }
 
 func (c *FiberContext) TOML(code int, obj any) error {
-	//TODO implement me
-	panic("implement me")
+	return nil
 }
 
 func (c *FiberContext) Header(key, value string) { c.ctx.Set(key, value) }
