@@ -89,6 +89,10 @@ func (r *QueryParamRouter) TimeGet(c *fastapi.Context, day time.Time, param *Dat
 	}, nil
 }
 
+func (r *QueryParamRouter) TimePost(c *fastapi.Context, day time.Time) (time.Time, error) {
+	return day, nil
+}
+
 type Name struct {
 	Father string `query:"father" json:"father" validate:"required" description:"姓氏"` // 必选查询参数
 	Name   string `query:"name" json:"name,omitempty" description:"姓名"`               // 可选查询参数
@@ -96,10 +100,11 @@ type Name struct {
 
 type DateTime struct {
 	Name         *Name     `json:"name" query:"name"`
-	Birthday     time.Time `json:"birthday" query:"birthday" description:"誕じび"` // 日期时间类型
+	Birthday     time.Time `json:"birthday" query:"birthday" description:"生日"` // 日期时间类型
 	ImportantDay *struct {
-		LoveDay time.Time `json:"love_day"`
-		NameDay time.Time `json:"name_day"`
+		LoveDay          time.Time   `json:"love_day"`
+		NameDay          time.Time   `json:"name_day"`
+		ChildrenBirthday []time.Time `json:"children_birthday"`
 	} `json:"important_day" description:"纪念日"`
 }
 

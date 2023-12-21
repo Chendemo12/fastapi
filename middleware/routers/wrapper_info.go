@@ -11,30 +11,37 @@ import (
 //
 //	router := NewInfoRouter(Config{})
 //	app.IncludeRouter(router)
-func NewInfoRouter(conf fastapi.Config) fastapi.GroupRouter {
-	return &WrapperInfoRouter{
+func NewInfoRouter(conf fastapi.Config, prefix ...string) fastapi.GroupRouter {
+	r := &WrapperInfoRouter{
+		prefix:  "/api/base",
+		Tag:     []string{"Base"},
 		Title:   conf.Title,
 		Version: conf.Version,
 		Desc:    conf.Description,
 		Debug:   conf.Debug,
 	}
+	if len(prefix) > 0 {
+		r.prefix = prefix[0]
+	}
+
+	return r
 }
 
 type WrapperInfoRouter struct {
 	fastapi.BaseRouter
+	prefix  string
 	Title   string
 	Version string
 	Desc    string
 	Debug   bool
+	Tag     []string
 }
 
 func (r *WrapperInfoRouter) Prefix() string {
-	return "/api"
+	return r.prefix
 }
 
-func (r *WrapperInfoRouter) Tags() []string {
-	return []string{"Base"}
-}
+func (r *WrapperInfoRouter) Tags() []string { return r.Tag }
 
 func (r *WrapperInfoRouter) PathSchema() pathschema.RoutePathSchema {
 	return pathschema.Default()

@@ -1,7 +1,6 @@
 package fastapi
 
 import (
-	"fmt"
 	"github.com/Chendemo12/fastapi/openapi"
 	"io"
 	"net/http"
@@ -272,12 +271,7 @@ func queryParamsValidate(c *Context, route RouteIface, stopImmediately bool) []*
 		sv := v.(string)
 		value, err := binder.Method.Validate(c.routeCtx, sv)
 		if err != nil {
-			ves = append(ves, &openapi.ValidationError{
-				Loc:  []string{"query", binder.QModel.JsonName()},
-				Msg:  fmt.Sprintf("value: '%s' is not a number", sv),
-				Type: string(binder.QModel.SchemaType()),
-				Ctx:  whereClientError,
-			})
+			ves = append(ves, err...)
 			if stopImmediately {
 				break
 			}

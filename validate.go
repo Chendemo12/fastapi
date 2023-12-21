@@ -470,12 +470,27 @@ func (m *DateTimeBindMethod) Validate(ctx context.Context, data any) (any, []*op
 	}
 
 	var ves []*openapi.ValidationError
-	ves = append(ves, &openapi.ValidationError{
-		Loc:  []string{"query", m.Title},
-		Msg:  fmt.Sprintf("value: '%s' is not a datetime, err:%v", sv, err),
-		Type: string(openapi.StringType),
-		Ctx:  whereClientError,
-	})
+	var timeErr *time.ParseError
+
+	if errors.As(err, &timeErr) {
+		ves = append(ves, &openapi.ValidationError{
+			Loc:  []string{"query", m.Title},
+			Msg:  fmt.Sprintf("value: '%s' is not a datetime, err:%s", sv, err.Error()),
+			Type: string(openapi.StringType),
+			Ctx: map[string]any{
+				whereErrorLabel: whereClientError[whereErrorLabel],
+				"layout":        timeErr.Layout,
+			},
+		})
+	} else {
+		ves = append(ves, &openapi.ValidationError{
+			Loc:  []string{"query", m.Title},
+			Msg:  fmt.Sprintf("value: '%s' is not a datetime, err:%s", sv, err.Error()),
+			Type: string(openapi.StringType),
+			Ctx:  whereClientError,
+		})
+	}
+
 	return nil, ves
 }
 

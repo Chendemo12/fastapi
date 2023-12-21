@@ -41,6 +41,7 @@ type RouteSwagger struct {
 	Tags                []string       `json:"tags" description:"路由标签"`
 	PathFields          []*QModel      `json:"-" description:"路径参数"`
 	QueryFields         []*QModel      `json:"-" description:"查询参数"`
+	UploadFile          SchemaIface    `json:"-" description:"是否是上传文件,不能与RequestModel共存"`
 	Deprecated          bool           `json:"deprecated" description:"是否禁用"`
 }
 
@@ -194,6 +195,7 @@ func (r *RouteParam) Init() (err error) {
 		// 对于匿名字段, 此处无法重命名，只能由外部重命名, 通过 Rename 方法重命名
 	}
 
+	r.IsTime = r.Pkg == TimePkg
 	return nil
 }
 

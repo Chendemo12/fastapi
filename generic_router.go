@@ -47,131 +47,139 @@ func cleanOpts(opts ...Option) *Option {
 	return opt
 }
 
-// GenericRoute 泛型路由定义
-type GenericRoute[T openapi.ModelSchema] struct {
+type GenericRoute[T any] struct {
+	meta *GenericRouteMeta[T]
+}
+
+// GenericRouteMeta 泛型路由定义
+type GenericRouteMeta[T any] struct {
 	swagger   *openapi.RouteSwagger
 	prototype T
 	handler   func(c *Context, params T) *Response // good
 }
 
-func (r *GenericRoute[T]) Id() string { return r.swagger.Id() }
+func (r *GenericRouteMeta[T]) Id() string { return r.swagger.Id() }
 
-func (r *GenericRoute[T]) RouteType() RouteType {
+func (r *GenericRouteMeta[T]) RouteType() RouteType {
 	return RouteTypeGeneric
 }
 
-func (r *GenericRoute[T]) Swagger() *openapi.RouteSwagger {
+func (r *GenericRouteMeta[T]) Swagger() *openapi.RouteSwagger {
 	return r.swagger
 }
 
-func (r *GenericRoute[T]) ResponseBinder() *ParamBinder {
+func (r *GenericRouteMeta[T]) ResponseBinder() *ParamBinder {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (r *GenericRoute[T]) RequestBinders() *ParamBinder {
+func (r *GenericRouteMeta[T]) RequestBinders() *ParamBinder {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (r *GenericRoute[T]) QueryBinders() []*ParamBinder {
+func (r *GenericRouteMeta[T]) QueryBinders() []*ParamBinder {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (r *GenericRoute[T]) NewInParams(ctx *Context) []reflect.Value {
+func (r *GenericRouteMeta[T]) NewInParams(ctx *Context) []reflect.Value {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (r *GenericRoute[T]) NewRequestModel() any {
+func (r *GenericRouteMeta[T]) NewRequestModel() any {
 	return nil
 }
 
-func (r *GenericRoute[T]) NewStructQuery() any {
+func (r *GenericRouteMeta[T]) NewStructQuery() any {
 	return nil
 }
 
-func (r *GenericRoute[T]) HasStructQuery() bool {
+func (r *GenericRouteMeta[T]) HasStructQuery() bool {
 	return true
 }
 
-func (r *GenericRoute[T]) Call(ctx *Context) {
+func (r *GenericRouteMeta[T]) Call(ctx *Context) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (r *GenericRoute[T]) ResponseValidate(c *Context, stopImmediately bool) []*openapi.ValidationError {
+func (r *GenericRouteMeta[T]) ResponseValidate(c *Context, stopImmediately bool) []*openapi.ValidationError {
 	return nil
 }
 
-func (r *GenericRoute[T]) Init() (err error) {
+func (r *GenericRouteMeta[T]) Init() (err error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (r *GenericRoute[T]) Scan() (err error) {
+func (r *GenericRouteMeta[T]) Scan() (err error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (r *GenericRoute[T]) ScanInner() (err error) {
+func (r *GenericRouteMeta[T]) ScanInner() (err error) {
 	//TODO implement me
 	panic("implement me")
 }
 
 // Get TODO Future-231126.5: 泛型路由注册
-func Get[T openapi.ModelSchema](path string, handler func(c *Context, query T) *Response, opt ...Option) *GenericRoute[T] {
+func Get[T any](path string, handler func(c *Context, query T) *Response, opt ...Option) *GenericRoute[T] {
 	var prototype T
-	g := &GenericRoute[T]{
+	g := &GenericRouteMeta[T]{
 		handler:   handler,
 		prototype: prototype,
 	}
 	// 添加到全局数组
 	g.swagger.RelativePath = path
 	g.swagger.Method = http.MethodGet
-	return g
+
+	return &GenericRoute[T]{meta: g}
 }
 
-func Delete[T openapi.ModelSchema](path string, handler func(c *Context, query T) *Response, opt ...Option) *GenericRoute[T] {
+func Delete[T any](path string, handler func(c *Context, query T) *Response, opt ...Option) *GenericRoute[T] {
 	var prototype T
-	g := &GenericRoute[T]{
+	g := &GenericRouteMeta[T]{
 		handler:   handler,
 		prototype: prototype,
 	}
 	// 添加到全局数组
 	g.swagger.RelativePath = path
 	g.swagger.Method = http.MethodDelete
-	return g
+
+	return &GenericRoute[T]{meta: g}
 }
 
 func Post[T openapi.ModelSchema](path string, handler func(c *Context, req T) *Response, opt ...Option) *GenericRoute[T] {
 	var prototype T
-	g := &GenericRoute[T]{
+	g := &GenericRouteMeta[T]{
 		handler:   handler,
 		prototype: prototype,
 	}
 	// 添加到全局数组
 	g.swagger.RelativePath = path
 	g.swagger.Method = http.MethodPost
-	return g
+
+	return &GenericRoute[T]{meta: g}
 }
 
 func Patch[T openapi.ModelSchema](path string, handler func(c *Context, req T) *Response, opt ...Option) *GenericRoute[T] {
 	var prototype T
-	g := &GenericRoute[T]{
+	g := &GenericRouteMeta[T]{
 		handler:   handler,
 		prototype: prototype,
 	}
 	// 添加到全局数组
 	g.swagger.RelativePath = path
 	g.swagger.Method = http.MethodPatch
-	return g
+
+	return &GenericRoute[T]{meta: g}
 }
 
 // =================================== 👇 路由组元数据 ===================================
 
 // GenericRouterMeta 统一记录所有的泛型路由
 type GenericRouterMeta[T openapi.ModelSchema] struct {
-	routes []*GenericRoute[T]
+	routes []*GenericRouteMeta[T]
 }

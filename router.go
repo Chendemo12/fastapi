@@ -10,7 +10,7 @@ type RouteType string
 
 const (
 	RouteTypeGroup   RouteType = "GroupRoute"
-	RouteTypeGeneric RouteType = "GenericRoute"
+	RouteTypeGeneric RouteType = "GenericRouteMeta"
 )
 
 // QueryParamMode 查询参数的定义模式，不同模式决定了查询参数的校验方式
@@ -160,14 +160,10 @@ func (s ScanHelper) InferBinderMethod(param openapi.SchemaIface, prototypeKind r
 	case reflect.String:
 		binder = &NothingBindMethod{}
 	case reflect.Struct:
-		if param.SchemaPkg() == openapi.TimePkg {
-			binder = &DateTimeBindMethod{Title: param.SchemaTitle()}
+		if modelType == openapi.RouteParamResponse {
+			binder = &JsonBindMethod[any]{Title: param.SchemaTitle(), RouteParamType: modelType}
 		} else {
-			if modelType == openapi.RouteParamResponse {
-				binder = &JsonBindMethod[any]{Title: param.SchemaTitle(), RouteParamType: modelType}
-			} else {
-				binder = &JsonBindMethod[any]{Title: param.SchemaTitle(), RouteParamType: modelType}
-			}
+			binder = &JsonBindMethod[any]{Title: param.SchemaTitle(), RouteParamType: modelType}
 		}
 
 	default:
@@ -232,14 +228,21 @@ func (s ScanHelper) InferRequestBinder(model *openapi.BaseModelMeta, routeType R
 }
 
 func (s ScanHelper) InferQueryBinder(qmodel *openapi.QModel, routeType RouteType) *ParamBinder {
-	return &ParamBinder{
+	binder := &ParamBinder{
 		Title:          qmodel.SchemaTitle(),
 		QModel:         qmodel,
 		RouteParamType: openapi.RouteParamQuery,
-		Method:         scanHelper.InferBinderMethod(qmodel, qmodel.Kind, openapi.RouteParamQuery),
 		RequestModel:   nil,
 		ResponseModel:  nil,
 	}
+
+	if qmodel.IsTime {
+		binder.Method = &DateTimeBindMethod{Title: qmodel.SchemaTitle()}
+	} else {
+		binder.Method = scanHelper.InferBinderMethod(qmodel, qmodel.Kind, openapi.RouteParamQuery)
+	}
+
+	return binder
 }
 
 // InferBaseQueryParam 推断基本类型的查询参数

@@ -10,6 +10,7 @@ import (
 	"path"
 	"reflect"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -363,6 +364,7 @@ type GroupRoute struct {
 	structQuery    int                   // 结构体查询参数在 inParams 中的索引
 	handlerInNum   int                   // 路由函数入参数量, 入参数量可以不固定,但第一个必须是 Context，如果>1:则最后一个视为请求体(Post/Patch/Post)或查询参数(Get/Delete)
 	handlerOutNum  int                   // 路由函数出参数量, 出参数量始终为2,最后一个必须是 error
+	getOrDelete    bool                  // GET 或 DELETE 方法
 }
 
 func (r *GroupRoute) Id() string { return r.swagger.Id() }
@@ -383,6 +385,7 @@ func NewGroupRoute(swagger *openapi.RouteSwagger, method reflect.Method, group *
 func (r *GroupRoute) Init() (err error) {
 	r.handlerInNum = r.method.Type.NumIn() - FirstInParamOffset // 排除接收器
 	r.handlerOutNum = OutParamNum                               // 返回值数量始终为2
+	r.getOrDelete = utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method)
 
 	r.outParams = openapi.NewRouteParam(r.method.Type.Out(FirstOutParamOffset), FirstOutParamOffset, openapi.RouteParamResponse)
 	for n := FirstCustomInParamOffset; n <= r.handlerInNum; n++ {
@@ -437,74 +440,59 @@ func (r *GroupRoute) scanInParams() (err error) {
 	}
 
 	// TODO: Future-231203.9: 限制POST/PATCH/PUT方法最多支持2个结构体参数
-
 	if r.handlerInNum > FirstInParamOffset { // 存在自定义参数
 		// 掐头去尾,获得查询参数,GET/DELETE 必须为基本数据类型
-		for index, param := range r.inParams[:r.handlerInNum-1-1] {
+		for index, param := range r.inParams {
+			isLast := index == r.handlerInNum-FirstCustomInParamOffset
+
 			switch param.SchemaType() {
 
 			case openapi.ArrayType:
-				// 查询参数不支持数组
-				return errors.New(fmt.Sprintf(
-					"method: '%s' param: '%s', index: %d, query param not support array",
-					r.group.pkg+"."+r.method.Name, param.Pkg, param.Index,
-				))
+				if isLast && !r.getOrDelete { // // 最后一个参数, 是否可以断言为请求体
+					r.swagger.RequestModel = openapi.NewBaseModelMeta(param)
+				} else {
+					// 方法不支持断言为请求体, 查询参数不支持数组
+					return errors.New(fmt.Sprintf(
+						"method: '%s' param: '%s', index: %d, query param not support array",
+						r.group.pkg+"."+r.method.Name, param.Pkg, param.Index,
+					))
+				}
 
 			case openapi.ObjectType:
-				if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
-					// 判断是否是时间类型
-					qm, ok := scanHelper.InferTimeParam(param)
-					if ok {
-						r.swagger.QueryFields = append(r.swagger.QueryFields, qm)
-					} else {
-						// GET/DELETE方法不支持多个结构体参数, 打印出结构体方法名，参数索引出从1开始, 排除接收器参数，直接取Index即可
-						return errors.New(fmt.Sprintf(
-							"method: '%s' param: '%s', index: %d cannot be a %s",
-							r.group.pkg+"."+r.method.Name, param.Pkg, param.Index, param.SchemaType(),
-						))
-					}
+				// 判断是否是时间类型, 时间类型全部解释为查询参数
+				qm, ok := scanHelper.InferTimeParam(param)
+				if ok {
+					r.swagger.QueryFields = append(r.swagger.QueryFields, qm)
 				} else {
-					// POST/PATCH/PUT 方法，识别为结构体查询参数
-					r.structQuery = index
-					r.swagger.QueryFields = append(r.swagger.QueryFields, openapi.StructToQModels(param.CopyPrototype())...)
+					if !isLast { // 不是最后一个参数
+						if r.getOrDelete {
+							// GET/DELETE方法不支持多个结构体参数, 打印出结构体方法名，参数索引出从1开始, 排除接收器参数，直接取Index即可
+							return errors.New(fmt.Sprintf(
+								"method: '%s' param: '%s', index: %d cannot be a %s",
+								r.group.pkg+"."+r.method.Name, param.Pkg, param.Index, param.SchemaType(),
+							))
+						} else {
+							// POST/PATCH/PUT 方法，识别为结构体查询参数
+							r.structQuery = index
+							r.swagger.QueryFields = append(r.swagger.QueryFields, openapi.StructToQModels(param.CopyPrototype())...)
+						}
+					} else {
+						// 最后一个参数, 对于GET/DELETE 视为查询参数, 结构体的每一个字段都将作为一个查询参数;
+						// 对于 POST/PATCH/PUT 接口,如果是结构体或数组则作为请求体
+						if r.getOrDelete {
+							r.structQuery = index
+							qms := scanHelper.InferObjectQueryParam(param)
+							r.swagger.QueryFields = append(r.swagger.QueryFields, qms...)
+						} else {
+							r.swagger.RequestModel = openapi.NewBaseModelMeta(param)
+						}
+					}
 				}
 
 			default:
 				// NOTICE: 此处无法获得方法的参数名，只能获得参数类型的名称
 				r.swagger.QueryFields = append(r.swagger.QueryFields, scanHelper.InferBaseQueryParam(param, r.RouteType()))
 			}
-		}
-
-		// 入参最后一个视为请求体或查询参数
-		lastInParam := r.inParams[r.handlerInNum-FirstCustomInParamOffset]
-
-		switch lastInParam.SchemaType() {
-		case openapi.ObjectType:
-			if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
-				// 对于GET/DELETE 视为查询参数, 结构体的每一个字段都将作为一个查询参数
-				qms := scanHelper.InferObjectQueryParam(lastInParam)
-				r.swagger.QueryFields = append(r.swagger.QueryFields, qms...)
-
-				if lastInParam.SchemaPkg() != openapi.TimePkg {
-					r.structQuery = r.handlerInNum - FirstCustomInParamOffset
-				}
-			} else {
-				// 对于 POST/PATCH/PUT 接口,如果是结构体或数组则作为请求体
-				r.swagger.RequestModel = openapi.NewBaseModelMeta(lastInParam)
-			}
-		case openapi.ArrayType:
-			if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
-				// 查询参数不支持数组
-				return errors.New(fmt.Sprintf(
-					"method: '%s' param: '%s', index: %d, query param not support array",
-					r.group.pkg+"."+r.method.Name, lastInParam.Pkg, lastInParam.Index,
-				))
-			} else {
-				r.swagger.RequestModel = openapi.NewBaseModelMeta(lastInParam)
-			}
-		default:
-			// 对于基本类型的参数,均作为查询参数
-			r.swagger.QueryFields = append(r.swagger.QueryFields, scanHelper.InferBaseQueryParam(lastInParam, r.RouteType()))
 		}
 	}
 	return nil
@@ -606,27 +594,33 @@ func (r *GroupRoute) NewInParams(ctx *Context) []reflect.Value {
 	// 处理入参
 	for i, param := range r.inParams {
 		var instance reflect.Value
+		isLast := i == len(r.inParams)-1 // 是否是最后一个参数
 
 		switch param.SchemaType() {
-		case openapi.ObjectType, openapi.ArrayType:
-			if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
-				instance = reflect.ValueOf(ctx.queryStruct)
+
+		case openapi.ArrayType: // 只能是请求体
+			instance = reflect.ValueOf(ctx.requestModel)
+
+		case openapi.ObjectType: // 查询参数或请求体
+			// time.Time 类型只能是查询参数
+			if param.IsTime {
+				v := ctx.queryFields[param.QueryName()] // 参数是必选的, 此时肯定存在,且已经做好了类型转换
+				tt := v.(time.Time)
+				instance = reflect.ValueOf(tt)
 			} else {
-				if i == len(r.inParams)-1 { // 最后一个参数,解释为请求体,反之解释为查询参数
+				if isLast && !r.getOrDelete { // 最后一个参数, 可以断言为请求体
 					instance = reflect.ValueOf(ctx.requestModel)
 				} else {
-					// 匹配到POST/PATCH/PUT方法的结构体查询参数
+					// 匹配到结构体查询参数
 					instance = reflect.ValueOf(ctx.queryStruct)
 				}
 			}
-			// TODO: 处理time.Time 类型
 
-		default:
-			// 对于基本参数,只能是查询参数
+		default: // 对于基本参数,只能是查询参数
 			instance = param.NewNotStruct(ctx.queryFields[param.QueryName()])
 		}
 
-		if param.IsPtr {
+		if param.IsPtr || param.IsTime {
 			params[i+FirstCustomInParamOffset] = instance
 		} else {
 			params[i+FirstCustomInParamOffset] = instance.Elem()

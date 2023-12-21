@@ -177,8 +177,7 @@ func (c *FiberContext) SetCookie(cookie *http.Cookie) {
 }
 
 func (c *FiberContext) Cookie(name string) (string, error) {
-	//TODO implement me
-	panic("implement me")
+	return c.ctx.Cookies(name, ""), nil
 }
 
 func (c *FiberContext) Get(key string, defaultValue ...string) string {

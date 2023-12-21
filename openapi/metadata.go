@@ -341,7 +341,7 @@ func (m *BaseModelMeta) scanObjectSwagger() (err error) {
 		"description": m.SchemaDesc(),
 	}
 
-	if m.SchemaPkg() == TimePkg { // 复写类型
+	if m.SchemaPkg() == TimePkg { // 复写类型, 函数返回值签名为 time.Time
 		m.doc["type"] = StringType
 		m.doc["format"] = DateTimeParamSchemaFormat
 		return
@@ -460,11 +460,6 @@ func (m *BaseModelMeta) InnerSchema() []SchemaIface {
 			continue
 		}
 		if inner.rType.Kind() == reflect.Struct || inner.rType.Kind() == reflect.Ptr {
-			if inner.SchemaPkg() == TimePkg { // TODO: 复写类型
-				//m.doc["type"] = StringType
-				//m.doc["format"] = DateTimeParamSchemaFormat
-			}
-
 			// 仍然是个模型，继续反射
 			param := NewRouteParam(inner.rType, 0, RouteParamResponse)
 			err := param.Init()
@@ -580,9 +575,10 @@ func (f *BaseModelField) Schema() (m map[string]any) {
 		m[ValidatorLabelToOpenapiLabel[isdefault]] = v
 	}
 
-	if f.Pkg == TimePkg {
+	if f.Pkg == TimePkg { // 结构体的字段为 time.Time 类型
 		m["type"] = StringType
 		m["format"] = DateTimeParamSchemaFormat
+		return
 	}
 
 	// 为不同的字段类型生成相应的描述

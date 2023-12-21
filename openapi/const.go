@@ -93,6 +93,7 @@ const ( // 针对时间类型的查询参数格式化选项
 	TimeParamSchemaFormat     = "time"
 	DateParamSchemaFormat     = "date"
 	DateTimeParamSchemaFormat = "date-time"
+	FileParamSchemaFormat     = "binary"
 )
 
 // InnerModelsName 特殊的内部模型名称
