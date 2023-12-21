@@ -1,8 +1,8 @@
 package fastapi
 
 import (
+	"fmt"
 	"github.com/Chendemo12/fastapi/openapi"
-	"github.com/Chendemo12/fastapi/pathschema"
 	"reflect"
 )
 
@@ -12,6 +12,30 @@ const (
 	RouteTypeGroup   RouteType = "GroupRoute"
 	RouteTypeGeneric RouteType = "GenericRoute"
 )
+
+// QueryParamMode 查询参数的定义模式，不同模式决定了查询参数的校验方式
+// 对于泛型路由来说，仅存在 结构体查询参数 StructQueryParamMode 一种形式;
+// 对于路由组路由来说，三种形式都存在
+type QueryParamMode string
+
+const (
+	// NoQueryParamMode 不存在查询参数 = 0
+	NoQueryParamMode QueryParamMode = "NoQueryParamMode"
+	// SimpleQueryParamMode 只有基本数据类型的简单查询参数类型，不包含结构体类型的查询参数 = 1
+	SimpleQueryParamMode QueryParamMode = "SimpleQueryParamMode"
+	// StructQueryParamMode 以结构体形式定义的查询参数模式 = 4
+	StructQueryParamMode QueryParamMode = "StructQueryParamMode"
+	// MixQueryParamMode 二种形式都有的混合模式 = 7
+	MixQueryParamMode QueryParamMode = "MixQueryParamMode"
+)
+
+// Scanner 元数据接口
+// Init -> Scan -> ScanInner -> Init 级联初始化
+type Scanner interface {
+	Init() (err error)      // 初始化元数据对象
+	Scan() (err error)      // 扫描并初始化自己
+	ScanInner() (err error) // 扫描并初始化自己包含的字节点,通过 child.Init() 实现
+}
 
 // RouteIface 路由定义
 // 路由组接口定义或泛型接口定义都需实现此接口
@@ -38,7 +62,7 @@ type ParamBinder struct {
 	RequestModel   *openapi.BaseModelMeta `json:"-"`
 	ResponseModel  *openapi.BaseModelMeta `json:"-"`
 	Title          string                 `json:"title,omitempty"`
-	RouteParamType openapi.RouteParamType
+	RouteParamType openapi.RouteParamType `json:"route_param_type"`
 }
 
 // BaseModel 基本数据模型, 对于上层的路由定义其请求体和响应体都应为继承此结构体的结构体
@@ -56,8 +80,12 @@ func (b *BaseModel) IsRequired() bool { return true }
 
 // ================================================================================
 
+var scanHelper = &ScanHelper{}
+
+type ScanHelper struct{}
+
 // InferBinderMethod 利用反射推断参数的校验器
-func InferBinderMethod(param openapi.SchemaIface, prototypeKind reflect.Kind, modelType openapi.RouteParamType) ModelBindMethod {
+func (s ScanHelper) InferBinderMethod(param openapi.SchemaIface, prototypeKind reflect.Kind, modelType openapi.RouteParamType) ModelBindMethod {
 	if param == nil {
 		return &NothingBindMethod{}
 	}
@@ -149,73 +177,120 @@ func InferBinderMethod(param openapi.SchemaIface, prototypeKind reflect.Kind, mo
 	return binder
 }
 
-// ================================================================================
+// InferResponseBinder 推断响应体的校验器
+func (s ScanHelper) InferResponseBinder(model *openapi.BaseModelMeta, routeType RouteType) *ParamBinder {
+	if model == nil {
+		return &ParamBinder{
+			Title:          "",
+			RouteParamType: openapi.RouteParamResponse,
+			ResponseModel:  nil,
+			Method:         &NothingBindMethod{},
+		}
+	}
 
-// NewBaseRouter 用于获取后端服务基本信息的路由组
-//
-//	# Usage
-//
-//	router := NewBaseRouter(Config{})
-//	app.IncludeRouter(router)
-func NewBaseRouter(conf Config) GroupRouter {
-	return &BaseGroupRouter{
-		Title:   conf.Title,
-		Version: conf.Version,
-		Desc:    conf.Description,
-		Debug:   conf.Debug,
+	binder := &ParamBinder{
+		Title:          model.SchemaTitle(),
+		RouteParamType: openapi.RouteParamResponse,
+		ResponseModel:  model,
+	}
+
+	if model.SchemaType().IsBaseType() {
+		if routeType == RouteTypeGroup {
+			// 对于结构体路由组，其他类型的参数, 函数签名就已经保证了类型的正确性,无需手动校验
+			binder.Method = &NothingBindMethod{}
+		} else {
+			// 推断 InferBinderMethod
+			binder.Method = &NothingBindMethod{}
+		}
+
+	} else {
+		binder.Method = s.InferBinderMethod(
+			model.Param,
+			model.Param.ElemKind(), openapi.RouteParamResponse,
+		)
+	}
+
+	return binder
+}
+
+func (s ScanHelper) InferRequestBinder(model *openapi.BaseModelMeta, routeType RouteType) *ParamBinder {
+	if model == nil {
+		return &ParamBinder{
+			Title:          "",
+			RouteParamType: openapi.RouteParamRequest,
+			ResponseModel:  nil,
+			Method:         &NothingBindMethod{},
+		}
+	}
+
+	return &ParamBinder{
+		Title:          model.SchemaTitle(),
+		RouteParamType: openapi.RouteParamRequest,
+		RequestModel:   model,
+		Method:         s.InferBinderMethod(model.Param, model.Param.ElemKind(), openapi.RouteParamRequest),
 	}
 }
 
-type BaseGroupRouter struct {
-	BaseRouter
-	Title   string
-	Version string
-	Desc    string
-	Debug   bool
-}
-
-func (r *BaseGroupRouter) Prefix() string {
-	return "/api"
-}
-
-func (r *BaseGroupRouter) Tags() []string {
-	return []string{"Base"}
-}
-
-func (r *BaseGroupRouter) PathSchema() pathschema.RoutePathSchema {
-	return pathschema.Default()
-}
-
-func (r *BaseGroupRouter) Summary() map[string]string {
-	return map[string]string{
-		"GetTitle":       "获取软件名",
-		"GetDescription": "获取软件描述信息",
-		"GetVersion":     "获取软件版本号",
-		"GetDebug":       "获取调试开关",
-		"GetHeartbeat":   "心跳检测",
+func (s ScanHelper) InferQueryBinder(qmodel *openapi.QModel, routeType RouteType) *ParamBinder {
+	return &ParamBinder{
+		Title:          qmodel.SchemaTitle(),
+		QModel:         qmodel,
+		RouteParamType: openapi.RouteParamQuery,
+		Method:         scanHelper.InferBinderMethod(qmodel, qmodel.Kind, openapi.RouteParamQuery),
+		RequestModel:   nil,
+		ResponseModel:  nil,
 	}
 }
 
-func (r *BaseGroupRouter) Description() map[string]string {
-	return map[string]string{}
+// InferBaseQueryParam 推断基本类型的查询参数
+func (s ScanHelper) InferBaseQueryParam(param *openapi.RouteParam, routeType RouteType) *openapi.QModel {
+	name := param.QueryName() // 手动指定一个查询参数名称
+	qmodel := &openapi.QModel{
+		Name:     name,
+		DataType: param.SchemaType(),
+		Kind:     param.PrototypeKind,
+		InPath:   false,
+		InStruct: false,
+	}
+	if routeType == RouteTypeGroup { // 路由组：对于函数参数类型的查询参数,全部为必选的
+		qmodel.Tag = reflect.StructTag(fmt.Sprintf(`json:"%s" %s:"%s" %s:"%s"`,
+			name, openapi.QueryTagName, name, openapi.ValidateTagName, openapi.ParamRequiredLabel))
+	} else { // 范型路由推断为可选的
+		qmodel.Tag = reflect.StructTag(fmt.Sprintf(`json:"%s,omitempty" %s:"%s"`,
+			name, openapi.QueryTagName, name))
+	}
+
+	return qmodel
 }
 
-func (r *BaseGroupRouter) GetTitle(c *Context) (string, error) {
-	return r.Title, nil
+func (s ScanHelper) InferTimeParam(param *openapi.RouteParam) (*openapi.QModel, bool) {
+	if param.SchemaPkg() == openapi.TimePkg {
+		// 时间类型
+		return &openapi.QModel{
+			Name: param.QueryName(), // 手动指定一个查询参数名称
+			Tag: reflect.StructTag(fmt.Sprintf(`json:"%s" %s:"%s" %s:"%s"`,
+				param.QueryName(), openapi.QueryTagName, param.QueryName(), openapi.ValidateTagName, openapi.ParamRequiredLabel)), // 对于函数参数类型的查询参数,全部为必选的
+			DataType: openapi.StringType,
+			Kind:     param.PrototypeKind,
+			InPath:   false,
+			InStruct: false,
+			IsTime:   true,
+		}, true
+	}
+
+	return nil, false
 }
 
-func (r *BaseGroupRouter) GetDescription(c *Context) (string, error) {
-	return r.Desc, nil
-}
+// InferObjectQueryParam 推断结构体类型的查询参数
+func (s ScanHelper) InferObjectQueryParam(param *openapi.RouteParam) []*openapi.QModel {
+	var qms []*openapi.QModel
+	qm, ok := s.InferTimeParam(param)
+	if ok {
+		qms = append(qms, qm)
+	} else {
+		// 对于结构体查询参数, 结构体的每一个字段都将作为一个查询参数
+		qms = append(qms, openapi.StructToQModels(param.CopyPrototype())...)
+	}
 
-func (r *BaseGroupRouter) GetVersion(c *Context) (string, error) {
-	return r.Version, nil
-}
-
-func (r *BaseGroupRouter) GetDebug(c *Context) (bool, error) {
-	return r.Debug, nil
-}
-
-func (r *BaseGroupRouter) GetHeartbeat(c *Context) (string, error) {
-	return "pong", nil
+	return qms
 }

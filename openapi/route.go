@@ -7,7 +7,23 @@ import (
 	"github.com/Chendemo12/fastapi/pathschema"
 	"github.com/Chendemo12/fastapi/utils"
 	"reflect"
+	"strconv"
 	"strings"
+)
+
+// RouteParamType 路由参数类型
+type RouteParamType string
+
+const (
+	RouteParamQuery    RouteParamType = "query"
+	RouteParamPath     RouteParamType = "path"
+	RouteParamRequest  RouteParamType = "requestBody"
+	RouteParamResponse RouteParamType = "responseBody"
+)
+
+const (
+	SchemaDescMethodName string = "SchemaDesc"
+	SchemaTypeMethodName string = "SchemaType"
 )
 
 // RouteSwagger 路由文档定义，所有类型的路由均包含此部分
@@ -178,10 +194,6 @@ func (r *RouteParam) Init() (err error) {
 		// 对于匿名字段, 此处无法重命名，只能由外部重命名, 通过 Rename 方法重命名
 	}
 
-	if r.Pkg == TimePkg {
-		r.DataType = StringType
-	}
-
 	return nil
 }
 
@@ -271,17 +283,140 @@ func (r *RouteParam) ElemKind() reflect.Kind {
 	return rt.Kind()
 }
 
-// RouteParamType 路由参数类型
-type RouteParamType string
+// ReflectCallSchemaDesc 反射调用结构体的 SchemaDesc 方法
+func ReflectCallSchemaDesc(re reflect.Type) string {
+	method, found := re.MethodByName(SchemaDescMethodName)
+	if found {
+		// 创建一个的实例
+		var rt = re
+		var desc string
+		if rt.Kind() == reflect.Ptr {
+			rt = rt.Elem()
+			// 指针类型
+			newValue := reflect.New(rt).Interface()
+			result := method.Func.Call([]reflect.Value{reflect.ValueOf(newValue)})
+			desc = result[0].String()
+		} else {
+			newValue := reflect.New(rt).Interface()
+			result := method.Func.Call([]reflect.Value{reflect.ValueOf(newValue).Elem()})
+			desc = result[0].String()
+		}
 
-const (
-	RouteParamQuery    RouteParamType = "query"
-	RouteParamPath     RouteParamType = "path"
-	RouteParamRequest  RouteParamType = "requestBody"
-	RouteParamResponse RouteParamType = "responseBody"
-)
+		return desc
+	} else {
+		return ""
+	}
+}
 
 // CreateRouteIdentify 获得一个路由对象的唯一标识
 func CreateRouteIdentify(method, url string) string {
 	return helper.CombineStrings(method, RouteMethodSeparator, url)
+}
+
+// ToFastApiRoutePath 将 fiber.App 格式的路径转换成 FastApi 格式的路径
+//
+//	Example:
+//	必选路径参数：
+//		Input: "/api/rcst/:no"
+//		Output: "/api/rcst/{no}"
+//	可选路径参数：
+//		Input: "/api/rcst/:no?"
+//		Output: "/api/rcst/{no}"
+//	常规路径：
+//		Input: "/api/rcst/no"
+//		Output: "/api/rcst/no"
+func ToFastApiRoutePath(path string) string {
+	paths := strings.Split(path, pathschema.PathSeparator) // 路径字符
+	// 查找路径中的参数
+	for i := 0; i < len(paths); i++ {
+		if strings.HasPrefix(paths[i], pathschema.PathParamPrefix) {
+			// 识别到路径参数
+			if strings.HasSuffix(paths[i], pathschema.OptionalQueryParamPrefix) {
+				// 可选路径参数
+				paths[i] = "{" + paths[i][1:len(paths[i])-1] + "}"
+			} else {
+				paths[i] = "{" + paths[i][1:] + "}"
+			}
+		}
+	}
+
+	return strings.Join(paths, pathschema.PathSeparator)
+}
+
+// ReflectKindToType 转换reflect.Kind为swagger类型说明
+//
+//	@param	ReflectKind	reflect.Kind	反射类型,不进一步对指针类型进行上浮
+func ReflectKindToType(kind reflect.Kind) (name DataType) {
+	switch kind {
+
+	case reflect.Array, reflect.Slice, reflect.Chan:
+		name = ArrayType
+	case reflect.String:
+		name = StringType
+	case reflect.Bool:
+		name = BoolType
+	default:
+		if reflect.Bool < kind && kind <= reflect.Uint64 {
+			name = IntegerType
+		} else if reflect.Float32 <= kind && kind <= reflect.Complex128 {
+			name = NumberType
+		} else {
+			name = ObjectType
+		}
+	}
+
+	return
+}
+
+// IsFieldRequired 从tag中判断此字段是否是必须的
+func IsFieldRequired(tag reflect.StructTag) bool {
+	bindings := strings.Split(utils.QueryFieldTag(tag, ValidateTagName, ""), ",") // binding 存在多个值
+	for i := 0; i < len(bindings); i++ {
+		if strings.TrimSpace(bindings[i]) == ParamRequiredLabel {
+			return true
+		}
+	}
+
+	return false
+}
+
+// GetDefaultV 从Tag中提取字段默认值
+func GetDefaultV(tag reflect.StructTag, otype DataType) (v any) {
+	defaultV := utils.QueryFieldTag(tag, DefaultValueTagNam, "")
+
+	if defaultV == "" {
+		v = nil
+	} else { // 存在默认值
+		switch otype {
+
+		case StringType:
+			v = defaultV
+		case IntegerType:
+			v, _ = strconv.Atoi(defaultV)
+		case NumberType:
+			v, _ = strconv.ParseFloat(defaultV, 64)
+		case BoolType:
+			v, _ = strconv.ParseBool(defaultV)
+		default:
+			v = defaultV
+		}
+	}
+	return
+}
+
+// 针对结构体字段仍然是结构体或数组的情况，如果目标是个匿名对象则人为分配个名称，反之则获取实际的名称
+func assignModelNames(fieldMeta *BaseModelField, fieldType reflect.Type) (string, string) {
+	var pkg, name string
+
+	if utils.IsAnonymousStruct(fieldType) {
+		// 未命名的结构体类型, 没有名称, 分配包名和名称
+		name = fieldMeta.Name + "Model"
+		//pkg = fieldMeta._pkg + AnonymousModelNameConnector + name
+		pkg = fieldMeta.Pkg
+	} else {
+		pkg = fieldType.String() // 关联模型
+		name = fieldType.Name()
+	}
+
+	return pkg, name
 }

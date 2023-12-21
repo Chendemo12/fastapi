@@ -2,6 +2,7 @@ package openapi
 
 import (
 	"fmt"
+	"github.com/Chendemo12/fastapi-tool/helper"
 	"github.com/Chendemo12/fastapi/utils"
 	"reflect"
 	"strings"
@@ -42,8 +43,13 @@ func (m *BaseModelMeta) Scan() (err error) {
 	return
 }
 
-// ScanInner 无内部模型，无需向下递归解析 BaseModelField
 func (m *BaseModelMeta) ScanInner() (err error) {
+	for _, field := range m.fields {
+		err = field.Init()
+		if err != nil {
+			return
+		}
+	}
 	return
 }
 
@@ -122,7 +128,7 @@ func (m *BaseModelMeta) scanStructField(argsType *ArgsType, depth int) {
 	}
 	fieldMeta.Tag = field.Tag
 	fieldMeta.Name = field.Name
-	fieldMeta.Type = ReflectKindToType(field.Type.Kind())
+	fieldMeta.DataType = ReflectKindToType(field.Type.Kind())
 	fieldMeta.Description = utils.QueryFieldTag(field.Tag, DescriptionTagName, field.Name)
 
 	if argsType.IsAnonymousStruct() {
@@ -155,19 +161,6 @@ func (m *BaseModelMeta) scanStructField(argsType *ArgsType, depth int) {
 	}
 }
 
-func confirmStructFieldName(fatherStruct reflect.Type, field reflect.StructField, fieldType reflect.Type) (string, string) {
-	var pkg, name string
-	if utils.IsAnonymousStruct(fieldType) {
-		// 未命名的结构体类型, 没有名称, 分配包名和名称 == 结构体名.字段名Model
-		name = fatherStruct.Name() + field.Name + AnonymousModelNameConnector + "Model"
-		pkg = fatherStruct.String() + field.Name + AnonymousModelNameConnector + "Model"
-	} else {
-		pkg, name = fieldType.String(), fieldType.Name()
-	}
-
-	return pkg, name
-}
-
 // 处理字段是数组的元素
 func (m *BaseModelMeta) scanFieldWhichIsArray(fieldMeta *BaseModelField, elemType reflect.Type, depth int) {
 	if elemType.Kind() == reflect.Pointer { // 数组元素为指针结构体
@@ -194,7 +187,7 @@ func (m *BaseModelMeta) scanFieldWhichIsArray(fieldMeta *BaseModelField, elemTyp
 			Tag:         "",
 			Description: fieldMeta.Description,
 			ItemRef:     "",
-			Type:        ArrayType,
+			DataType:    ArrayType,
 			Exported:    true,
 			Anonymous:   false,
 			rType:       elemType,
@@ -223,7 +216,7 @@ func (m *BaseModelMeta) scanFieldWhichIsStruct(fieldMeta *BaseModelField, fieldT
 	pkg, name := assignModelNames(fieldMeta, fieldType)
 
 	// 首先记录一下结构体自身, 不设置为 BaseModelMeta 原因在于，避免递归处理，将模型展平
-	mf := &BaseModelField{Exported: true, Anonymous: false, rType: fieldType, Type: ObjectType}
+	mf := &BaseModelField{Exported: true, Anonymous: false, rType: fieldType, DataType: ObjectType}
 	mf.Description = fieldMeta.Description
 	mf.Pkg = pkg   // 如果是匿名结构体, 将上层分配的自定义名称作为此结构体的标识
 	mf.Name = name // 如果是具名结构体，获得真实名称
@@ -342,18 +335,27 @@ func (m *BaseModelMeta) scanObjectSwagger() (err error) {
 	m.doc = map[string]any{}
 
 	// 组合出模型文档
-	schema := dict{
+	m.doc = dict{
 		"title":       m.SchemaTitle(), // 模型标题排除包名
 		"type":        m.SchemaType(),
 		"description": m.SchemaDesc(),
+	}
+
+	if m.SchemaPkg() == TimePkg { // 复写类型
+		m.doc["type"] = StringType
+		m.doc["format"] = DateTimeParamSchemaFormat
+		return
 	}
 
 	required := make([]string, 0, len(m.fields))
 	properties := make(map[string]any, len(m.fields))
 
 	for _, field := range m.fields {
+		if field.Anonymous { // 非导出字段
+			continue
+		}
 		// TODO Future-231203.8: 模型不支持嵌入;
-		if !field.Exported || field.Anonymous { // 非导出字段
+		if !field.Exported {
 			continue
 		}
 
@@ -364,9 +366,7 @@ func (m *BaseModelMeta) scanObjectSwagger() (err error) {
 		}
 	}
 
-	schema["required"], schema["properties"] = required, properties
-
-	m.doc = schema
+	m.doc["required"], m.doc["properties"] = required, properties
 
 	return
 }
@@ -452,7 +452,19 @@ func (m *BaseModelMeta) InnerSchema() []SchemaIface {
 	ss := make([]SchemaIface, 0)
 	for i := 0; i < len(m.innerModels); i++ {
 		inner := m.innerModels[i]
+		if !inner.Exported {
+			continue
+		}
+
+		if helper.Has[string](InnerModelsPkg, inner.Pkg) {
+			continue
+		}
 		if inner.rType.Kind() == reflect.Struct || inner.rType.Kind() == reflect.Ptr {
+			if inner.SchemaPkg() == TimePkg { // TODO: 复写类型
+				//m.doc["type"] = StringType
+				//m.doc["format"] = DateTimeParamSchemaFormat
+			}
+
 			// 仍然是个模型，继续反射
 			param := NewRouteParam(inner.rType, 0, RouteParamResponse)
 			err := param.Init()
@@ -488,12 +500,16 @@ type BaseModelField struct {
 	rType       reflect.Type      `description:"反射字段类型"`
 	Pkg         string            `description:"包名.结构体名.字段名"`
 	Name        string            `json:"name" description:"字段名称"`
-	Type        DataType          `json:"type" description:"openapi 数据类型"`
+	DataType    DataType          `json:"data_type" description:"openapi 数据类型"`
 	Tag         reflect.StructTag `json:"tag" description:"字段标签"`
 	Description string            `json:"description,omitempty" description:"说明"`
 	ItemRef     string            `description:"子元素类型, 仅Type=array/object时有效"`
 	Exported    bool              `description:"是否是导出字段"`
 	Anonymous   bool              `description:"是否是嵌入字段"`
+}
+
+func (f *BaseModelField) Init() (err error) {
+	return
 }
 
 // Schema 生成字段的详细描述信息
@@ -536,7 +552,7 @@ func (f *BaseModelField) Schema() (m map[string]any) {
 	m = dict{
 		"name":        f.JsonName(), // NOTICE: 显示为 json 标签名称，而非结构体名称
 		"title":       f.Name,
-		"type":        f.Type,
+		"type":        f.DataType,
 		"required":    f.IsRequired(),
 		"description": f.SchemaDesc(),
 	}
@@ -564,8 +580,13 @@ func (f *BaseModelField) Schema() (m map[string]any) {
 		m[ValidatorLabelToOpenapiLabel[isdefault]] = v
 	}
 
+	if f.Pkg == TimePkg {
+		m["type"] = StringType
+		m["format"] = DateTimeParamSchemaFormat
+	}
+
 	// 为不同的字段类型生成相应的描述
-	switch f.Type {
+	switch f.DataType {
 	case IntegerType: // 生成数字类型的最大最小值
 		for _, label := range numberTypeValidatorLabels {
 			if v, ok := validatorLabelsMap[label]; ok {
@@ -642,13 +663,13 @@ func (f *BaseModelField) JsonName() string { return utils.QueryJsonName(f.Tag, f
 func (f *BaseModelField) SchemaDesc() string { return f.Description }
 
 // SchemaType 模型类型
-func (f *BaseModelField) SchemaType() DataType { return f.Type }
+func (f *BaseModelField) SchemaType() DataType { return f.DataType }
 
 // IsRequired 字段是否必须
 func (f *BaseModelField) IsRequired() bool { return IsFieldRequired(f.Tag) }
 
 // IsArray 字段是否是数组类型
-func (f *BaseModelField) IsArray() bool { return f.Type == ArrayType }
+func (f *BaseModelField) IsArray() bool { return f.DataType == ArrayType }
 
 // InnerSchema 内部字段模型文档
 func (f *BaseModelField) InnerSchema() []SchemaIface {

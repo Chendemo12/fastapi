@@ -97,6 +97,7 @@ func (q *QModel) InnerSchema() []SchemaIface {
 }
 
 // StructToQModels 将一个结构体的每一个导出字段都转换为一个查询参数
+// 对于结构体字段，仅支持基本的数据类型和time.Time类型，不支持数组类型和自定义结构体类型
 func StructToQModels(rt reflect.Type) []*QModel {
 	if rt.Kind() == reflect.Ptr {
 		rt = rt.Elem() // 上浮指针
@@ -108,37 +109,47 @@ func StructToQModels(rt reflect.Type) []*QModel {
 
 	// 当此model作为查询参数时，此struct的每一个字段都将作为一个查询参数
 	// 对于字段类型，仅支持基本类型和time类型，不能为结构体类型
-	m := make([]*QModel, 0, rt.NumField())
+	qms := make([]*QModel, 0, rt.NumField())
 	for i := 0; i < rt.NumField(); i++ {
 		field := rt.Field(i)
 
 		// 仅导出字段可用
+		if unicode.IsLower(rune(field.Name[0])) {
+			continue
+		}
+
 		// TODO: Future-231203.8: 模型不支持嵌入
-		if field.Anonymous || unicode.IsLower(rune(field.Name[0])) {
+		if field.Anonymous {
 			continue
 		}
 		// 此结构体的任意字段有且仅支持 基本数据类型
 		dataType := ReflectKindToType(field.Type.Kind())
-		qm := &QModel{
-			Name:     field.Name,
-			Tag:      field.Tag,
-			DataType: dataType,
-			Kind:     field.Type.Kind(),
-			InPath:   false,
-			InStruct: true,
-		}
-
 		switch dataType {
-		case ArrayType: // 不支持数组类型的查询参数
-		case ObjectType:
-			if field.Type.String() == TimePkg { // time.Time
-				qm.DataType = StringType
-				qm.IsTime = true
+		case ArrayType:
+			// 不支持数组类型的查询参数
+		case ObjectType: // 结构体仅支持 time.Time
+			if field.Type.String() == TimePkg {
+				qms = append(qms, &QModel{
+					Name:     field.Name,
+					Tag:      field.Tag,
+					DataType: StringType,
+					Kind:     field.Type.Kind(),
+					InPath:   false,
+					InStruct: true,
+					IsTime:   true,
+				})
 			}
 		default:
+			qms = append(qms, &QModel{
+				Name:     field.Name,
+				DataType: dataType,
+				Tag:      field.Tag,
+				Kind:     field.Type.Kind(),
+				InPath:   false,
+				InStruct: true,
+				IsTime:   false,
+			})
 		}
-
-		m = append(m, qm)
 	}
-	return m
+	return qms
 }

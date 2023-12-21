@@ -38,7 +38,6 @@ type Event struct {
 	Fc   func()
 	Type EventKind // 事件类型：startup 或 shutdown
 }
-type FastApi = Wrapper
 
 // Wrapper 服务对象，本质是一个包装器
 //
@@ -59,6 +58,8 @@ type Wrapper struct {
 	previousDeps  []MiddlewareHandle `description:"在接口参数校验前执行的中间件"`
 	afterDeps     []MiddlewareHandle `description:"在接口参数校验成功后执行的中间件"`
 }
+
+type FastApi = Wrapper
 
 type Profile struct {
 	Host                               string        `json:"host,omitempty" description:"运行地址"`

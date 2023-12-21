@@ -1,14 +1,17 @@
 package openapi
 
 import (
-	"github.com/Chendemo12/fastapi-tool/helper"
-	"github.com/Chendemo12/fastapi/pathschema"
 	"github.com/Chendemo12/fastapi/utils"
+	jsoniter "github.com/json-iterator/go"
 	"net/http"
-	"reflect"
-	"strconv"
-	"strings"
 )
+
+// 序列化时进行排序
+var json = jsoniter.Config{
+	SortMapKeys:     true,
+	TagKey:          JsonTagName,
+	OnlyTaggedField: true,
+}.Froze()
 
 // Contact 联系方式, 显示在 info 字段内部
 // 无需重写序列化方法
@@ -46,7 +49,7 @@ func (r *Reference) MarshalJSON() ([]byte, error) {
 	m := make(map[string]any)
 	m[RefName] = RefPrefix + r.Name
 
-	return helper.JsonMarshal(m)
+	return json.Marshal(m)
 }
 
 // ComponentScheme openapi 的模型文档部分
@@ -72,7 +75,7 @@ func (c *Components) MarshalJSON() ([]byte, error) {
 	m[ValidationErrorDefinition.SchemaPkg()] = ValidationErrorDefinition.Schema()
 	m[ValidationErrorResponseDefinition.SchemaPkg()] = ValidationErrorResponseDefinition.Schema()
 
-	return helper.JsonMarshal(map[string]any{"schemas": m})
+	return json.Marshal(map[string]any{"schemas": m})
 }
 
 // AddModel 添加一个模型文档
@@ -170,7 +173,7 @@ func (p *PathModelContent) MarshalJSON() ([]byte, error) {
 		m[p.MIMEType] = map[string]any{"schema": p.Schema.Schema()}
 	}
 
-	return helper.JsonMarshal(m)
+	return json.Marshal(m)
 }
 
 // Response 路由返回体，包含了返回状态码，状态码说明和返回值模型
@@ -216,7 +219,7 @@ func (o *Operation) MarshalJSON() ([]byte, error) {
 		orm.Responses[r.StatusCode] = r
 	}
 
-	return helper.JsonMarshal(orm)
+	return json.Marshal(orm)
 }
 
 // RequestBodyFrom 从 *openapi.BaseModelMeta 转换成 openapi 的请求体 RequestBody
@@ -292,7 +295,7 @@ func (p *Paths) MarshalJSON() ([]byte, error) {
 		m[v.Path] = v
 	}
 
-	return helper.JsonMarshal(m)
+	return json.Marshal(m)
 }
 
 // OpenApi 模型类, 移除 FastApi 中不常用的属性
@@ -480,7 +483,7 @@ func (o *OpenApi) RegisterFrom(swagger *RouteSwagger) *OpenApi {
 
 // RecreateDocs 重建Swagger 文档
 func (o *OpenApi) RecreateDocs() *OpenApi {
-	bs, err := helper.JsonMarshal(o)
+	bs, err := json.Marshal(o)
 	if err == nil {
 		o.cache = bs
 	}
@@ -496,112 +499,4 @@ func (o *OpenApi) Schema() []byte {
 	}
 
 	return o.cache
-}
-
-// ToFastApiRoutePath 将 fiber.App 格式的路径转换成 FastApi 格式的路径
-//
-//	Example:
-//	必选路径参数：
-//		Input: "/api/rcst/:no"
-//		Output: "/api/rcst/{no}"
-//	可选路径参数：
-//		Input: "/api/rcst/:no?"
-//		Output: "/api/rcst/{no}"
-//	常规路径：
-//		Input: "/api/rcst/no"
-//		Output: "/api/rcst/no"
-func ToFastApiRoutePath(path string) string {
-	paths := strings.Split(path, pathschema.PathSeparator) // 路径字符
-	// 查找路径中的参数
-	for i := 0; i < len(paths); i++ {
-		if strings.HasPrefix(paths[i], pathschema.PathParamPrefix) {
-			// 识别到路径参数
-			if strings.HasSuffix(paths[i], pathschema.OptionalQueryParamPrefix) {
-				// 可选路径参数
-				paths[i] = "{" + paths[i][1:len(paths[i])-1] + "}"
-			} else {
-				paths[i] = "{" + paths[i][1:] + "}"
-			}
-		}
-	}
-
-	return strings.Join(paths, pathschema.PathSeparator)
-}
-
-// ReflectKindToType 转换reflect.Kind为swagger类型说明
-//
-//	@param	ReflectKind	reflect.Kind	反射类型,不进一步对指针类型进行上浮
-func ReflectKindToType(kind reflect.Kind) (name DataType) {
-	switch kind {
-
-	case reflect.Array, reflect.Slice, reflect.Chan:
-		name = ArrayType
-	case reflect.String:
-		name = StringType
-	case reflect.Bool:
-		name = BoolType
-	default:
-		if reflect.Bool < kind && kind <= reflect.Uint64 {
-			name = IntegerType
-		} else if reflect.Float32 <= kind && kind <= reflect.Complex128 {
-			name = NumberType
-		} else {
-			name = ObjectType
-		}
-	}
-
-	return
-}
-
-// IsFieldRequired 从tag中判断此字段是否是必须的
-func IsFieldRequired(tag reflect.StructTag) bool {
-	bindings := strings.Split(utils.QueryFieldTag(tag, ValidateTagName, ""), ",") // binding 存在多个值
-	for i := 0; i < len(bindings); i++ {
-		if strings.TrimSpace(bindings[i]) == ParamRequiredLabel {
-			return true
-		}
-	}
-
-	return false
-}
-
-// GetDefaultV 从Tag中提取字段默认值
-func GetDefaultV(tag reflect.StructTag, otype DataType) (v any) {
-	defaultV := utils.QueryFieldTag(tag, DefaultValueTagNam, "")
-
-	if defaultV == "" {
-		v = nil
-	} else { // 存在默认值
-		switch otype {
-
-		case StringType:
-			v = defaultV
-		case IntegerType:
-			v, _ = strconv.Atoi(defaultV)
-		case NumberType:
-			v, _ = strconv.ParseFloat(defaultV, 64)
-		case BoolType:
-			v, _ = strconv.ParseBool(defaultV)
-		default:
-			v = defaultV
-		}
-	}
-	return
-}
-
-// 针对结构体字段仍然是结构体或数组的情况，如果目标是个匿名对象则人为分配个名称，反之则获取实际的名称
-func assignModelNames(fieldMeta *BaseModelField, fieldType reflect.Type) (string, string) {
-	var pkg, name string
-
-	if utils.IsAnonymousStruct(fieldType) {
-		// 未命名的结构体类型, 没有名称, 分配包名和名称
-		name = fieldMeta.Name + "Model"
-		//pkg = fieldMeta._pkg + AnonymousModelNameConnector + name
-		pkg = fieldMeta.Pkg
-	} else {
-		pkg = fieldType.String() // 关联模型
-		name = fieldType.Name()
-	}
-
-	return pkg, name
 }

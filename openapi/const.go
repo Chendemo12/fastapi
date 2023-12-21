@@ -106,6 +106,9 @@ var InnerModelsPkg = []string{
 	"fastapi.BaseModel",
 	"fastapi.BaseModelField",
 	"fastapi.BaseRouter",
+	"time.Location",
+	"time.zone",
+	"time.zoneTrans",
 }
 
 // IllegalRouteParamType 不支持的参数类型

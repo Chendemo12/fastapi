@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/Chendemo12/fastapi"
 	"github.com/Chendemo12/fastapi/middleware/fiberWrapper"
+	"github.com/Chendemo12/fastapi/middleware/routers"
 	"testing"
 	"time"
 )
@@ -62,33 +63,44 @@ func (r *QueryParamRouter) Path() map[string]string {
 	}
 }
 
-func (r *QueryParamRouter) IntQueryParamGet(c *fastapi.Context, age int) (int, error) {
+func (r *QueryParamRouter) IntGet(c *fastapi.Context, age int) (int, error) {
 	return age, nil
 }
 
-func (r *QueryParamRouter) FloatQueryParamGet(c *fastapi.Context, source float64) (float64, error) {
+func (r *QueryParamRouter) FloatGet(c *fastapi.Context, source float64) (float64, error) {
 	return source, nil
 }
 
-func (r *QueryParamRouter) ManyQueryParamGet(c *fastapi.Context, age int, name string, graduate bool, source float64) (float64, error) {
+func (r *QueryParamRouter) ManyGet(c *fastapi.Context, age int, name string, graduate bool, source float64) (float64, error) {
 	return source, nil
 }
 
-type Name struct {
-	Father string `query:"father" validate:"required" description:"姓氏"` // 必选查询参数
-	Name   string `query:"name" description:"姓名"`                       // 可选查询参数
-}
-
-type DateTime struct {
-	Birthday time.Time `query:"birthday" description:"出生日期"` // 日期时间类型
-}
-
-func (r *QueryParamRouter) StructQueryParamDelete(c *fastapi.Context, param *Name) (string, error) {
+func (r *QueryParamRouter) StructDelete(c *fastapi.Context, param *Name) (string, error) {
 	return param.Father + " " + param.Name, nil
 }
 
-func (r *QueryParamRouter) TimeQueryParamGet(c *fastapi.Context, day time.Time, param *DateTime) (time.Time, error) {
-	return day, nil
+func (r *QueryParamRouter) TimeGet(c *fastapi.Context, day time.Time, param *DateTime) (*DateTime, error) {
+	return &DateTime{
+		Name: &Name{
+			Father: "father",
+			Name:   "name",
+		},
+		Birthday: day,
+	}, nil
+}
+
+type Name struct {
+	Father string `query:"father" json:"father" validate:"required" description:"姓氏"` // 必选查询参数
+	Name   string `query:"name" json:"name,omitempty" description:"姓名"`               // 可选查询参数
+}
+
+type DateTime struct {
+	Name         *Name     `json:"name" query:"name"`
+	Birthday     time.Time `json:"birthday" query:"birthday" description:"誕じび"` // 日期时间类型
+	ImportantDay *struct {
+		LoveDay time.Time `json:"love_day"`
+		NameDay time.Time `json:"name_day"`
+	} `json:"important_day" description:"纪念日"`
 }
 
 // ============================================================================
@@ -342,7 +354,7 @@ func TestNew(t *testing.T) {
 		IncludeRouter(&QueryParamRouter{}).
 		IncludeRouter(&RequestBodyRouter{}).
 		IncludeRouter(&ResponseModelRouter{}).
-		IncludeRouter(fastapi.NewBaseRouter(app.Config())) // 开启默认基础路由
+		IncludeRouter(routers.NewInfoRouter(app.Config())) // 开启默认基础路由
 
 	app.Run("0.0.0.0", "8099") // 阻塞运行
 }

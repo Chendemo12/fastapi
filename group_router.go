@@ -117,14 +117,6 @@ var IllegalResponseType = append(openapi.IllegalRouteParamType, reflect.Ptr)
 // IllegalLastInParamType 非法的请求体类型, 不支持指针的指针
 var IllegalLastInParamType = append(openapi.IllegalRouteParamType, reflect.Ptr)
 
-// Scanner 元数据接口
-// Init -> Scan -> ScanInner -> Init 级联初始化
-type Scanner interface {
-	Init() (err error)      // 初始化元数据对象
-	Scan() (err error)      // 扫描并初始化自己
-	ScanInner() (err error) // 扫描并初始化自己包含的字节点,通过 child.Init() 实现
-}
-
 // GroupRouterMeta 反射构建路由组的元信息
 type GroupRouterMeta struct {
 	router      GroupRouter
@@ -356,22 +348,6 @@ func (r *GroupRouterMeta) isRouteMethod(method reflect.Method) (*openapi.RouteSw
 	return swagger, true
 }
 
-// QueryParamMode 查询参数的定义模式，不同模式决定了查询参数的校验方式
-// 对于泛型路由来说，仅存在 结构体查询参数 StructQueryParamMode 一种形式;
-// 对于路由组路由来说，三种形式都存在
-type QueryParamMode string
-
-const (
-	// NoQueryParamMode 不存在查询参数 = 0
-	NoQueryParamMode QueryParamMode = "NoQueryParamMode"
-	// SimpleQueryParamMode 只有基本数据类型的简单查询参数类型，不包含结构体类型的查询参数 = 1
-	SimpleQueryParamMode QueryParamMode = "SimpleQueryParamMode"
-	// StructQueryParamMode 以结构体形式定义的查询参数模式 = 4
-	StructQueryParamMode QueryParamMode = "StructQueryParamMode"
-	// MixQueryParamMode 二种形式都有的混合模式 = 7
-	MixQueryParamMode QueryParamMode = "MixQueryParamMode"
-)
-
 // GroupRoute 路由组路由定义
 type GroupRoute struct {
 	swagger        *openapi.RouteSwagger
@@ -455,7 +431,6 @@ func (r *GroupRoute) ScanInner() (err error) {
 
 // 从方法入参中初始化路由参数, 包含了查询参数，请求体参数
 func (r *GroupRoute) scanInParams() (err error) {
-	r.queryParamMode = SimpleQueryParamMode
 	r.swagger.QueryFields = make([]*openapi.QModel, 0)
 	if r.handlerInNum == FirstInParamOffset { // 只有一个参数,只能是 Context
 		return nil
@@ -467,21 +442,20 @@ func (r *GroupRoute) scanInParams() (err error) {
 		// 掐头去尾,获得查询参数,GET/DELETE 必须为基本数据类型
 		for index, param := range r.inParams[:r.handlerInNum-1-1] {
 			switch param.SchemaType() {
-			case openapi.ObjectType, openapi.ArrayType:
-				if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
-					if param.SchemaPkg() == openapi.TimePkg {
-						// 时间类型
-						r.swagger.QueryFields = append(r.swagger.QueryFields, &openapi.QModel{
-							Name: param.QueryName(), // 手动指定一个查询参数名称
-							Tag: reflect.StructTag(fmt.Sprintf(`json:"%s" %s:"%s" %s:"%s"`,
-								param.QueryName(), openapi.QueryTagName, param.QueryName(), openapi.ValidateTagName, openapi.ParamRequiredLabel)), // 对于函数参数类型的查询参数,全部为必选的
-							DataType: openapi.StringType,
-							Kind:     param.PrototypeKind,
-							InPath:   false,
-							InStruct: false,
-							IsTime:   true,
-						})
 
+			case openapi.ArrayType:
+				// 查询参数不支持数组
+				return errors.New(fmt.Sprintf(
+					"method: '%s' param: '%s', index: %d, query param not support array",
+					r.group.pkg+"."+r.method.Name, param.Pkg, param.Index,
+				))
+
+			case openapi.ObjectType:
+				if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
+					// 判断是否是时间类型
+					qm, ok := scanHelper.InferTimeParam(param)
+					if ok {
+						r.swagger.QueryFields = append(r.swagger.QueryFields, qm)
 					} else {
 						// GET/DELETE方法不支持多个结构体参数, 打印出结构体方法名，参数索引出从1开始, 排除接收器参数，直接取Index即可
 						return errors.New(fmt.Sprintf(
@@ -497,15 +471,7 @@ func (r *GroupRoute) scanInParams() (err error) {
 
 			default:
 				// NOTICE: 此处无法获得方法的参数名，只能获得参数类型的名称
-				r.swagger.QueryFields = append(r.swagger.QueryFields, &openapi.QModel{
-					Name: param.QueryName(), // 手动指定一个查询参数名称
-					Tag: reflect.StructTag(fmt.Sprintf(`json:"%s" %s:"%s" %s:"%s"`,
-						param.QueryName(), openapi.QueryTagName, param.QueryName(), openapi.ValidateTagName, openapi.ParamRequiredLabel)), // 对于函数参数类型的查询参数,全部为必选的
-					DataType: openapi.StringType,
-					Kind:     param.PrototypeKind,
-					InPath:   false,
-					InStruct: false,
-				})
+				r.swagger.QueryFields = append(r.swagger.QueryFields, scanHelper.InferBaseQueryParam(param, r.RouteType()))
 			}
 		}
 
@@ -515,21 +481,12 @@ func (r *GroupRoute) scanInParams() (err error) {
 		switch lastInParam.SchemaType() {
 		case openapi.ObjectType:
 			if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
-				if lastInParam.SchemaPkg() == "time.Time" {
-					r.swagger.QueryFields = append(r.swagger.QueryFields, &openapi.QModel{
-						Name: lastInParam.QueryName(), // 手动指定一个查询参数名称
-						Tag: reflect.StructTag(fmt.Sprintf(`json:"%s" %s:"%s" %s:"%s"`,
-							lastInParam.QueryName(), openapi.QueryTagName, lastInParam.QueryName(), openapi.ValidateTagName, openapi.ParamRequiredLabel)), // 对于函数参数类型的查询参数,全部为必选的
-						DataType: lastInParam.SchemaType(),
-						Kind:     lastInParam.PrototypeKind,
-						InPath:   false,
-						InStruct: false,
-						IsTime:   true,
-					})
-				} else {
-					// 对于GET/DELETE 视为查询参数, 结构体的每一个字段都将作为一个查询参数
+				// 对于GET/DELETE 视为查询参数, 结构体的每一个字段都将作为一个查询参数
+				qms := scanHelper.InferObjectQueryParam(lastInParam)
+				r.swagger.QueryFields = append(r.swagger.QueryFields, qms...)
+
+				if lastInParam.SchemaPkg() != openapi.TimePkg {
 					r.structQuery = r.handlerInNum - FirstCustomInParamOffset
-					r.swagger.QueryFields = append(r.swagger.QueryFields, openapi.StructToQModels(lastInParam.CopyPrototype())...)
 				}
 			} else {
 				// 对于 POST/PATCH/PUT 接口,如果是结构体或数组则作为请求体
@@ -547,16 +504,7 @@ func (r *GroupRoute) scanInParams() (err error) {
 			}
 		default:
 			// 对于基本类型的参数,均作为查询参数
-			name := lastInParam.QueryName()
-			r.swagger.QueryFields = append(r.swagger.QueryFields, &openapi.QModel{
-				Name: name, // 手动指定一个查询参数名称
-				Tag: reflect.StructTag(fmt.Sprintf(`json:"%s" %s:"%s" %s:"%s"`,
-					name, openapi.QueryTagName, name, openapi.ValidateTagName, openapi.ParamRequiredLabel)), // 对于函数参数类型的查询参数,全部为必选的
-				DataType: lastInParam.SchemaType(),
-				Kind:     lastInParam.PrototypeKind,
-				InPath:   false,
-				InStruct: false,
-			})
+			r.swagger.QueryFields = append(r.swagger.QueryFields, scanHelper.InferBaseQueryParam(lastInParam, r.RouteType()))
 		}
 	}
 	return nil
@@ -610,43 +558,14 @@ func (r *GroupRoute) scanQueryParamMode() (err error) {
 
 // 此方法需在 scanInParams, scanOutParams, scanQueryParamMode 执行完成之后执行
 func (r *GroupRoute) scanBinders() (err error) {
-	r.responseBinder = &ParamBinder{
-		Title:          r.swagger.ResponseModel.SchemaTitle(),
-		RouteParamType: openapi.RouteParamResponse,
-		ResponseModel:  r.swagger.ResponseModel,
-	}
-
-	if r.swagger.ResponseModel.SchemaType().IsBaseType() {
-		// 对于其他类型的参数, 函数签名就已经保证了类型的正确性,无需手动校验
-		r.responseBinder.Method = &NothingBindMethod{}
-	} else {
-		r.responseBinder.Method = InferBinderMethod(r.swagger.ResponseModel.Param,
-			r.swagger.ResponseModel.Param.ElemKind(), openapi.RouteParamResponse)
-	}
+	r.responseBinder = scanHelper.InferResponseBinder(r.swagger.ResponseModel, r.RouteType())
 
 	// 初始化请求体验证方法
-	r.requestBinder = &ParamBinder{
-		Title:          "",
-		RouteParamType: openapi.RouteParamRequest,
-		RequestModel:   r.swagger.RequestModel,
-		Method:         &NothingBindMethod{},
-	}
-	if r.swagger.RequestModel != nil {
-		r.responseBinder.Title = r.swagger.RequestModel.SchemaTitle()
-		r.requestBinder.Method = InferBinderMethod(r.swagger.RequestModel.Param,
-			r.swagger.ResponseModel.Param.ElemKind(), openapi.RouteParamRequest)
-	}
+	r.requestBinder = scanHelper.InferRequestBinder(r.swagger.RequestModel, r.RouteType())
 
 	// 构建查询参数验证器
 	for _, qmodel := range r.swagger.QueryFields {
-		binder := &ParamBinder{
-			Title:          qmodel.SchemaTitle(),
-			QModel:         qmodel,
-			RouteParamType: openapi.RouteParamQuery,
-			Method:         InferBinderMethod(qmodel, qmodel.Kind, openapi.RouteParamQuery),
-			RequestModel:   nil,
-			ResponseModel:  nil,
-		}
+		binder := scanHelper.InferQueryBinder(qmodel, r.RouteType())
 		r.queryBinders = append(r.queryBinders, binder)
 	}
 	return
@@ -749,7 +668,7 @@ func (r *GroupRoute) ResponseValidate(c *Context, stopImmediately bool) []*opena
 	if (c.response.StatusCode == http.StatusOK || c.response.StatusCode == 0) && c.response.Type == JsonResponseType {
 		// 内部返回的 422 也不再校验
 		var ves []*openapi.ValidationError
-		// TODO: 此校验浪费性能,可以通过某种方式绕过
+		// TODO: 此校验浪费性能, 尝试通过某种方式绕过
 		_, ves = r.ResponseBinder().Method.Validate(c.routeCtx, c.response.Content)
 		if len(ves) > 0 {
 			ves[0].Ctx[modelDescLabel] = r.Swagger().ResponseModel.SchemaDesc()
