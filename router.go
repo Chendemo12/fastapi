@@ -247,7 +247,7 @@ func (s ScanHelper) InferQueryBinder(qmodel *openapi.QModel, routeType RouteType
 
 // InferBaseQueryParam 推断基本类型的查询参数
 func (s ScanHelper) InferBaseQueryParam(param *openapi.RouteParam, routeType RouteType) *openapi.QModel {
-	name := param.QueryName() // 手动指定一个查询参数名称
+	name := param.QueryName // 手动指定一个查询参数名称
 	qmodel := &openapi.QModel{
 		Name:     name,
 		DataType: param.SchemaType(),
@@ -270,9 +270,9 @@ func (s ScanHelper) InferTimeParam(param *openapi.RouteParam) (*openapi.QModel, 
 	if param.SchemaPkg() == openapi.TimePkg {
 		// 时间类型
 		return &openapi.QModel{
-			Name: param.QueryName(), // 手动指定一个查询参数名称
+			Name: param.QueryName, // 手动指定一个查询参数名称
 			Tag: reflect.StructTag(fmt.Sprintf(`json:"%s" %s:"%s" %s:"%s"`,
-				param.QueryName(), openapi.QueryTagName, param.QueryName(), openapi.ValidateTagName, openapi.ParamRequiredLabel)), // 对于函数参数类型的查询参数,全部为必选的
+				param.QueryName, openapi.QueryTagName, param.QueryName, openapi.ValidateTagName, openapi.ParamRequiredLabel)), // 对于函数参数类型的查询参数,全部为必选的
 			DataType: openapi.StringType,
 			Kind:     param.PrototypeKind,
 			InPath:   false,

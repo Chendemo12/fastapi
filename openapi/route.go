@@ -143,12 +143,14 @@ func (r *RouteSwagger) scanPath() (err error) {
 
 func (r *RouteSwagger) Id() string { return r.Api }
 
-// RouteParam 路由参数, 具体包含查询参数,路径参数,请求体参数和响应体参数
+// RouteParam 路由参数的原始类型信息（由反射获得）
+// 具体包含查询参数,路径参数,请求体参数和响应体参数
 type RouteParam struct {
 	Prototype      reflect.Type   `description:"直接反射后获取的类型,未提取指针指向的类型"`
 	T              ModelSchema    `description:"泛型路由"`
 	Name           string         `description:"名称"`
 	Pkg            string         `description:"包含包名,如果是结构体则为: 包名.结构体名, 处理了指针"`
+	QueryName      string         `description:"作为查询参数时显示的名称,由于无法通过反射获得参数的名称，因此此名称为手动分配"`
 	DataType       DataType       `description:"如果是指针,则为指针指向的类型定义"`
 	RouteParamType RouteParamType `description:"参数路由类型, 并非完全准确, 只在限制范围内访问"`
 	PrototypeKind  reflect.Kind   `description:"原始类型的参数类型"`
@@ -169,6 +171,7 @@ func NewRouteParam(rt reflect.Type, index int, paramType RouteParamType) *RouteP
 	return r
 }
 
+// Init 初始化类型反射信息，此方法在所有 Scanner.Init 之前调用
 func (r *RouteParam) Init() (err error) {
 	if r.IsPtr { // 指针类型
 		r.DataType = ReflectKindToType(r.Prototype.Elem().Kind())
@@ -196,6 +199,9 @@ func (r *RouteParam) Init() (err error) {
 	}
 
 	r.IsTime = r.Pkg == TimePkg
+
+	// 当其作为查询参数时，手动分配一个名称
+	r.QueryName = fmt.Sprintf("%s%s%d", r.Name, CustomQueryNameConnector, r.Index)
 	return nil
 }
 
@@ -261,12 +267,6 @@ func (r *RouteParam) NewNotStruct(value any) reflect.Value {
 		}
 	}
 	return v
-}
-
-// QueryName 获得查询参数名称
-// 当其作为查询参数时，由于无法反射到参数的名称，因此手动分配一个名称
-func (r *RouteParam) QueryName() string {
-	return fmt.Sprintf("%s%d", r.Name, r.Index)
 }
 
 // ElemKind 获得子元素的真实类型

@@ -63,6 +63,20 @@ func (r *QueryParamRouter) Path() map[string]string {
 	}
 }
 
+func (r *QueryParamRouter) InParamsName() map[string]map[int]string {
+	return map[string]map[int]string{
+		"ManyGet": {
+			2: "age",
+			3: "name",
+			4: "graduate",
+			5: "source",
+		},
+		"TimeGet": {
+			2: "day",
+		},
+	}
+}
+
 func (r *QueryParamRouter) IntGet(c *fastapi.Context, age int) (int, error) {
 	return age, nil
 }
@@ -105,7 +119,7 @@ type DateTime struct {
 		LoveDay          time.Time   `json:"love_day"`
 		NameDay          time.Time   `json:"name_day"`
 		ChildrenBirthday []time.Time `json:"children_birthday"`
-	} `json:"important_day" description:"纪念日"`
+	} `json:"important_day,omitempty" description:"纪念日"`
 }
 
 // ============================================================================

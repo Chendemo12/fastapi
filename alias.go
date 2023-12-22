@@ -28,3 +28,12 @@ var (
 )
 
 func Logger() logger.Iface { return dLog }
+
+func Iter[T any, S any](seq []S, fc func(elem S) T) []T {
+	ns := make([]T, len(seq))
+	for i := 0; i < len(seq); i++ {
+		ns[i] = fc(seq[i])
+	}
+
+	return ns
+}

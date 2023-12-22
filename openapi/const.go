@@ -86,6 +86,9 @@ const (
 // AnonymousModelNameConnector 为匿名结构体生成一个名称, 连接符
 const AnonymousModelNameConnector = "_"
 
+// CustomQueryNameConnector 为无法获得函数参数名称的入参生成一个参数名程，连接符
+const CustomQueryNameConnector = "_"
+
 const ReminderWhenResponseModelIsNil = " `| 路由未明确定义返回值，文档处缺省为map类型，实际可以是任意类型`"
 
 const TimePkg = "time.Time"
