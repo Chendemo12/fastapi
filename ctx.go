@@ -2,9 +2,8 @@ package fastapi
 
 import (
 	"context"
-	"github.com/Chendemo12/fastapi-tool/helper"
-	"github.com/Chendemo12/fastapi-tool/logger"
 	"github.com/Chendemo12/fastapi/openapi"
+	"github.com/Chendemo12/fastapi/utils"
 	"github.com/go-playground/validator/v10"
 	"io"
 	"net/http"
@@ -91,7 +90,7 @@ func (c *Context) Done() <-chan struct{} {
 }
 
 // Logger 获取注册的日志句柄
-func (c *Context) Logger() logger.Iface { return dLog }
+func (c *Context) Logger() LoggerIface { return dLog }
 
 // Query 获取查询参数
 // 对于已经在路由处定义的查询参数，首先从 Context.queryFields 内部读取
@@ -262,10 +261,10 @@ func (c *Context) AnyResponse(statusCode int, content any, contentType ...string
 // ================================ SHORTCUTS ================================
 
 // F 合并字符串
-func (c *Context) F(s ...string) string { return helper.CombineStrings(s...) }
+func (c *Context) F(s ...string) string { return utils.CombineStrings(s...) }
 
-func (c *Context) Marshal(obj any) ([]byte, error) { return helper.JsonMarshal(obj) }
+func (c *Context) Marshal(obj any) ([]byte, error) { return utils.JsonMarshal(obj) }
 
 func (c *Context) Unmarshal(data []byte, v interface{}) error {
-	return helper.JsonUnmarshal(data, v)
+	return utils.JsonUnmarshal(data, v)
 }

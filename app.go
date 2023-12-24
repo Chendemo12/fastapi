@@ -3,7 +3,6 @@ package fastapi
 import (
 	"context"
 	"fmt"
-	"github.com/Chendemo12/fastapi-tool/helper"
 	"github.com/Chendemo12/fastapi/openapi"
 	"github.com/Chendemo12/fastapi/utils"
 	jsoniter "github.com/json-iterator/go"
@@ -14,13 +13,11 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/Chendemo12/fastapi-tool/logger"
 )
 
 var one = &sync.Once{}
 var wrapper *Wrapper = nil // 默认实例
-var dLog logger.Iface = logger.NewDefaultLogger()
+var dLog LoggerIface = NewDefaultLogger()
 
 // HotSwitchSigint 默认热调试开关
 const HotSwitchSigint = 30
@@ -158,7 +155,7 @@ func (f *Wrapper) initMux() *Wrapper {
 // 初始化Wrapper,并完成服务依赖的建立
 // 启动前，必须显式的初始化Wrapper的基本配置，若初始化中发生异常则panic
 func (f *Wrapper) initialize() *Wrapper {
-	helper.SetJsonEngine(jsoniter.ConfigCompatibleWithStandardLibrary)
+	SetJsonEngine(jsoniter.ConfigCompatibleWithStandardLibrary)
 	LazyInit()
 
 	f.initService()
@@ -223,13 +220,13 @@ func (f *Wrapper) Config() Config {
 }
 
 // Logger 获取日志句柄
-func (f *Wrapper) Logger() logger.Iface { return dLog }
+func (f *Wrapper) Logger() LoggerIface { return dLog }
 
 // Done 监听程序是否退出或正在关闭，仅当程序关闭时解除阻塞
 func (f *Wrapper) Done() <-chan struct{} { return f.ctx.Done() }
 
-// Ctx 根 context
-func (f *Wrapper) Ctx() context.Context { return f.ctx }
+// RootCtx 根 context
+func (f *Wrapper) RootCtx() context.Context { return f.ctx }
 
 // Mux 获取路由器
 func (f *Wrapper) Mux() MuxWrapper { return f.mux }
@@ -263,8 +260,8 @@ func (f *Wrapper) OnEvent(kind EventKind, fc func()) *Wrapper {
 
 // SetLogger 替换日志句柄，此操作必须在run之前进行
 //
-//	@param	logger	logger.Iface	日志句柄
-func (f *Wrapper) SetLogger(logger logger.Iface) *Wrapper {
+//	@param	logger	LoggerIface	日志句柄
+func (f *Wrapper) SetLogger(logger LoggerIface) *Wrapper {
 	dLog = logger
 	return f
 }
@@ -408,14 +405,14 @@ func (f *Wrapper) Run(host, port string) {
 }
 
 type Config struct {
-	Logger                         logger.Iface `json:"-" description:"日志"`
-	Version                        string       `json:"version,omitempty" description:"APP版本号"`
-	Description                    string       `json:"description,omitempty" description:"APP描述"`
-	Title                          string       `json:"title,omitempty" description:"APP标题,也是日志文件名"`
-	ShutdownTimeout                int          `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
-	DisableSwagAutoCreate          bool         `json:"disable_swag_auto_create,omitempty" description:"禁用自动文档"`
-	StopImmediatelyWhenErrorOccurs bool         `json:"stopImmediatelyWhenErrorOccurs" description:"是否在遇到错误字段时立刻停止校验"`
-	Debug                          bool         `json:"debug,omitempty" description:"调试模式"`
+	Logger                         LoggerIface `json:"-" description:"日志"`
+	Version                        string      `json:"version,omitempty" description:"APP版本号"`
+	Description                    string      `json:"description,omitempty" description:"APP描述"`
+	Title                          string      `json:"title,omitempty" description:"APP标题,也是日志文件名"`
+	ShutdownTimeout                int         `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
+	DisableSwagAutoCreate          bool        `json:"disable_swag_auto_create,omitempty" description:"禁用自动文档"`
+	StopImmediatelyWhenErrorOccurs bool        `json:"stopImmediatelyWhenErrorOccurs" description:"是否在遇到错误字段时立刻停止校验"`
+	Debug                          bool        `json:"debug,omitempty" description:"调试模式"`
 }
 
 func cleanConfig(confs ...Config) Config {

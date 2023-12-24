@@ -1,8 +1,6 @@
 package openapi
 
-import (
-	"github.com/Chendemo12/fastapi-tool/helper"
-)
+import "github.com/Chendemo12/fastapi/utils"
 
 const (
 	ValidationErrorName     string = "ValidationError"
@@ -59,7 +57,7 @@ func (v *ValidationError) InnerSchema() []SchemaIface {
 }
 
 func (v *ValidationError) Error() string {
-	bytes, err := helper.JsonMarshal(v)
+	bytes, err := utils.JsonMarshal(v)
 	if err != nil {
 		return v.SchemaDesc()
 	}

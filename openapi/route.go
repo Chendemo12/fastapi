@@ -3,7 +3,6 @@ package openapi
 import (
 	"errors"
 	"fmt"
-	"github.com/Chendemo12/fastapi-tool/helper"
 	"github.com/Chendemo12/fastapi/pathschema"
 	"github.com/Chendemo12/fastapi/utils"
 	"reflect"
@@ -312,7 +311,7 @@ func ReflectCallSchemaDesc(re reflect.Type) string {
 
 // CreateRouteIdentify 获得一个路由对象的唯一标识
 func CreateRouteIdentify(method, url string) string {
-	return helper.CombineStrings(method, RouteMethodSeparator, url)
+	return utils.CombineStrings(method, RouteMethodSeparator, url)
 }
 
 // ToFastApiRoutePath 将 fiber.App 格式的路径转换成 FastApi 格式的路径

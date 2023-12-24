@@ -2,7 +2,6 @@ package openapi
 
 import (
 	"fmt"
-	"github.com/Chendemo12/fastapi-tool/helper"
 	"github.com/Chendemo12/fastapi/utils"
 	"reflect"
 	"strings"
@@ -456,7 +455,7 @@ func (m *BaseModelMeta) InnerSchema() []SchemaIface {
 			continue
 		}
 
-		if helper.Has[string](InnerModelsPkg, inner.Pkg) {
+		if utils.Has[string](InnerModelsPkg, inner.Pkg) {
 			continue
 		}
 		if inner.rType.Kind() == reflect.Struct || inner.rType.Kind() == reflect.Ptr {

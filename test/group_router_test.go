@@ -6,6 +6,7 @@ import (
 	"github.com/Chendemo12/fastapi"
 	"github.com/Chendemo12/fastapi/middleware/fiberWrapper"
 	"github.com/Chendemo12/fastapi/middleware/routers"
+	"github.com/Chendemo12/fastapi/openapi"
 	"testing"
 	"time"
 )
@@ -59,7 +60,9 @@ func (r *QueryParamRouter) Prefix() string { return "/api/query-param" }
 
 func (r *QueryParamRouter) Path() map[string]string {
 	return map[string]string{
-		"IntQueryParamGet": "int-query/:param",
+		"IntQueryParamGet":     "int-query/:param",
+		"GetPathParam":         "path-param/:day",
+		"GetPathAndQueryParam": "path-query-param/:day",
 	}
 }
 
@@ -105,6 +108,25 @@ func (r *QueryParamRouter) TimeGet(c *fastapi.Context, day time.Time, param *Dat
 
 func (r *QueryParamRouter) TimePost(c *fastapi.Context, day time.Time) (time.Time, error) {
 	return day, nil
+}
+
+func (r *QueryParamRouter) GetPathParam(c *fastapi.Context) (string, error) {
+	c.ContentType(openapi.MIMEApplicationJSONCharsetUTF8)
+	pf := c.PathField("day", time.Now().String())
+	return pf, nil
+}
+
+// PageReq 分页请求参数
+type PageReq struct {
+	PageNum  int `json:"pageNum,omitempty" default:"1" query:"pageNum" description:"当前页数"`
+	PageSize int `json:"pageSize,omitempty" default:"10" query:"pageSize"  description:"当前页长度"`
+}
+
+func (r *QueryParamRouter) GetPathAndQueryParam(c *fastapi.Context, page *PageReq) (*PageReq, error) {
+	pf := c.PathField("day", time.Now().String())
+
+	c.Logger().Info("path params: ", pf)
+	return page, nil
 }
 
 type Name struct {

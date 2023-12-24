@@ -4,8 +4,6 @@
 package fastapi
 
 import (
-	"github.com/Chendemo12/fastapi-tool/helper"
-	"github.com/Chendemo12/fastapi-tool/logger"
 	"github.com/Chendemo12/fastapi/utils"
 )
 
@@ -20,14 +18,15 @@ type Opt = Option
 //goland:noinspection GoUnusedGlobalVariable
 var (
 	ReflectObjectType = utils.ReflectObjectType
+	SetJsonEngine     = utils.SetJsonEngine
 )
 
 //goland:noinspection GoUnusedGlobalVariable
 var (
-	F = helper.CombineStrings
+	F = utils.CombineStrings
 )
 
-func Logger() logger.Iface { return dLog }
+func Logger() LoggerIface { return dLog }
 
 func Iter[T any, S any](seq []S, fc func(elem S) T) []T {
 	ns := make([]T, len(seq))

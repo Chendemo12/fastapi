@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/Chendemo12/fastapi-tool/helper"
 	"github.com/Chendemo12/fastapi/openapi"
+	"github.com/Chendemo12/fastapi/utils"
 	"github.com/go-playground/validator/v10"
 	jsoniter "github.com/json-iterator/go"
 	"reflect"
@@ -335,11 +335,11 @@ func (m *JsonBindMethod[T]) Validate(ctx context.Context, data T) (T, []*openapi
 }
 
 func (m *JsonBindMethod[T]) Marshal(obj T) ([]byte, error) {
-	return helper.JsonMarshal(obj)
+	return utils.JsonMarshal(obj)
 }
 
 func (m *JsonBindMethod[T]) Unmarshal(stream []byte, obj T) (ves []*openapi.ValidationError) {
-	err := helper.JsonUnmarshal(stream, obj)
+	err := utils.JsonUnmarshal(stream, obj)
 	if err != nil {
 		ve := ParseJsoniterError(err, m.RouteParamType, m.Title)
 		ves = append(ves, ve)
@@ -696,7 +696,7 @@ func ParseJsoniterError(err error, loc openapi.RouteParamType, objName string) *
 		}
 	}
 	if msgs := strings.Split(msg, jsoniterUnmarshalErrorSeparator); len(msgs) > 0 {
-		err = helper.JsonUnmarshal([]byte(msgs[jsonErrorFormIndex]), &ve.Ctx)
+		err = utils.JsonUnmarshal([]byte(msgs[jsonErrorFormIndex]), &ve.Ctx)
 		if err == nil {
 			ve.Msg = msgs[jsonErrorFieldMsgIndex][len(ve.Loc[1])+2:]
 			if s := strings.Split(ve.Msg, ":"); len(s) > 0 {
