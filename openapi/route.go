@@ -6,6 +6,7 @@ import (
 	"github.com/Chendemo12/fastapi/pathschema"
 	"github.com/Chendemo12/fastapi/utils"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -420,4 +421,41 @@ func assignModelNames(fieldMeta *BaseModelField, fieldType reflect.Type) (string
 	}
 
 	return pkg, name
+}
+
+func CombineGenericTypePkg() {
+
+}
+
+// ParseGenericTypePkgPath 解析范型类型的名称
+func ParseGenericTypePkgPath(input string) (string, string, bool) {
+	notIncludingStar := input
+	re := regexp.MustCompile(`\[\*?(.*?)\]`) // 匹配 "[]" 内的子字符串
+	match := re.FindStringSubmatch(input)
+	containsBrackets := len(match) > 1
+	insideBrackets := ""
+	if containsBrackets {
+		insideBrackets = match[1]
+		notIncludingStar = re.ReplaceAllString(input, "")
+	}
+
+	// 区别于匿名结构体, 子类型必须具有名称, 即len(insideBrackets) > 0
+	return notIncludingStar, insideBrackets, containsBrackets && len(insideBrackets) > 0
+}
+
+// IsGenericType 判断一个模型是否是范型类型
+func IsGenericType(model any) (string, string, bool) {
+	rt := reflect.TypeOf(model)
+	for rt.Kind() == reflect.Pointer {
+		rt = rt.Elem()
+	}
+
+	return ParseGenericTypePkgPath(rt.String())
+}
+
+// IsGenericTypeByType 从反射信息中判断是不是泛型结构体
+func IsGenericTypeByType(rt reflect.Type) bool {
+	_, _, is := ParseGenericTypePkgPath(rt.String())
+
+	return is
 }

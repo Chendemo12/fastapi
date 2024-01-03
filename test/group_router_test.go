@@ -379,6 +379,50 @@ func (r *ResponseModelRouter) GetMoreComplexModel(c *fastapi.Context) (*DomainRe
 	return m, nil
 }
 
+type PageResp[T any] struct {
+	PageNum     int   `json:"pageNum" description:"当前页数"`
+	PageSize    int   `json:"pageSize" description:"当前页长度"`
+	Total       int64 `json:"total" description:"总数据条数"`
+	Pages       int64 `json:"pages" description:"总页数"`
+	Data        T     `json:"data" description:"返回数据列表"`
+	IsLastPage  bool  `json:"isLastPage" description:"是否是最后一页"`
+	IsFirstPage bool  `json:"isFirstPage" description:"是否是第一页"`
+}
+
+type MemoryNote struct {
+	No      int64  `json:"no" validate:"required"`
+	Title   string `json:"title,omitempty"`
+	Content string `json:"content,omitempty"`
+}
+
+func (r *ResponseModelRouter) GetGenericModel(c *fastapi.Context) (*PageResp[[]*MemoryNote], error) {
+	resp := &PageResp[[]*MemoryNote]{
+		PageNum:  1,
+		PageSize: 20,
+		Total:    40,
+		Pages:    2,
+		Data: []*MemoryNote{
+			{
+				No:      1,
+				Title:   "hello",
+				Content: "hello generic model",
+			},
+			{
+				No:      2,
+				Title:   "name",
+				Content: "generic model",
+			},
+		},
+		IsLastPage:  false,
+		IsFirstPage: true,
+	}
+	return resp, nil
+}
+
+func (r *ResponseModelRouter) PostGenericModel(c *fastapi.Context, form *PageResp[*MemoryNote]) (*MemoryNote, error) {
+	return form.Data, nil
+}
+
 func TestNew(t *testing.T) {
 	app := fastapi.New(fastapi.Config{
 		Version:     "v0.2.0",

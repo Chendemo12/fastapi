@@ -95,6 +95,11 @@ func (m *BaseModelMeta) scanObject() (err error) {
 	}
 
 	// 此时肯定是结构体了
+	if IsGenericTypeByType(rt) {
+		// 识别到泛型结构体
+		return m.scanGenericObject(rt)
+	}
+
 	for i := 0; i < rt.NumField(); i++ {
 		field := rt.Field(i)
 		// 只要任一个字段具有validate标签，就需要校验模型的字段取值
@@ -109,6 +114,12 @@ func (m *BaseModelMeta) scanObject() (err error) {
 		m.scanStructField(argsType, 0) // field0 根起点
 	}
 	return
+}
+
+func (m *BaseModelMeta) scanGenericObject(rt reflect.Type) (err error) {
+	name, childName, _ := ParseGenericTypePkgPath(rt.String())
+	fmt.Println(name, childName)
+	return err
 }
 
 // 提取结构体字段信息并添加到元信息中
