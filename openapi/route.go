@@ -7,6 +7,7 @@ import (
 	"github.com/Chendemo12/fastapi/utils"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -423,39 +424,90 @@ func assignModelNames(fieldMeta *BaseModelField, fieldType reflect.Type) (string
 	return pkg, name
 }
 
-func CombineGenericTypePkg() {
+// AssignGenericModelPkg 为范型结构体重新指定一个名称
+func AssignGenericModelPkg(modelString string) string {
+	if !IsGenericType(modelString) {
+		return modelString
+	}
+	names := ParseGenericModelName(modelString)
+	// clean
+	newNames := make([]string, len(names))
 
+	for i, name := range names {
+		newNames[i] = name
+	}
+	return strings.Join(newNames, GenericTypeConnector)
 }
 
-// ParseGenericTypePkgPath 解析范型类型的名称
-func ParseGenericTypePkgPath(input string) (string, string, bool) {
-	notIncludingStar := input
-	re := regexp.MustCompile(`\[\*?(.*?)\]`) // 匹配 "[]" 内的子字符串
-	match := re.FindStringSubmatch(input)
-	containsBrackets := len(match) > 1
-	insideBrackets := ""
-	if containsBrackets {
-		insideBrackets = match[1]
-		notIncludingStar = re.ReplaceAllString(input, "")
+// ParseGenericModelName 解析范型类型的名称
+// 如果模型是范型，则返回数组的长度 >=2
+//
+//	# Example:
+//
+//	*test.PageResp[*test.MemoryNote] 	=> ["*test.PageResp", "*test.MemoryNote"]
+//	test.PageResp[int] 					=> ["test.PageResp", "int"]
+//	test.PageResp[Sheet[int]]			=> ["test.PageResp", "Sheet", "int"]
+func ParseGenericModelName(name string) []string {
+	names := make([]string, 0)
+	if len(name) < 4 { // 最短需要4个字符：f[c]
+		return names
+	}
+	const left int32 = 91
+	const right int32 = 93
+
+	lefts := make([]int, 0)
+	rights := make([]int, 0)
+	for i, s := range name {
+		if s == left {
+			lefts = append(lefts, i)
+			continue
+		}
+		if s == right {
+			rights = append(rights, i)
+			continue
+		}
 	}
 
-	// 区别于匿名结构体, 子类型必须具有名称, 即len(insideBrackets) > 0
-	return notIncludingStar, insideBrackets, containsBrackets && len(insideBrackets) > 0
-}
-
-// IsGenericType 判断一个模型是否是范型类型
-func IsGenericType(model any) (string, string, bool) {
-	rt := reflect.TypeOf(model)
-	for rt.Kind() == reflect.Pointer {
-		rt = rt.Elem()
+	if len(lefts) != len(rights) {
+		// 不可能发生
+		return names
 	}
 
-	return ParseGenericTypePkgPath(rt.String())
+	slices.Reverse(rights)
+	names = append(names, name[:lefts[0]])
+	for index, start := range lefts {
+		span := name[start+1 : rights[index]]
+		if span == "" { // 数组情况
+			continue
+		}
+
+		if IsGenericType(span) {
+			innerNames := ParseGenericModelName(span)
+			names = append(names, innerNames...)
+			return names
+		} else {
+			names = append(names, span)
+		}
+	}
+	return names
 }
 
 // IsGenericTypeByType 从反射信息中判断是不是泛型结构体
 func IsGenericTypeByType(rt reflect.Type) bool {
-	_, _, is := ParseGenericTypePkgPath(rt.String())
+	input := rt.String()
+	return IsGenericType(input)
+}
 
-	return is
+// IsGenericType 从 reflect.Type.String() 中判断是不是泛型结构体
+func IsGenericType(name string) bool {
+	re := regexp.MustCompile(`\[\*?(.*?)\]`) // 匹配 "[]" 内的子字符串
+	match := re.FindStringSubmatch(name)
+	containsBrackets := len(match) > 1
+	insideBrackets := ""
+	if containsBrackets {
+		insideBrackets = match[1]
+	}
+
+	// 区别于匿名结构体, 子类型必须具有名称, 即len(insideBrackets) > 0
+	return containsBrackets && len(insideBrackets) > 0
 }

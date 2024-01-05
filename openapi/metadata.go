@@ -117,8 +117,8 @@ func (m *BaseModelMeta) scanObject() (err error) {
 }
 
 func (m *BaseModelMeta) scanGenericObject(rt reflect.Type) (err error) {
-	name, childName, _ := ParseGenericTypePkgPath(rt.String())
-	fmt.Println(name, childName)
+	newName := AssignGenericModelPkg(rt.String())
+	println(newName)
 	return err
 }
 

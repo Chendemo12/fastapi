@@ -80,6 +80,7 @@ const (
 	RefName              = "$ref"
 	RefPrefix            = "#/components/schemas/"
 	ArrayTypePrefix      = "ArrayOf" // 对于数组类型，关联到一个新模型
+	GenericTypeConnector = "_About_"
 	InnerModelNamePrefix = "fastapi."
 )
 

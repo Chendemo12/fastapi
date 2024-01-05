@@ -419,8 +419,21 @@ func (r *ResponseModelRouter) GetGenericModel(c *fastapi.Context) (*PageResp[[]*
 	return resp, nil
 }
 
-func (r *ResponseModelRouter) PostGenericModel(c *fastapi.Context, form *PageResp[*MemoryNote]) (*MemoryNote, error) {
-	return form.Data, nil
+func (r *ResponseModelRouter) GetBaseGenericModel(c *fastapi.Context) (*PageResp[[]int], error) {
+	resp := &PageResp[[]int]{
+		PageNum:     1,
+		PageSize:    20,
+		Total:       40,
+		Pages:       2,
+		Data:        []int{1, 2},
+		IsLastPage:  false,
+		IsFirstPage: true,
+	}
+	return resp, nil
+}
+
+func (r *ResponseModelRouter) PostGenericModel(c *fastapi.Context, form *MemoryNote) (*MemoryNote, error) {
+	return &MemoryNote{}, nil
 }
 
 func TestNew(t *testing.T) {
