@@ -95,11 +95,18 @@ func (m *BaseModelMeta) scanObject() (err error) {
 	}
 
 	// 此时肯定是结构体了
-	if IsGenericTypeByType(rt) {
+	if m.Param.IsGeneric {
 		// 识别到泛型结构体
-		return m.scanGenericObject(rt)
+		err = m.scanGenericObject(rt)
+	} else {
+		err = m.scanNormalObject(rt)
 	}
 
+	return
+}
+
+// 解析一般的非泛型结构体
+func (m *BaseModelMeta) scanNormalObject(rt reflect.Type) (err error) {
 	for i := 0; i < rt.NumField(); i++ {
 		field := rt.Field(i)
 		// 只要任一个字段具有validate标签，就需要校验模型的字段取值
@@ -117,9 +124,12 @@ func (m *BaseModelMeta) scanObject() (err error) {
 }
 
 func (m *BaseModelMeta) scanGenericObject(rt reflect.Type) (err error) {
-	newName := AssignGenericModelPkg(rt.String())
-	println(newName)
-	return err
+	// 解析并重写模型名
+	newPkg := AssignGenericModelPkg(rt.String())
+	m.Param.Pkg = newPkg
+	m.Param.Name = newPkg
+
+	return m.scanNormalObject(rt)
 }
 
 // 提取结构体字段信息并添加到元信息中
@@ -387,7 +397,7 @@ func (m *BaseModelMeta) scanArraySwagger() (err error) {
 	// 依据规范,基本类型仅需注释type即可
 	case IntegerType, NumberType, BoolType, StringType:
 		m.doc = dict{
-			"title": ArrayTypePrefix + m.SchemaTitle(),
+			"title": m.SchemaTitle() + ArrayTypeSuffix,
 			"items": dict{"type": m.itemModel.SchemaType()},
 		}
 	default: // 数组或结构体类型, 关联模型

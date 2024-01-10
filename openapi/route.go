@@ -158,6 +158,7 @@ type RouteParam struct {
 	Index          int            `description:"参数处于方法中的原始位置,可通过 method.RouteType.In(Index) 或 method.RouteType.Out(Index) 反向获得此参数"`
 	IsPtr          bool           `description:"标识 Prototype 是否是指针类型"`
 	IsTime         bool           `description:"是否是时间类型"`
+	IsGeneric      bool           `description:"是否是泛型结构体"`
 	IsNil          bool           `description:"todo"`
 }
 
@@ -168,6 +169,11 @@ func NewRouteParam(rt reflect.Type, index int, paramType RouteParamType) *RouteP
 	r.IsPtr = rt.Kind() == reflect.Ptr
 	r.Index = index
 	r.RouteParamType = paramType
+	if r.IsPtr {
+		r.IsGeneric = IsGenericModelByType(r.Prototype.Elem())
+	} else {
+		r.IsGeneric = IsGenericModelByType(r.Prototype)
+	}
 
 	return r
 }
@@ -191,9 +197,8 @@ func (r *RouteParam) Init() (err error) {
 			elem = elem.Elem()
 		}
 
-		r.Name = utils.Pluralize(elem.Name())
-		ss := strings.Split(elem.String(), ".")
-		r.Pkg = strings.Join(ss[:len(ss)-1], "") + "." + utils.Pluralize(elem.Name())
+		r.Name = elem.Name() + ArrayTypeSuffix
+		r.Pkg = elem.Name() + ArrayTypeSuffix
 	}
 	if strings.HasPrefix(r.Pkg, "struct {") || r.Prototype.Name() == "" {
 		// 对于匿名字段, 此处无法重命名，只能由外部重命名, 通过 Rename 方法重命名
@@ -424,9 +429,9 @@ func assignModelNames(fieldMeta *BaseModelField, fieldType reflect.Type) (string
 	return pkg, name
 }
 
-// AssignGenericModelPkg 为范型结构体重新指定一个名称
+// AssignGenericModelPkg 为范型结构体重新指定一个包名
 func AssignGenericModelPkg(modelString string) string {
-	if !IsGenericType(modelString) {
+	if !IsGenericModel(modelString) {
 		return modelString
 	}
 	names := ParseGenericModelName(modelString)
@@ -434,7 +439,22 @@ func AssignGenericModelPkg(modelString string) string {
 	newNames := make([]string, len(names))
 
 	for i, name := range names {
-		newNames[i] = name
+		newName := name
+
+		isArray := false
+		if strings.HasPrefix(name, "[]") {
+			isArray = true
+		}
+
+		if strings.Contains(name, "/") { // 子类型名称为：项目名/包名.模型名，需去除项目名
+			spans := strings.Split(name, "/")
+			if isArray {
+				newName = spans[len(spans)-1] + ArrayTypeSuffix
+			} else {
+				newName = spans[len(spans)-1]
+			}
+		}
+		newNames[i] = newName
 	}
 	return strings.Join(newNames, GenericTypeConnector)
 }
@@ -481,7 +501,7 @@ func ParseGenericModelName(name string) []string {
 			continue
 		}
 
-		if IsGenericType(span) {
+		if IsGenericModel(span) {
 			innerNames := ParseGenericModelName(span)
 			names = append(names, innerNames...)
 			return names
@@ -492,15 +512,15 @@ func ParseGenericModelName(name string) []string {
 	return names
 }
 
-// IsGenericTypeByType 从反射信息中判断是不是泛型结构体
-func IsGenericTypeByType(rt reflect.Type) bool {
+// IsGenericModelByType 从反射信息中判断是不是泛型结构体
+func IsGenericModelByType(rt reflect.Type) bool {
 	input := rt.String()
-	return IsGenericType(input)
+	return IsGenericModel(input)
 }
 
-// IsGenericType 从 reflect.Type.String() 中判断是不是泛型结构体
-func IsGenericType(name string) bool {
-	re := regexp.MustCompile(`\[\*?(.*?)\]`) // 匹配 "[]" 内的子字符串
+// IsGenericModel 从 reflect.Type.String() 中判断是不是泛型结构体
+func IsGenericModel(name string) bool {
+	re := regexp.MustCompile(`\[\*?(.*?)]`) // 匹配 "[]" 内的子字符串
 	match := re.FindStringSubmatch(name)
 	containsBrackets := len(match) > 1
 	insideBrackets := ""

@@ -79,7 +79,7 @@ const (
 const (
 	RefName              = "$ref"
 	RefPrefix            = "#/components/schemas/"
-	ArrayTypePrefix      = "ArrayOf" // 对于数组类型，关联到一个新模型
+	ArrayTypeSuffix      = "_List" // 对于数组类型，关联到一个新模型
 	GenericTypeConnector = "_About_"
 	InnerModelNamePrefix = "fastapi."
 )
@@ -104,13 +104,13 @@ const ( // 针对时间类型的查询参数格式化选项
 var InnerModelsName = []string{
 	"BaseModel",
 	"BaseModelField",
-	"BaseRouter",
+	"BaseGroupRouter",
 }
 
 var InnerModelsPkg = []string{
 	"fastapi.BaseModel",
 	"fastapi.BaseModelField",
-	"fastapi.BaseRouter",
+	"fastapi.BaseGroupRouter",
 	"time.Location",
 	"time.zone",
 	"time.zoneTrans",

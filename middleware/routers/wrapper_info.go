@@ -28,7 +28,7 @@ func NewInfoRouter(conf fastapi.Config, prefix ...string) fastapi.GroupRouter {
 }
 
 type WrapperInfoRouter struct {
-	fastapi.BaseRouter
+	fastapi.BaseGroupRouter
 	prefix  string
 	Title   string
 	Version string

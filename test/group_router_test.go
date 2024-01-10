@@ -14,7 +14,7 @@ import (
 // ============================================================================
 
 type BaseTypeRouter struct {
-	fastapi.BaseRouter
+	fastapi.BaseGroupRouter
 	Counter int
 }
 
@@ -53,7 +53,7 @@ func (r *BaseTypeRouter) ReturnErrorBadGet(c *fastapi.Context) (string, error) {
 // ============================================================================
 
 type QueryParamRouter struct {
-	fastapi.BaseRouter
+	fastapi.BaseGroupRouter
 }
 
 func (r *QueryParamRouter) Prefix() string { return "/api/query-param" }
@@ -147,7 +147,7 @@ type DateTime struct {
 // ============================================================================
 
 type RequestBodyRouter struct {
-	fastapi.BaseRouter
+	fastapi.BaseGroupRouter
 }
 
 func (r *RequestBodyRouter) Prefix() string { return "/api/request" }
@@ -190,7 +190,7 @@ func (r *RequestBodyRouter) Path() map[string]string {
 // ============================================================================
 
 type ResponseModelRouter struct {
-	fastapi.BaseRouter
+	fastapi.BaseGroupRouter
 }
 
 func (r *ResponseModelRouter) Prefix() string { return "/api/response" }
@@ -395,7 +395,26 @@ type MemoryNote struct {
 	Content string `json:"content,omitempty"`
 }
 
-func (r *ResponseModelRouter) GetGenericModel(c *fastapi.Context) (*PageResp[[]*MemoryNote], error) {
+type GenericRouter struct {
+	fastapi.BaseGroupRouter
+}
+
+func (r *GenericRouter) Prefix() string { return "/api/generic" }
+
+func (r *GenericRouter) GetGenericBaseModel(c *fastapi.Context) (*PageResp[int], error) {
+	resp := &PageResp[int]{
+		PageNum:     1,
+		PageSize:    20,
+		Total:       40,
+		Pages:       2,
+		Data:        12345,
+		IsLastPage:  false,
+		IsFirstPage: true,
+	}
+	return resp, nil
+}
+
+func (r *GenericRouter) GetGenericModel(c *fastapi.Context) (*PageResp[[]*MemoryNote], error) {
 	resp := &PageResp[[]*MemoryNote]{
 		PageNum:  1,
 		PageSize: 20,
@@ -419,20 +438,36 @@ func (r *ResponseModelRouter) GetGenericModel(c *fastapi.Context) (*PageResp[[]*
 	return resp, nil
 }
 
-func (r *ResponseModelRouter) GetBaseGenericModel(c *fastapi.Context) (*PageResp[[]int], error) {
-	resp := &PageResp[[]int]{
-		PageNum:     1,
-		PageSize:    20,
-		Total:       40,
-		Pages:       2,
-		Data:        []int{1, 2},
+func (r *GenericRouter) GetArrayGenericModel(c *fastapi.Context) ([]*PageResp[[]*MemoryNote], error) {
+	resp := &PageResp[[]*MemoryNote]{
+		PageNum:  1,
+		PageSize: 20,
+		Total:    40,
+		Pages:    2,
+		Data: []*MemoryNote{
+			{
+				No:      1,
+				Title:   "hello",
+				Content: "hello generic model",
+			},
+			{
+				No:      2,
+				Title:   "name",
+				Content: "generic model",
+			},
+		},
 		IsLastPage:  false,
 		IsFirstPage: true,
 	}
-	return resp, nil
+
+	return []*PageResp[[]*MemoryNote]{resp}, nil
 }
 
-func (r *ResponseModelRouter) PostGenericModel(c *fastapi.Context, form *MemoryNote) (*MemoryNote, error) {
+func (r *GenericRouter) PostGenericModel(c *fastapi.Context, form *PageResp[[]*MemoryNote]) (*MemoryNote, error) {
+	return &MemoryNote{}, nil
+}
+
+func (r *GenericRouter) PostArrayGenericModel(c *fastapi.Context, form []*PageResp[[]*MemoryNote]) (*MemoryNote, error) {
 	return &MemoryNote{}, nil
 }
 
@@ -452,6 +487,7 @@ func TestNew(t *testing.T) {
 		IncludeRouter(&QueryParamRouter{}).
 		IncludeRouter(&RequestBodyRouter{}).
 		IncludeRouter(&ResponseModelRouter{}).
+		IncludeRouter(&GenericRouter{}).
 		IncludeRouter(routers.NewInfoRouter(app.Config())) // 开启默认基础路由
 
 	app.Run("0.0.0.0", "8099") // 阻塞运行

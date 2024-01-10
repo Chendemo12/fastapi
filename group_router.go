@@ -65,7 +65,7 @@ type GroupRouter interface {
 	InParamsName() map[string]map[int]string
 }
 
-// BaseRouter (面向对象式)路由组基类
+// BaseGroupRouter (面向对象式)路由组基类
 // 需实现 GroupRouter 接口
 //
 // 其中以 Get,Post,Delete,Patch,Put 字符串(不区分大小写)开头或结尾并以 (XXX, error)形式为返回值的方法会被作为路由处理
@@ -88,31 +88,31 @@ type GroupRouter interface {
 //	对于上述参数和返回值XXX，其数据类型不能是 接口，函数，通道，指针的指针;
 //	只能是以下类型：~int, ~float, ~string, ~slice, ~struct, ~map, 结构体指针;
 //	对于结构体类型，最好实现了 SchemaIface 接口
-type BaseRouter struct {
+type BaseGroupRouter struct {
 	// 基类实现不能包含任何路由方法
 }
 
-func (g *BaseRouter) Prefix() string { return "" }
+func (g *BaseGroupRouter) Prefix() string { return "" }
 
-func (g *BaseRouter) Tags() []string { return []string{} }
+func (g *BaseGroupRouter) Tags() []string { return []string{} }
 
-func (g *BaseRouter) PathSchema() pathschema.RoutePathSchema {
+func (g *BaseGroupRouter) PathSchema() pathschema.RoutePathSchema {
 	return pathschema.Default()
 }
 
-func (g *BaseRouter) Path() map[string]string {
+func (g *BaseGroupRouter) Path() map[string]string {
 	return map[string]string{}
 }
 
-func (g *BaseRouter) Summary() map[string]string {
+func (g *BaseGroupRouter) Summary() map[string]string {
 	return map[string]string{}
 }
 
-func (g *BaseRouter) Description() map[string]string {
+func (g *BaseGroupRouter) Description() map[string]string {
 	return map[string]string{}
 }
 
-func (g *BaseRouter) InParamsName() map[string]map[int]string {
+func (g *BaseGroupRouter) InParamsName() map[string]map[int]string {
 	return map[string]map[int]string{}
 }
 

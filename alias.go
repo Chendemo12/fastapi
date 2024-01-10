@@ -15,6 +15,8 @@ type Ctx = Context
 
 type Opt = Option
 
+type BaseRouter = BaseGroupRouter
+
 //goland:noinspection GoUnusedGlobalVariable
 var (
 	ReflectObjectType = utils.ReflectObjectType
