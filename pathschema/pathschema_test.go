@@ -65,6 +65,13 @@ func TestBackslash_Split(t *testing.T) {
 			},
 			want: []string{"Read", "Proc", "Tree"},
 		},
+		{
+			name: "File2Dir",
+			args: args{
+				relativePath: "File2Dir",
+			},
+			want: []string{"File2", "Dir"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -198,6 +205,41 @@ func TestLowerCase_Split(t *testing.T) {
 				relativePath: "ReadProcTree",
 			},
 			want: []string{"read", "proc", "tree"},
+		},
+		{
+			name: "Read3Proc2Tree",
+			args: args{
+				relativePath: "Read3Proc2Tree",
+			},
+			want: []string{"read3", "proc2", "tree"},
+		},
+		{
+			name: "Read333Proc222Tree11",
+			args: args{
+				relativePath: "Read333Proc222Tree11",
+			},
+			want: []string{"read333", "proc222", "tree11"},
+		},
+		{
+			name: "Read3-3Proc2-2Tree-1",
+			args: args{
+				relativePath: "Read3-3Proc2-2Tree-1",
+			},
+			want: []string{"read3-3", "proc2-2", "tree-1"},
+		},
+		{
+			name: "Read_-3Proc-_2Tree_1",
+			args: args{
+				relativePath: "Read_-3Proc-_2Tree_1",
+			},
+			want: []string{"read_-3", "proc-_2", "tree_1"},
+		},
+		{
+			name: "123456",
+			args: args{
+				relativePath: "123456",
+			},
+			want: []string{"123456"},
 		},
 	}
 	for _, tt := range tests {

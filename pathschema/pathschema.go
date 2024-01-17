@@ -1,6 +1,7 @@
 package pathschema
 
 import (
+	"github.com/Chendemo12/fastapi/utils"
 	"regexp"
 	"strings"
 	"unicode"
@@ -254,12 +255,27 @@ func Format(prefix string, relativePath string, schema RoutePathSchema) string {
 
 // SplitWords 将字符串s按照单词进行切分, 判断单词的依据为：是否首字母大写
 // 如果输入s无法切分，则返回只有s构成的一个元素的数组
+// 如果输入s包含数字，下划线等，则其包含在前面的单词结尾
 func SplitWords(s string) []string {
-	// TODO: 处理数字，和下划线等
-	spans := rule.FindAllString(s, -1)
-	if spans == nil {
-		spans = []string{s}
+	var upperA int32 = 65
+	var upperZ int32 = 90
+
+	var spans []string
+	// 处理数字，和下划线等
+	start := 0
+	for index, c := range s {
+		if c >= upperA && c <= upperZ { // 识别到大写字符
+			spans = append(spans, s[start:index])
+			start = index
+		}
+		if index == len(s)-1 { // 到达字符串结尾, 如果不包含大写字符，等同于 []string{s}
+			spans = append(spans, s[start:])
+		}
 	}
+
+	spans = utils.SliceFilter(spans, func(span string) bool {
+		return span != ""
+	})
 
 	return spans
 }
