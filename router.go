@@ -1,540 +1,299 @@
 package fastapi
 
 import (
-	"github.com/Chendemo12/fastapi/internal/constant"
+	"fmt"
 	"github.com/Chendemo12/fastapi/openapi"
-	"github.com/gofiber/fiber/v2"
-	"net/http"
 	"reflect"
-	"runtime"
-	"strings"
 )
 
-// RouteSeparator 路由分隔符，用于分割路由方法和路径
-const RouteSeparator = "|_0#0_|"
-const WebsocketMethod = "WS"
-const ReminderWhenResponseModelIsNil = " `| 路由未明确定义返回值，文档处缺省为string类型，实际可以是任意类型`"
+type RouteType string
 
-// APIRouter 创建一个路由组
-func APIRouter(prefix string, tags []string) *Router {
-	fgr := &Router{
-		Prefix:     prefix,
-		Tags:       tags,
-		deprecated: false,
-	}
-	fgr.routes = make(map[string]*Route, 0) // 初始化map,并保证为空
-	return fgr
+const (
+	RouteTypeGroup   RouteType = "GroupRoute"
+	RouteTypeGeneric RouteType = "GenericRouteMeta"
+)
+
+// QueryParamMode 查询参数的定义模式，不同模式决定了查询参数的校验方式
+// 对于泛型路由来说，仅存在 结构体查询参数 StructQueryParamMode 一种形式;
+// 对于路由组路由来说，三种形式都存在
+type QueryParamMode string
+
+const (
+	// NoQueryParamMode 不存在查询参数 = 0
+	NoQueryParamMode QueryParamMode = "NoQueryParamMode"
+	// SimpleQueryParamMode 只有基本数据类型的简单查询参数类型，不包含结构体类型的查询参数 = 1
+	SimpleQueryParamMode QueryParamMode = "SimpleQueryParamMode"
+	// StructQueryParamMode 以结构体形式定义的查询参数模式 = 4
+	StructQueryParamMode QueryParamMode = "StructQueryParamMode"
+	// MixQueryParamMode 二种形式都有的混合模式 = 7
+	MixQueryParamMode QueryParamMode = "MixQueryParamMode"
+)
+
+// Scanner 元数据接口
+// Init -> Scan -> ScanInner -> Init 级联初始化
+type Scanner interface {
+	Init() (err error)      // 初始化元数据对象
+	Scan() (err error)      // 扫描并初始化自己
+	ScanInner() (err error) // 扫描并初始化自己包含的字节点,通过 child.Init() 实现
 }
 
-type Option struct {
-	Summary       string                 `json:"summary" description:"摘要描述"`
-	ResponseModel openapi.SchemaIface    `json:"response_model" description:"响应体模型"`
-	RequestModel  openapi.SchemaIface    `json:"request_model" description:"请求体模型"`
-	Params        openapi.QueryParameter `json:"params" description:"查询参数,结构体"`
-	Description   string                 `json:"description" description:"路由描述"`
-	Tags          []string               `json:"tags" description:"路由标签"`
-	Dependencies  []DependencyFunc       `json:"-" description:"依赖"`
-	Handlers      []HandlerFunc          `json:"-" description:"处理函数"`
-	Deprecated    bool                   `json:"deprecated" description:"是否禁用"`
+// RouteIface 路由定义
+// 路由组接口定义或泛型接口定义都需实现此接口
+type RouteIface interface {
+	Scanner
+	RouteType() RouteType
+	Swagger() *openapi.RouteSwagger           // 路由文档
+	QueryBinders() []*ParamBinder             // 查询参数的处理接口(查询参数名:处理接口)，每一个查询参数都必须绑定一个 ParamBinder
+	RequestBinders() *ParamBinder             // 请求体的处理接口,请求体也只有一个
+	ResponseBinder() *ParamBinder             // 响应体的处理接口,响应体只有一个
+	NewInParams(ctx *Context) []reflect.Value // 创建一个完整的函数入参实例列表, 此方法会在完成请求参数校验 RequestBinders，QueryBinders 之后执行
+	NewStructQuery() any                      // 创建一个结构体查询参数实例,对于POST/PATCH/PUT, 即为 NewInParams 的最后一个元素; 对于GET/DELETE则为nil
+	NewRequestModel() any                     // 创建一个请求体实例,对于POST/PATCH/PUT, 即为 NewInParams 的最后一个元素; 对于GET/DELETE则为nil
+	HasStructQuery() bool                     // 是否存在结构体查询参数，如果存在则会调用 NewStructQuery 获得结构体实例
+	Call(ctx *Context)                        // 调用API, 需要将响应结果写入 Response 内
+	ResponseValidate(c *Context, stopImmediately bool) []*openapi.ValidationError
+	Id() string
 }
 
-// Route 一个完整的路由对象，此对象会在程序启动时生成swagger文档
-// 其中相对路径Path不能重复，否则后者会覆盖前者
-type Route struct {
-	ResponseModel    *openapi.Metadata             `description:"响应体元数据"`
-	RequestModel     *openapi.Metadata             `description:"请求体元数据"`
-	requestValidate  RouteModelValidateHandlerFunc `description:"请求体校验函数"`
-	responseValidate RouteModelValidateHandlerFunc `description:"返回值校验函数"`
-	Description      string                        `json:"description" description:"详细描述"`
-	Summary          string                        `json:"summary" description:"摘要描述"`
-	Method           string                        `json:"method" description:"请求方法"`
-	RelativePath     string                        `json:"relative_path" description:"相对路由"`
-	Tags             []string                      `json:"tags" description:"路由标签"`
-	QueryFields      []*openapi.QModel             `json:"-" description:"查询参数"`
-	Handlers         []fiber.Handler               `json:"-" description:"处理函数"`
-	Dependencies     []DependencyFunc              `json:"-" description:"依赖"`
-	PathFields       []*openapi.QModel             `json:"-" description:"路径参数"`
-	deprecated       bool                          `description:"是否禁用"`
+// ParamBinder 参数验证模型
+type ParamBinder struct {
+	Method         ModelBindMethod        `json:"-"`
+	QModel         *openapi.QModel        `json:"-"`
+	RequestModel   *openapi.BaseModelMeta `json:"-"`
+	ResponseModel  *openapi.BaseModelMeta `json:"-"`
+	Title          string                 `json:"title,omitempty"`
+	RouteParamType openapi.RouteParamType `json:"route_param_type"`
 }
 
-func (f *Route) LowerMethod() string { return strings.ToLower(f.Method) }
+// BaseModel 基本数据模型, 对于上层的路由定义其请求体和响应体都应为继承此结构体的结构体
+// 在 OpenApi 文档模型中,此模型的类型始终为 "object"
+// 对于 BaseModel 其字段仍然可能会是 BaseModel
+type BaseModel struct{}
 
-// Deprecate 禁用路由
-func (f *Route) Deprecate() *Route {
-	f.deprecated = true
-	return f
-}
+// SchemaDesc 结构体文档注释
+func (b *BaseModel) SchemaDesc() string { return openapi.InnerModelsName[0] }
 
-// AddDependency 添加依赖项，用于在执行路由函数前执行一个自定义操作，此操作作用于参数校验通过之后
-//
-//	@param	fcs	DependencyFunc	依赖项
-func (f *Route) AddDependency(fcs ...DependencyFunc) *Route {
-	if len(fcs) > 0 {
-		f.Dependencies = append(f.Dependencies, fcs...)
-	}
-	return f
-}
+// SchemaType 模型类型
+func (b *BaseModel) SchemaType() openapi.DataType { return openapi.ObjectType }
 
-// AddD 添加依赖项，用于在执行路由函数前执行一个自定义操作，此操作作用于参数校验通过之后
-//
-//	@param	fcs	DependencyFunc	依赖项
-func (f *Route) AddD(fcs ...DependencyFunc) *Route { return f.AddDependency(fcs...) }
+func (b *BaseModel) IsRequired() bool { return true }
 
-// SetDescription 设置一个路由的详细描述信息
-//
-//	@param	Description	string	详细描述信息
-func (f *Route) SetDescription(description string) *Route {
-	f.Description = description
-	return f
-}
+// ================================================================================
 
-// SetD 设置一个路由的详细描述信息
-//
-//	@param	Description	string	详细描述信息
-func (f *Route) SetD(description string) *Route { return f.SetDescription(description) }
+var scanHelper = &ScanHelper{}
 
-// SetQueryParams 设置查询参数,此空struct的每一个字段都将作为一个单独的查询参数
-// 且此结构体的任意字段有且仅支持 string 类型
-//
-//	@param	m	openapi.QueryParameter	查询参数对象,
-func (f *Route) SetQueryParams(m openapi.QueryParameter) *Route {
-	if m != nil {
-		f.QueryFields = openapi.ParseToQueryModels(m) // 转换为内部模型
-	}
-	return f
-}
+type ScanHelper struct{}
 
-// SetQ 设置查询参数,此空struct的每一个字段都将作为一个单独的查询参数
-// 且此结构体的任意字段有且仅支持 string 类型
-//
-//	@param	m	openapi.QueryParameter	查询参数对象,
-func (f *Route) SetQ(m openapi.QueryParameter) *Route { return f.SetQueryParams(m) }
-
-// SetRequestModel 设置请求体对象,此model应为一个空struct实例,而非指针类型,且仅"GET",http.MethodDelete有效
-//
-//	@param	m	any	请求体对象
-func (f *Route) SetRequestModel(m openapi.SchemaIface) *Route {
-	if f.Method != http.MethodGet && f.Method != http.MethodDelete {
-		f.RequestModel = openapi.BaseModelToMetadata(m)
-	}
-	return f
-}
-
-// SetReq 设置请求体对象
-//
-//	@param	m	any	请求体对象
-func (f *Route) SetReq(m openapi.SchemaIface) *Route { return f.SetRequestModel(m) }
-
-// Path 合并路由
-//
-//	@param	prefix	string	路由组前缀
-func (f *Route) Path(prefix string) string { return CombinePath(prefix, f.RelativePath) }
-
-// NewRequestModel 创建一个新的请求体模型
-func (f *Route) NewRequestModel() any {
-	if f.ResponseModel == nil {
-		return nil
+// InferBinderMethod 利用反射推断参数的校验器
+func (s ScanHelper) InferBinderMethod(param openapi.SchemaIface, prototypeKind reflect.Kind, modelType openapi.RouteParamType) ModelBindMethod {
+	if param == nil {
+		return &NothingBindMethod{}
 	}
 
-	switch f.RequestModel.SchemaType() {
-	case openapi.StringType:
-		return ""
-	case openapi.BoolType:
-		return false
-	case openapi.IntegerType:
-		return 0
-	case openapi.NumberType:
-		return 0.0
-	case openapi.ArrayType:
-		// TODO: support array types
-		return make([]string, 0)
+	var binder ModelBindMethod
+	switch prototypeKind {
+
+	case reflect.Int, reflect.Int64:
+		binder = &IntBindMethod{
+			Title:   param.SchemaTitle(),
+			Kind:    prototypeKind,
+			Maximum: openapi.IntMaximum,
+			Minimum: openapi.IntMinimum,
+		}
+	case reflect.Int8:
+		binder = &IntBindMethod{
+			Title:   param.SchemaTitle(),
+			Kind:    prototypeKind,
+			Maximum: openapi.Int8Maximum,
+			Minimum: openapi.Int8Minimum,
+		}
+	case reflect.Int16:
+		binder = &IntBindMethod{
+			Title:   param.SchemaTitle(),
+			Kind:    prototypeKind,
+			Maximum: openapi.Int16Maximum,
+			Minimum: openapi.Int16Minimum,
+		}
+	case reflect.Int32:
+		binder = &IntBindMethod{
+			Title:   param.SchemaTitle(),
+			Kind:    prototypeKind,
+			Maximum: openapi.Int32Maximum,
+			Minimum: openapi.Int32Minimum,
+		}
+
+	case reflect.Uint, reflect.Uint64:
+		binder = &UintBindMethod{
+			Title:   param.SchemaTitle(),
+			Kind:    prototypeKind,
+			Maximum: openapi.UintMaximum,
+			Minimum: openapi.UintMinimum,
+		}
+	case reflect.Uint8:
+		binder = &UintBindMethod{
+			Title:   param.SchemaTitle(),
+			Kind:    prototypeKind,
+			Maximum: openapi.Uint8Maximum,
+			Minimum: openapi.Uint8Minimum,
+		}
+	case reflect.Uint16:
+		binder = &UintBindMethod{
+			Title:   param.SchemaTitle(),
+			Kind:    prototypeKind,
+			Maximum: openapi.Uint16Maximum,
+			Minimum: openapi.Uint16Minimum,
+		}
+	case reflect.Uint32:
+		binder = &UintBindMethod{
+			Title:   param.SchemaTitle(),
+			Kind:    prototypeKind,
+			Maximum: openapi.Uint32Maximum,
+			Minimum: openapi.Uint32Minimum,
+		}
+	case reflect.Bool:
+		binder = &BoolBindMethod{Title: param.SchemaTitle()}
+	case reflect.Float32, reflect.Float64:
+		binder = &FloatBindMethod{
+			Title: param.SchemaTitle(),
+			Kind:  prototypeKind,
+		}
+	case reflect.String:
+		binder = &NothingBindMethod{}
+	case reflect.Struct:
+		if modelType == openapi.RouteParamResponse {
+			binder = &JsonBindMethod[any]{Title: param.SchemaTitle(), RouteParamType: modelType}
+		} else {
+			binder = &JsonBindMethod[any]{Title: param.SchemaTitle(), RouteParamType: modelType}
+		}
+
 	default:
-		return reflect.New(f.RequestModel.ReflectType())
-	}
-}
-
-// Router 一个独立的路由组，Prefix路由组前缀，其内部的子路由均包含此前缀
-type Router struct {
-	routes     map[string]*Route
-	Prefix     string
-	Tags       []string
-	deprecated bool
-}
-
-// Routes 获取路由组内部定义的全部子路由信息
-func (f *Router) Routes() map[string]*Route { return f.routes }
-
-// Deprecate 禁用整个路由组路由
-func (f *Router) Deprecate() *Router {
-	f.deprecated = true
-	return f
-}
-
-// Activate 激活整个路由组路由
-func (f *Router) Activate() *Router {
-	f.deprecated = false
-	return f
-}
-
-// IncludeRouter 挂载一个子路由组,目前仅支持在子路由组初始化后添加
-//
-//	@param	router	*Router	子路由组
-func (f *Router) IncludeRouter(router *Router) *Router {
-	for _, route := range router.Routes() {
-		route.RelativePath = CombinePath(router.Prefix, route.RelativePath)
-		f.routes[route.RelativePath+RouteSeparator+route.Method] = route // 允许地址相同,方法不同的路由
-
+		binder = &NothingBindMethod{}
 	}
 
-	return f
+	return binder
 }
 
-func (f *Router) method(
-	method string, // 路由方法
-	relativePath string, // 相对路由
-	summary string, // 路由摘要
-	queryModel openapi.QueryParameter, // 查询参数, POST/PATCH/PUT
-	requestModel openapi.SchemaIface, // 请求体, POST/PATCH/PUT
-	responseModel openapi.SchemaIface, // 响应体, All
-	handler HandlerFunc, // handler
-) *Route {
-	route := &Route{
-		Method:        method,
-		RelativePath:  relativePath,
-		PathFields:    make([]*openapi.QModel, 0), // 路径参数
-		QueryFields:   make([]*openapi.QModel, 0), // 查询参数
-		RequestModel:  nil,                        // 请求体
-		ResponseModel: nil,                        // 响应体
-		Summary:       summary,
-		Handlers:      nil,
-		Dependencies:  make([]DependencyFunc, 0),
-		Tags:          f.Tags,
-		Description:   method + " " + summary,
-		deprecated:    false,
+// InferResponseBinder 推断响应体的校验器
+func (s ScanHelper) InferResponseBinder(model *openapi.BaseModelMeta, routeType RouteType) *ParamBinder {
+	if model == nil {
+		return &ParamBinder{
+			Title:          "",
+			RouteParamType: openapi.RouteParamResponse,
+			ResponseModel:  nil,
+			Method:         &NothingBindMethod{},
+		}
 	}
 
-	if route.Summary == "" {
-		funcName := runtime.FuncForPC(reflect.ValueOf(handler).Pointer()).Name()
-		parts := strings.Split(funcName, ".")
-		funcName = parts[len(parts)-1]
-		route.Summary = funcName
+	binder := &ParamBinder{
+		Title:          model.SchemaTitle(),
+		RouteParamType: openapi.RouteParamResponse,
+		ResponseModel:  model,
 	}
 
-	if requestModel != nil {
-		route.RequestModel = openapi.BaseModelToMetadata(requestModel)
-		// TODO: 请求体校验方法
+	if model.SchemaType().IsBaseType() {
+		if routeType == RouteTypeGroup {
+			// 对于结构体路由组，其他类型的参数, 函数签名就已经保证了类型的正确性,无需手动校验
+			binder.Method = &NothingBindMethod{}
+		} else {
+			// 推断 InferBinderMethod
+			binder.Method = &NothingBindMethod{}
+		}
+
 	} else {
-		// 缺省以屏蔽请求体校验
-		route.requestValidate = routeModelDoNothing
+		binder.Method = s.InferBinderMethod(
+			model.Param,
+			model.Param.ElemKind(), openapi.RouteParamResponse,
+		)
 	}
 
-	if responseModel != nil {
-		route.ResponseModel = openapi.BaseModelToMetadata(responseModel)
+	return binder
+}
 
-		switch route.ResponseModel.SchemaType() {
-
-		case openapi.StringType:
-			route.responseValidate = stringResponseValidation
-		case openapi.BoolType:
-			route.responseValidate = boolResponseValidation
-		case openapi.NumberType:
-			route.responseValidate = numberResponseValidation
-		case openapi.IntegerType:
-			route.responseValidate = integerResponseValidation
-		case openapi.ArrayType:
-			route.responseValidate = arrayResponseValidation
-		case openapi.ObjectType:
-			route.responseValidate = structResponseValidation
+func (s ScanHelper) InferRequestBinder(model *openapi.BaseModelMeta, routeType RouteType) *ParamBinder {
+	if model == nil {
+		return &ParamBinder{
+			Title:          "",
+			RouteParamType: openapi.RouteParamRequest,
+			ResponseModel:  nil,
+			Method:         &NothingBindMethod{},
 		}
+	}
+
+	return &ParamBinder{
+		Title:          model.SchemaTitle(),
+		RouteParamType: openapi.RouteParamRequest,
+		RequestModel:   model,
+		Method:         s.InferBinderMethod(model.Param, model.Param.ElemKind(), openapi.RouteParamRequest),
+	}
+}
+
+func (s ScanHelper) InferQueryBinder(qmodel *openapi.QModel, routeType RouteType) *ParamBinder {
+	binder := &ParamBinder{
+		Title:          qmodel.SchemaTitle(),
+		QModel:         qmodel,
+		RouteParamType: openapi.RouteParamQuery,
+		RequestModel:   nil,
+		ResponseModel:  nil,
+	}
+
+	if qmodel.IsTime {
+		binder.Method = &DateTimeBindMethod{Title: qmodel.SchemaTitle()}
 	} else {
-		// 对于返回值类型，允许缺省返回值以屏蔽返回值校验
-		route.responseValidate = routeModelDoNothing
+		binder.Method = scanHelper.InferBinderMethod(qmodel, qmodel.Kind, openapi.RouteParamQuery)
 	}
 
-	// 路由处理函数，默认仅一个
-	handlers := []fiber.Handler{routeHandler(handler)}
-	deprecated := false // 是否禁用此路由
-	if f.deprecated {   // 若路由组被禁用，则此路由必禁用
-		deprecated = true
-	}
-
-	route.deprecated = deprecated
-	route.Handlers = handlers
-
-	// 确保路径以/开头，若路由为空，则以路由组前缀为路由路径
-	if len(relativePath) > 0 && !strings.HasPrefix(relativePath, constant.PathSeparator) {
-		relativePath = constant.PathSeparator + relativePath
-	}
-
-	if queryModel != nil {
-		route.QueryFields = append(route.QueryFields, openapi.ParseToQueryModels(queryModel)...)
-	}
-	// 若缺省返回值则在接口处追加描述
-	if responseModel == nil {
-		route.Description = route.Description + ReminderWhenResponseModelIsNil
-	}
-
-	// 生成路径参数
-	if pp, found := DoesPathParamsFound(route.RelativePath); found {
-		for name, required := range pp {
-			qm := &openapi.QModel{
-				Title:  name,
-				Name:   name,
-				Tag:    reflect.StructTag(`json:"` + name + `,omitempty"`),
-				Type:   openapi.StringType,
-				InPath: true,
-			}
-			if required {
-				qm.Tag = reflect.StructTag(`json:"` + name + `" validate:"required" binding:"required"`)
-			}
-			route.PathFields = append(route.PathFields, qm)
-		}
-	}
-
-	f.routes[relativePath+RouteSeparator+method] = route // 允许地址相同,方法不同的路由
-
-	return route
+	return binder
 }
 
-func (f *Router) methodWithOpt(
-	method string,
-	relativePath string,
-	handler HandlerFunc,
-	opt *Option,
-) *Route {
-	route := f.method(
-		method,
-		relativePath,
-		opt.Summary,
-		opt.Params,
-		opt.RequestModel,
-		opt.ResponseModel,
-		handler,
-	)
-
-	if opt.Description != "" {
-		route.SetDescription(opt.Description)
+// InferBaseQueryParam 推断基本类型的查询参数
+func (s ScanHelper) InferBaseQueryParam(param *openapi.RouteParam, routeType RouteType) *openapi.QModel {
+	name := param.QueryName // 手动指定一个查询参数名称
+	qmodel := &openapi.QModel{
+		Name:     name,
+		DataType: param.SchemaType(),
+		Kind:     param.PrototypeKind,
+		InPath:   false,
+		InStruct: false,
 	}
-	if opt.Deprecated {
-		route.Deprecate()
-	}
-	if len(opt.Dependencies) > 0 {
-		route.AddDependency(opt.Dependencies...)
-	}
-	for _, _handler := range opt.Handlers {
-		route.Handlers = append(route.Handlers, routeHandler(_handler))
+	if routeType == RouteTypeGroup { // 路由组：对于函数参数类型的查询参数,全部为必选的
+		qmodel.Tag = reflect.StructTag(fmt.Sprintf(`json:"%s" %s:"%s" %s:"%s"`,
+			name, openapi.QueryTagName, name, openapi.ValidateTagName, openapi.ParamRequiredLabel))
+	} else { // 范型路由推断为可选的
+		qmodel.Tag = reflect.StructTag(fmt.Sprintf(`json:"%s,omitempty" %s:"%s"`,
+			name, openapi.QueryTagName, name))
 	}
 
-	return route
+	return qmodel
 }
 
-// GET http get method
-//
-//	@param	path			string					相对路径,必须以"/"开头
-//	@param	summary			string					路由摘要信息
-//	@param	queryModel		openapi.QueryParameter	查询参数，仅支持struct类型
-//	@param	responseModel	openapi.SchemaIface	响应体对象,	此model应为一个空struct实例,而非指针类型
-//	@param	handler			[]HandlerFunc			路由处理方法
-//	@param	addition		any						附加参数，如："deprecated"用于禁用此路由
-func (f *Router) GET(
-	path string,
-	responseModel openapi.SchemaIface,
-	summary string,
-	handler HandlerFunc,
-) *Route {
-	// 对于查询参数仅允许struct类型
-	return f.method(
-		http.MethodGet,
-		path,
-		summary,
-		nil,
-		nil,
-		responseModel,
-		handler,
-	)
-}
-
-// DELETE http delete method
-//
-//	@param	path			string					相对路径,必须以"/"开头
-//	@param	summary			string					路由摘要信息
-//	@param	responseModel	openapi.SchemaIface	响应体对象,	此model应为一个空struct实例,而非指针类型
-//	@param	handler			[]HandlerFunc			路由处理方法
-//	@param	addition		any						附加参数
-func (f *Router) DELETE(
-	path string, responseModel openapi.SchemaIface, summary string, handler HandlerFunc,
-) *Route {
-	// 对于查询参数仅允许struct类型
-	return f.method(
-		http.MethodDelete,
-		path,
-		summary,
-		nil,
-		nil,
-		responseModel,
-		handler,
-	)
-}
-
-// POST http post method
-//
-//	@param	path			string					相对路径,必须以"/"开头
-//	@param	summary			string					路由摘要信息
-//	@param	requestModel	openapi.SchemaIface	请求体对象,	此model应为一个空struct实例,而非指针类型
-//	@param	responseModel	openapi.SchemaIface	响应体对象,	此model应为一个空struct实例,而非指针类型
-//	@param	handler			[]HandlerFunc			路由处理方法
-//	@param	addition		any						附加参数，如："deprecated"用于禁用此路由
-func (f *Router) POST(
-	path string,
-	requestModel, responseModel openapi.SchemaIface,
-	summary string,
-	handler HandlerFunc,
-) *Route {
-	return f.method(
-		http.MethodPost,
-		path,
-		summary,
-		nil,
-		requestModel,
-		responseModel,
-		handler,
-	)
-}
-
-// PATCH http patch method
-func (f *Router) PATCH(
-	path string,
-	requestModel, responseModel openapi.SchemaIface,
-	summary string,
-	handler HandlerFunc,
-) *Route {
-	return f.method(
-		http.MethodPatch,
-		path,
-		summary,
-		nil,
-		requestModel,
-		responseModel,
-		handler,
-	)
-}
-
-// PUT http put method
-func (f *Router) PUT(
-	path string,
-	requestModel, responseModel openapi.SchemaIface,
-	summary string,
-	handler HandlerFunc,
-) *Route {
-	return f.method(
-		http.MethodPut,
-		path,
-		summary,
-		nil,
-		requestModel,
-		responseModel,
-		handler,
-	)
-}
-
-func (f *Router) Get(path string, handler HandlerFunc, opts ...Option) *Route {
-	opt := cleanOpts(opts...)
-
-	return f.methodWithOpt(http.MethodGet, path, handler, opt)
-}
-
-func (f *Router) Post(path string, handler HandlerFunc, opts ...Option) *Route {
-	opt := cleanOpts(opts...)
-
-	return f.methodWithOpt(http.MethodPost, path, handler, opt)
-}
-
-func (f *Router) Delete(path string, handler HandlerFunc, opts ...Option) *Route {
-	opt := cleanOpts(opts...)
-
-	return f.methodWithOpt(http.MethodDelete, path, handler, opt)
-}
-
-func (f *Router) Patch(path string, handler HandlerFunc, opts ...Option) *Route {
-	opt := cleanOpts(opts...)
-
-	return f.methodWithOpt(http.MethodPatch, path, handler, opt)
-}
-
-func (f *Router) Put(path string, handler HandlerFunc, opts ...Option) *Route {
-	opt := cleanOpts(opts...)
-
-	return f.methodWithOpt(http.MethodPut, path, handler, opt)
-}
-
-// CombinePath 合并路由
-//
-//	@param	prefix	string	路由前缀
-//	@param	path	string	路由
-func CombinePath(prefix, path string) string {
-	if path == "" {
-		return prefix
-	}
-	if !strings.HasPrefix(prefix, constant.PathSeparator) {
-		prefix = constant.PathSeparator + prefix
+func (s ScanHelper) InferTimeParam(param *openapi.RouteParam) (*openapi.QModel, bool) {
+	if param.SchemaPkg() == openapi.TimePkg {
+		// 时间类型
+		return &openapi.QModel{
+			Name: param.QueryName, // 手动指定一个查询参数名称
+			Tag: reflect.StructTag(fmt.Sprintf(`json:"%s" %s:"%s" %s:"%s"`,
+				param.QueryName, openapi.QueryTagName, param.QueryName, openapi.ValidateTagName, openapi.ParamRequiredLabel)), // 对于函数参数类型的查询参数,全部为必选的
+			DataType: openapi.StringType,
+			Kind:     param.PrototypeKind,
+			InPath:   false,
+			InStruct: false,
+			IsTime:   true,
+		}, true
 	}
 
-	if strings.HasSuffix(prefix, constant.PathSeparator) && strings.HasPrefix(path, constant.PathSeparator) {
-		return prefix[:len(prefix)-1] + path
-	}
-	return prefix + path
+	return nil, false
 }
 
-// DoesPathParamsFound 是否查找到路径参数
-//
-//	@param	path	string	路由
-func DoesPathParamsFound(path string) (map[string]bool, bool) {
-	pathParameters := make(map[string]bool, 0)
-	// 查找路径中的参数
-	for _, p := range strings.Split(path, constant.PathSeparator) {
-		if strings.HasPrefix(p, constant.PathParamPrefix) {
-			// 识别到路径参数
-			if strings.HasSuffix(p, constant.OptionalPathParamSuffix) {
-				// 可选路径参数
-				pathParameters[p[1:len(p)-1]] = false
-			} else {
-				pathParameters[p[1:]] = true
-			}
-		}
-	}
-	return pathParameters, len(pathParameters) > 0
-}
-
-func cleanOpts(opts ...Option) *Option {
-	opt := &Option{
-		Summary:       "",
-		Params:        nil,
-		RequestModel:  nil,
-		ResponseModel: nil,
-		Description:   "",
-		Tags:          make([]string, 0),
-		Dependencies:  make([]DependencyFunc, 0),
-		Handlers:      make([]HandlerFunc, 0),
-		Deprecated:    false,
-	}
-	if len(opts) > 0 {
-		opt.Summary = opts[0].Summary
-		opt.Params = opts[0].Params
-		opt.RequestModel = opts[0].RequestModel
-		opt.ResponseModel = opts[0].ResponseModel
-		opt.Description = opts[0].Description
-		opt.Deprecated = opts[0].Deprecated
-
-		if len(opts[0].Tags) > 0 {
-			opt.Tags = opts[0].Tags
-		}
-		if len(opts[0].Dependencies) > 0 {
-			opt.Dependencies = opts[0].Dependencies
-		}
-		if len(opts[0].Handlers) > 0 {
-			opt.Handlers = opts[0].Handlers
-		}
+// InferObjectQueryParam 推断结构体类型的查询参数
+func (s ScanHelper) InferObjectQueryParam(param *openapi.RouteParam) []*openapi.QModel {
+	var qms []*openapi.QModel
+	qm, ok := s.InferTimeParam(param)
+	if ok {
+		qms = append(qms, qm)
+	} else {
+		// 对于结构体查询参数, 结构体的每一个字段都将作为一个查询参数
+		qms = append(qms, openapi.StructToQModels(param.CopyPrototype())...)
 	}
 
-	return opt
+	return qms
 }
