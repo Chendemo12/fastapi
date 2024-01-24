@@ -471,6 +471,34 @@ func (r *GenericRouter) PostArrayGenericModel(c *fastapi.Context, form []*PageRe
 	return &MemoryNote{}, nil
 }
 
+type MemberScore struct {
+	PageReq
+	UserId   string `json:"userId" query:"userId"`
+	UserName string `json:"userName" query:"userName"`
+}
+
+type AnonymousQueryModel struct {
+	MemberScore
+	Email string `json:"email" query:"email"`
+}
+
+type AnonymousRouter struct {
+	fastapi.BaseGroupRouter
+}
+
+func (r *AnonymousRouter) Prefix() string { return "/api/anonymous" }
+
+func (r *AnonymousRouter) GetAnonymousModel(c *fastapi.Context, params *AnonymousQueryModel) (*MemberScore, error) {
+	return &MemberScore{
+		PageReq: PageReq{
+			PageNum:  1,
+			PageSize: 1,
+		},
+		UserId:   params.UserId,
+		UserName: params.UserName,
+	}, nil
+}
+
 func TestNew(t *testing.T) {
 	app := fastapi.New(fastapi.Config{
 		Version:     "v0.2.0",
@@ -488,6 +516,7 @@ func TestNew(t *testing.T) {
 		IncludeRouter(&RequestBodyRouter{}).
 		IncludeRouter(&ResponseModelRouter{}).
 		IncludeRouter(&GenericRouter{}).
+		IncludeRouter(&AnonymousRouter{}).
 		IncludeRouter(routers.NewInfoRouter(app.Config())) // 开启默认基础路由
 
 	app.Run("0.0.0.0", "8099") // 阻塞运行

@@ -239,9 +239,9 @@ func (c *Context) HTMLResponse(statusCode int, content []byte) *Response {
 
 // AnyResponse 自定义响应体,响应体可是任意类型 (不校验返回值)
 //
-//	@param	statusCode	int		响应状态码
-//	@param	content		any		响应体
-//	@param	contentType	[]string	响应头MIME, 默认值为“application/json; charset=utf-8”
+//	@param	statusCode	int			响应状态码
+//	@param	content		any			响应体
+//	@param	contentType	[]string	响应头MIME,	默认值为“application/json;	charset=utf-8”
 //	@return	resp *Response response返回体
 func (c *Context) AnyResponse(statusCode int, content any, contentType ...string) *Response {
 	var ct string

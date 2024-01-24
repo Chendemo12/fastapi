@@ -3,6 +3,7 @@ package fastapi
 import (
 	"fmt"
 	"github.com/Chendemo12/fastapi/openapi"
+	"net/http"
 	"reflect"
 )
 
@@ -28,6 +29,8 @@ const (
 	// MixQueryParamMode 二种形式都有的混合模式 = 7
 	MixQueryParamMode QueryParamMode = "MixQueryParamMode"
 )
+
+const DefaultErrorStatusCode = http.StatusInternalServerError
 
 // Scanner 元数据接口
 // Init -> Scan -> ScanInner -> Init 级联初始化
