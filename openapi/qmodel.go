@@ -109,19 +109,24 @@ func StructToQModels(rt reflect.Type) []*QModel {
 
 	// 当此model作为查询参数时，此struct的每一个字段都将作为一个查询参数
 	// 对于字段类型，仅支持基本类型和time类型，不能为结构体类型
-	qms := make([]*QModel, 0, rt.NumField())
+
+	return extractQModelField(rt)
+}
+
+func extractQModelField(rt reflect.Type) []*QModel {
+	qms := make([]*QModel, 0)
 	for i := 0; i < rt.NumField(); i++ {
 		field := rt.Field(i)
-
 		// 仅导出字段可用
 		if unicode.IsLower(rune(field.Name[0])) {
 			continue
 		}
 
-		// TODO: Future-231203.8: 模型不支持嵌入
-		if field.Anonymous {
-			continue
+		// Future-231203.8: 模型支持嵌入
+		if field.Anonymous && field.Type.Kind() == reflect.Struct { // 不支持嵌入结构体指针类型
+			qms = append(qms, extractQModelField(field.Type)...)
 		}
+
 		// 此结构体的任意字段有且仅支持 基本数据类型
 		dataType := ReflectKindToType(field.Type.Kind())
 		switch dataType {
@@ -151,5 +156,6 @@ func StructToQModels(rt reflect.Type) []*QModel {
 			})
 		}
 	}
+
 	return qms
 }

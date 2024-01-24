@@ -712,7 +712,10 @@ func (r *GroupRoute) Call(ctx *Context) {
 		ctx.response.Content = result[FirstOutParamOffset].Interface()
 	} else {
 		err := last.Interface().(error)
-		ctx.response.StatusCode = http.StatusInternalServerError
+		if ctx.response.StatusCode == 0 {
+			// 允许上层自定义错误码
+			ctx.response.StatusCode = DefaultErrorStatusCode
+		}
 		ctx.response.Content = err.Error()
 	}
 }

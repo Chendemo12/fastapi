@@ -118,7 +118,16 @@ func (m *BaseModelMeta) scanNormalObject(rt reflect.Type) (err error) {
 			field:      field,
 			depth:      0,
 		}
-		m.scanStructField(argsType, 0) // field0 根起点
+
+		if field.Anonymous && field.Type.Kind() == reflect.Struct { // 不支持嵌入结构体指针类型
+			// Future-231203.8: 模型支持嵌入
+			err = m.scanNormalObject(rt.Field(i).Type)
+			if err != nil {
+				return err
+			}
+		} else {
+			m.scanStructField(argsType, 0) // field0 根起点
+		}
 	}
 	return
 }
@@ -371,11 +380,12 @@ func (m *BaseModelMeta) scanObjectSwagger() (err error) {
 	properties := make(map[string]any, len(m.fields))
 
 	for _, field := range m.fields {
-		if field.Anonymous { // 非导出字段
+		if field.Anonymous {
+			// 嵌入结构体的字段已合并到 fields 内，此处无需处理
 			continue
 		}
-		// TODO Future-231203.8: 模型不支持嵌入;
-		if !field.Exported {
+
+		if !field.Exported { // 非导出字段
 			continue
 		}
 

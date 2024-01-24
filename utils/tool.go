@@ -286,8 +286,8 @@ func Ternary[T any](cond bool, ifTrue, ifFalse T) T {
 
 // SliceFilter 从数组spans中过滤出符合条件的元素，返回一个新的切片
 //
-//	@param	spans	[]T					原始切片
-//	@param	filter	func(span T) bool	如果为true则包含在结果集中
+//	@param	spans	[]T				原始切片
+//	@param	filter	func(span T)	bool	如果为true则包含在结果集中
 func SliceFilter[T any](spans []T, filter func(span T) bool) []T {
 	newSpans := make([]T, 0)
 	for _, span := range spans {
