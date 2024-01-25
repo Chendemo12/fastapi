@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 0.2.2 - (2024-01-25)
+
+### Feat
+
+- Context 新增Set,Get替代实现, 用于在MuxContext未实现此方法时调用;
+- Wrapper 新增写流前钩子方法;
+
 ## 0.2.1 - (2024-01-24)
 
 ### Fix

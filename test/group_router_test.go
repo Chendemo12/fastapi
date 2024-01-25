@@ -499,6 +499,17 @@ func (r *AnonymousRouter) GetAnonymousModel(c *fastapi.Context, params *Anonymou
 	}, nil
 }
 
+func BeforeValidate(c *fastapi.Context) error {
+	c.Set("before-validate", time.Now())
+
+	return nil
+}
+
+func PrintRequestLog(c *fastapi.Context) {
+	c.Logger().Info("请求耗时: ", time.Since(c.GetTime("before-validate")))
+	c.Logger().Info("响应状态码: ", c.Response().StatusCode)
+}
+
 func TestNew(t *testing.T) {
 	app := fastapi.New(fastapi.Config{
 		Version:     "v0.2.0",
@@ -509,6 +520,9 @@ func TestNew(t *testing.T) {
 
 	// 底层采用fiber
 	app.SetMux(fiberWrapper.Default())
+
+	app.UsePrevious(BeforeValidate)
+	app.UseBeforeWrite(PrintRequestLog)
 
 	// 创建路由
 	app.IncludeRouter(&BaseTypeRouter{}).

@@ -7,6 +7,8 @@ import (
 	"github.com/go-playground/validator/v10"
 	"io"
 	"net/http"
+	"sync"
+	"time"
 )
 
 // Context 路由上下文信息, 也是钩子函数的操作句柄
@@ -31,6 +33,10 @@ type Context struct {
 	queryStruct  any            `description:"结构体查询参数"`
 	requestModel any            `description:"请求体"`
 	response     *Response      `description:"返回值,以减少函数间复制的开销"`
+	// This mutex protects Keys map.
+	mu sync.RWMutex
+	// 每个请求专有的K/V
+	Keys map[string]any
 }
 
 // 申请一个 Context 并初始化
@@ -45,6 +51,7 @@ func (f *Wrapper) acquireCtx(ctx MuxContext) *Context {
 	}
 	c.pathFields = map[string]string{}
 	c.queryFields = map[string]any{}
+	c.mu = sync.RWMutex{}
 
 	return c
 }
@@ -61,6 +68,7 @@ func (f *Wrapper) releaseCtx(ctx *Context) {
 
 	ctx.pathFields = nil
 	ctx.queryFields = nil
+	ctx.Keys = nil
 
 	f.pool.Put(ctx)
 }
@@ -123,6 +131,87 @@ func (c *Context) PathField(name string, undefined ...string) string {
 
 	return c.muxCtx.Params(name, undefined...)
 }
+
+// Set 存储一个键值对，延迟初始化 ！仅当 MuxContext 未实现此类方法时采用！
+// Set is used to store a new key/value pair exclusively for this context.
+// It also lazy initializes  c.Keys if it was not used previously.
+func (c *Context) Set(key string, value any) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.Keys == nil {
+		c.Keys = make(map[string]any)
+	}
+
+	c.Keys[key] = value
+}
+
+// Get 从上下文中读取键值, ie: (value, true).
+// 如果不存在则返回 (nil, false)
+// Get returns the value for the given key, ie: (value, true).
+// If the value does not exist it returns (nil, false)
+func (c *Context) Get(key string) (value any, exists bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	value, exists = c.Keys[key]
+	return
+}
+
+// MustGet 从上下文中读取键值，如果不存在则panic
+// MustGet returns the value for the given key if it exists, otherwise it panics.
+func (c *Context) MustGet(key string) any {
+	if value, exists := c.Get(key); exists {
+		return value
+	}
+	panic("Key \"" + key + "\" does not exist")
+}
+
+// GetString 以字符串形式读取键值
+// GetString returns the value associated with the key as a string.
+func (c *Context) GetString(key string) (s string) {
+	if val, ok := c.Get(key); ok && val != nil {
+		s, _ = val.(string)
+	}
+	return
+}
+
+// GetBool 以bool形式读取键值
+// GetBool returns the value associated with the key as a boolean.
+func (c *Context) GetBool(key string) (b bool) {
+	if val, ok := c.Get(key); ok && val != nil {
+		b, _ = val.(bool)
+	}
+	return
+}
+
+// GetInt64 以int64形式读取键值
+// GetInt64 returns the value associated with the key as an integer.
+func (c *Context) GetInt64(key string) (i64 int64) {
+	if val, ok := c.Get(key); ok && val != nil {
+		i64, _ = val.(int64)
+	}
+	return
+}
+
+// GetUint64 以uint64形式读取键值
+// GetUint64 returns the value associated with the key as an unsigned integer.
+func (c *Context) GetUint64(key string) (ui64 uint64) {
+	if val, ok := c.Get(key); ok && val != nil {
+		ui64, _ = val.(uint64)
+	}
+	return
+}
+
+// GetTime 以time形式读取键值
+// GetTime returns the value associated with the key as time.
+func (c *Context) GetTime(key string) (t time.Time) {
+	if val, ok := c.Get(key); ok && val != nil {
+		t, _ = val.(time.Time)
+	}
+	return
+}
+
+// Response 响应体，配合 UseBeforeWrite 实现在中间件中读取响应体内容，以进行日志记录等 ！慎重对 Response 进行修改！
+func (c *Context) Response() *Response { return c.response }
 
 // ================================ 路由组路由方法 ================================
 
