@@ -14,7 +14,7 @@ import (
 // 如果中间件要终止后续的流程,应返回 error, 错误消息会作为消息体返回给客户端, 响应状态码默认为400,可通过 Context.Status 进行修改;
 type MiddlewareHandle func(c *Context) error
 
-// Handler 路由函数，实现逻辑类似于中间件
+// Handler 路由函数，实现逻辑类似于装饰器
 //
 // 路由处理方法(装饰器实现)，用于请求体校验和返回体序列化，同时注入全局服务依赖,
 // 此方法接收一个业务层面的路由钩子方法 RouteIface.Call
@@ -39,55 +39,47 @@ func (f *Wrapper) Handler(ctx MuxContext) error {
 
 	// 校验前中间件
 	var err error
-	for _, fc := range f.previousDeps {
-		err = fc(wrapperCtx)
+	for i := 0; i < len(f.previousDeps); i++ {
+		err = f.previousDeps[i](wrapperCtx)
 		if err != nil {
-			// 中间件中断执行
-			if wrapperCtx.response.StatusCode == 0 {
-				wrapperCtx.response.StatusCode = http.StatusBadRequest
-				wrapperCtx.response.Content = err.Error()
-			} else {
-				wrapperCtx.response.Content = err.Error()
-			}
-			return wrapperCtx.write()
+			// 中间件中断执行, 应主动设置响应状态码
+			wrapperCtx.response.Content = err.Error()
+			return f.write(wrapperCtx)
 		}
 	}
 
 	// 路由前的校验,此校验会就地修改 Context.response
-	wrapperCtx.beforeWorkflow(route, f.conf.StopImmediatelyWhenErrorOccurs)
-	if wrapperCtx.response.Content != nil {
+	hasError := wrapperCtx.beforeWorkflow(route, f.conf.StopImmediatelyWhenErrorOccurs)
+	if hasError {
 		// 校验工作流不通过, 中断执行
-		return wrapperCtx.write()
+		return f.write(wrapperCtx)
 	}
 
 	// 执行校验后中间件
-	for _, fc := range f.afterDeps {
-		err = fc(wrapperCtx)
+	for i := 0; i < len(f.afterDeps); i++ {
+		err = f.afterDeps[i](wrapperCtx)
 		if err != nil {
 			// 中间件中断执行
-			if wrapperCtx.response.StatusCode == 0 {
-				wrapperCtx.response.StatusCode = http.StatusBadRequest
-				wrapperCtx.response.Content = err.Error()
-			} else {
-				wrapperCtx.response.Content = err.Error()
-			}
-			return wrapperCtx.write()
+			wrapperCtx.response.Content = err.Error()
+			return f.write(wrapperCtx)
 		}
 	}
+
 	//
 	// 全部校验完成，执行处理函数并获取返回值, 此处已经完成全部请求参数的校验，调用失败也存在返回值
 	route.Call(wrapperCtx)
+	//
 
 	// 路由后的校验，校验失败就地修改 Response
-	wrapperCtx.afterWorkflow(route, f.conf.StopImmediatelyWhenErrorOccurs)
+	hasError = wrapperCtx.afterWorkflow(route, f.conf.StopImmediatelyWhenErrorOccurs)
 
-	return wrapperCtx.write() // 返回消息流
+	return f.write(wrapperCtx) // 返回消息流
 }
 
 // ----------------------------------------	路由前的各种校验工作 ----------------------------------------
 
 // 执行用户自定义钩子函数前的工作流
-func (c *Context) beforeWorkflow(route RouteIface, stopImmediately bool) {
+func (c *Context) beforeWorkflow(route RouteIface, stopImmediately bool) (hasError bool) {
 	var ves []*openapi.ValidationError
 
 	for _, link := range requestValidateLinks {
@@ -97,15 +89,17 @@ func (c *Context) beforeWorkflow(route RouteIface, stopImmediately bool) {
 			c.response.StatusCode = http.StatusUnprocessableEntity
 			c.response.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
 			c.response.Content = &openapi.HTTPValidationError{Detail: ves}
-			break
+			return true
 		}
 	}
+
+	return
 }
 
 // ----------------------------------------	路由后的响应体校验工作 ----------------------------------------
 
 // 主要是对响应体是否符合tag约束的校验，
-func (c *Context) afterWorkflow(route RouteIface, stopImmediately bool) {
+func (c *Context) afterWorkflow(route RouteIface, stopImmediately bool) (hasError bool) {
 	var ves []*openapi.ValidationError
 
 	for _, link := range responseValidateLinks {
@@ -115,34 +109,32 @@ func (c *Context) afterWorkflow(route RouteIface, stopImmediately bool) {
 			c.response.StatusCode = http.StatusUnprocessableEntity
 			c.response.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
 			c.response.Content = &openapi.HTTPValidationError{Detail: ves}
-			break
+			return true
 		}
 	}
+	return
 }
 
 // 写入响应体到响应字节流
-func (c *Context) write() error {
+func (f *Wrapper) write(c *Context) error {
 	defer func() {
 		if c.routeCancel != nil {
 			c.routeCancel() // 当路由执行完毕时立刻关闭
 		}
 	}()
 
-	if c.response == nil {
-		// 自定义函数无任何返回值
-		c.muxCtx.Status(http.StatusOK)
-		return c.muxCtx.SendString("OK")
-	}
-
-	if c.response.StatusCode == http.StatusUnprocessableEntity {
-		// 校验不通过，直接返回错误信息
-		return c.muxCtx.JSON(http.StatusUnprocessableEntity, c.response.Content)
-	}
-
-	// 自定义函数存在返回值, 首先设置一下响应头
+	// 首先设置一下默认响应状态码
 	if c.response.StatusCode == 0 {
 		c.response.StatusCode = http.StatusOK
 	}
+
+	// 执行钩子
+	f.beforeWrite(c)
+
+	//if c.response.StatusCode == http.StatusUnprocessableEntity {
+	//	// 校验不通过，直接返回错误信息
+	//	return c.muxCtx.JSON(http.StatusUnprocessableEntity, c.response.Content)
+	//}
 
 	switch c.response.Type {
 

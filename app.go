@@ -53,7 +53,8 @@ type Wrapper struct {
 	events        []*Event           `description:"启动和关闭事件"`
 	finder        Finder[RouteIface] `description:"路由对象查找器"`
 	previousDeps  []MiddlewareHandle `description:"在接口参数校验前执行的中间件"`
-	afterDeps     []MiddlewareHandle `description:"在接口参数校验成功后执行的中间件"`
+	afterDeps     []MiddlewareHandle `description:"在接口参数校验成功后执行的中间件(相当于路由函数前钩子)"`
+	beforeWrite   func(c *Context)   `description:"在数据写入响应流之前执行的钩子方法"`
 }
 
 type FastApi = Wrapper
@@ -288,9 +289,15 @@ func (f *Wrapper) UsePrevious(middleware ...MiddlewareHandle) *Wrapper {
 	return f
 }
 
-// UseAfter 添加一个校验后中间件, 此中间件会在：请求参数校验后-路由函数调用前执行
+// UseAfter 添加一个校验后中间件(也即路由前), 此中间件会在：请求参数校验后-路由函数调用前执行
 func (f *Wrapper) UseAfter(middleware ...MiddlewareHandle) *Wrapper {
 	f.afterDeps = append(f.afterDeps, middleware...)
+	return f
+}
+
+// UseBeforeWrite 在数据写入响应流之前执行的钩子方法; 可用于日志记录, 所有请求无论何时终止都会执行此方法
+func (f *Wrapper) UseBeforeWrite(fc func(c *Context)) *Wrapper {
+	f.beforeWrite = fc
 	return f
 }
 
@@ -481,6 +488,7 @@ func Create(c Config) *Wrapper {
 		events:        make([]*Event, 0),
 	}
 	app.ctx, app.cancel = context.WithCancel(context.Background())
+	app.beforeWrite = func(c *Context) {}
 
 	if conf.Description != "" {
 		app.SetDescription(conf.Description)
