@@ -226,8 +226,11 @@ func (f *Wrapper) Logger() LoggerIface { return dLog }
 // Done 监听程序是否退出或正在关闭，仅当程序关闭时解除阻塞
 func (f *Wrapper) Done() <-chan struct{} { return f.ctx.Done() }
 
-// RootCtx 根 context
+// Deprecated: RootCtx 根 context, 使用 Wrapper.Context()
 func (f *Wrapper) RootCtx() context.Context { return f.ctx }
+
+// Context Wrapper根 context
+func (f *Wrapper) Context() context.Context { return f.ctx }
 
 // Mux 获取路由器
 func (f *Wrapper) Mux() MuxWrapper { return f.mux }
@@ -412,25 +415,27 @@ func (f *Wrapper) Run(host, port string) {
 }
 
 type Config struct {
-	Logger                         LoggerIface `json:"-" description:"日志"`
-	Version                        string      `json:"version,omitempty" description:"APP版本号"`
-	Description                    string      `json:"description,omitempty" description:"APP描述"`
-	Title                          string      `json:"title,omitempty" description:"APP标题,也是日志文件名"`
-	ShutdownTimeout                int         `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
-	DisableSwagAutoCreate          bool        `json:"disable_swag_auto_create,omitempty" description:"禁用自动文档"`
-	StopImmediatelyWhenErrorOccurs bool        `json:"stopImmediatelyWhenErrorOccurs" description:"是否在遇到错误字段时立刻停止校验"`
-	Debug                          bool        `json:"debug,omitempty" description:"调试模式"`
+	Logger                             LoggerIface `json:"-" description:"日志"`
+	Version                            string      `json:"version,omitempty" description:"APP版本号"`
+	Description                        string      `json:"description,omitempty" description:"APP描述"`
+	Title                              string      `json:"title,omitempty" description:"APP标题,也是日志文件名"`
+	ShutdownTimeout                    int         `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
+	DisableSwagAutoCreate              bool        `json:"disable_swag_auto_create,omitempty" description:"禁用自动文档"`
+	StopImmediatelyWhenErrorOccurs     bool        `json:"stopImmediatelyWhenErrorOccurs" description:"是否在遇到错误字段时立刻停止校验"`
+	Debug                              bool        `json:"debug,omitempty" description:"调试模式"`
+	ContextAutomaticDerivationDisabled bool        `json:"contextAutomaticDerivationDisabled,omitempty" description:"禁止为每一个请求创建单独的Context"`
 }
 
 func cleanConfig(confs ...Config) Config {
 	conf := Config{
-		Title:                 "FastAPI",
-		Version:               "1.0.0",
-		Debug:                 false,
-		Description:           "FastAPI Application",
-		Logger:                nil,
-		ShutdownTimeout:       5,
-		DisableSwagAutoCreate: false,
+		Version:                            "1.0.0",
+		Description:                        "FastAPI Application",
+		Title:                              "FastAPI",
+		ShutdownTimeout:                    5,
+		DisableSwagAutoCreate:              false,
+		StopImmediatelyWhenErrorOccurs:     false,
+		Debug:                              false,
+		ContextAutomaticDerivationDisabled: false,
 	}
 	if len(confs) > 0 {
 		if confs[0].Title != "" {
@@ -447,6 +452,7 @@ func cleanConfig(confs ...Config) Config {
 		conf.ShutdownTimeout = confs[0].ShutdownTimeout
 		conf.DisableSwagAutoCreate = confs[0].DisableSwagAutoCreate
 		conf.StopImmediatelyWhenErrorOccurs = confs[0].StopImmediatelyWhenErrorOccurs
+		conf.ContextAutomaticDerivationDisabled = confs[0].ContextAutomaticDerivationDisabled
 	}
 
 	return conf
@@ -473,12 +479,14 @@ func Create(c Config) *Wrapper {
 
 	app := &Wrapper{
 		conf: &Profile{
-			Title:           conf.Title,
-			Version:         conf.Version,
-			Description:     conf.Description,
-			Debug:           conf.Debug,
-			SwaggerDisabled: conf.DisableSwagAutoCreate,
-			ShutdownTimeout: time.Duration(conf.ShutdownTimeout) * time.Second,
+			Title:                              conf.Title,
+			Version:                            conf.Version,
+			Description:                        conf.Description,
+			Debug:                              conf.Debug,
+			SwaggerDisabled:                    conf.DisableSwagAutoCreate,
+			ShutdownTimeout:                    time.Duration(conf.ShutdownTimeout) * time.Second,
+			ContextAutomaticDerivationDisabled: conf.ContextAutomaticDerivationDisabled,
+			StopImmediatelyWhenErrorOccurs:     conf.StopImmediatelyWhenErrorOccurs,
 		},
 		genericRoutes: make([]RouteIface, 0),
 		groupRouters:  make([]*GroupRouterMeta, 0),

@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 0.2.3 - (2024-03-20)
+
+### Fix
+
+- 修复请求context自动派生功能异常的错误;
+- 可以通过Context获得wrapper根context;
+
 ## 0.2.2 - (2024-01-25)
 
 ### Feat
