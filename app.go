@@ -52,8 +52,8 @@ type Wrapper struct {
 	genericRoutes []RouteIface       `description:"泛型路由对象"`
 	events        []*Event           `description:"启动和关闭事件"`
 	finder        Finder[RouteIface] `description:"路由对象查找器"`
-	previousDeps  []MiddlewareHandle `description:"在接口参数校验前执行的中间件"`
-	afterDeps     []MiddlewareHandle `description:"在接口参数校验成功后执行的中间件(相当于路由函数前钩子)"`
+	previousDeps  []DependenceHandle `description:"在接口参数校验前执行的依赖函数"`
+	afterDeps     []DependenceHandle `description:"在接口参数校验成功后执行的依赖函数(相当于路由函数前钩子)"`
 	beforeWrite   func(c *Context)   `description:"在数据写入响应流之前执行的钩子方法"`
 }
 
@@ -286,15 +286,15 @@ func (f *Wrapper) IncludeRouter(router GroupRouter) *Wrapper {
 	return f
 }
 
-// UsePrevious 添加一个校验前中间件，此中间件会在：请求参数校验前调用
-func (f *Wrapper) UsePrevious(middleware ...MiddlewareHandle) *Wrapper {
-	f.previousDeps = append(f.previousDeps, middleware...)
+// UsePrevious 添加一个校验前依赖函数，此依赖函数会在：请求参数校验前调用
+func (f *Wrapper) UsePrevious(hooks ...DependenceHandle) *Wrapper {
+	f.previousDeps = append(f.previousDeps, hooks...)
 	return f
 }
 
-// UseAfter 添加一个校验后中间件(也即路由前), 此中间件会在：请求参数校验后-路由函数调用前执行
-func (f *Wrapper) UseAfter(middleware ...MiddlewareHandle) *Wrapper {
-	f.afterDeps = append(f.afterDeps, middleware...)
+// UseAfter 添加一个校验后依赖函数(也即路由前), 此依赖函数会在：请求参数校验后-路由函数调用前执行
+func (f *Wrapper) UseAfter(hooks ...DependenceHandle) *Wrapper {
+	f.afterDeps = append(f.afterDeps, hooks...)
 	return f
 }
 
@@ -304,9 +304,28 @@ func (f *Wrapper) UseBeforeWrite(fc func(c *Context)) *Wrapper {
 	return f
 }
 
-// Use 添加一个中间件, 数据校验后中间件
-func (f *Wrapper) Use(middleware ...MiddlewareHandle) *Wrapper {
-	return f.UseAfter(middleware...)
+// Use 添加一个依赖函数(锚点), 数据校验后依赖函数
+//
+// 由于 Wrapper 的核心实现类似于装饰器, 而非常规的中间件,因此无法通过 MuxWrapper 的中间件来影响到 Wrapper 的执行过程;
+// 因此 Wrapper 在关键环节均定义了相关的依赖函数，类似于hook，以此来控制执行流程;
+//
+//	与python-FastApi的Depends不同的地方在于：
+//		python-FastApi.Depends接收Request作为入参，并将其返回值作为路由函数Handler的入参;
+//		而此处的hook不返回值，而是通过 Context.Set 和 Context.Get 来进行上下文数据的传递，并通过返回 error 来终止后续的流程;
+//		同时，由于 Context.Set 和 Context.Get 是线程安全的，因此可以放心的在依赖函数中操作 Context;
+//	   	依赖函数的执行始终是顺序进行的，其执行顺序是固定的：
+//	   	始终由 UsePrevious -> (请求参数)Validate -> UseAfter -> (路由函数)RouteHandler -> (响应参数)Validate -> UseBeforeWrite -> exit;
+//
+// 此处的依赖函数有校验前依赖函数和校验后依赖函数,分别通过 Wrapper.UsePrevious 和 Wrapper.UseAfter 注册;
+// 当请求参数校验失败时不会执行 Wrapper.UseAfter 依赖函数, 请求参数会在 Wrapper.UsePrevious 执行完成之后被触发;
+// 如果依赖函数要终止后续的流程,应返回 error, 错误消息会作为消息体返回给客户端, 响应状态码默认为400,可通过 Context.Status 进行修改;
+func (f *Wrapper) Use(hooks ...DependenceHandle) *Wrapper {
+	return f.UseAfter(hooks...)
+}
+
+// UseDepends 【别名】添加一个数据校验后依赖函数
+func (f *Wrapper) UseDepends(hooks ...DependenceHandle) *Wrapper {
+	return f.UseAfter(hooks...)
 }
 
 // ActivateHotSwitch 创建一个热开关，监听信号量(默认值：30)，用来改变程序调试开关状态
@@ -491,8 +510,8 @@ func Create(c Config) *Wrapper {
 		genericRoutes: make([]RouteIface, 0),
 		groupRouters:  make([]*GroupRouterMeta, 0),
 		isStarted:     make(chan struct{}, 1),
-		previousDeps:  make([]MiddlewareHandle, 0),
-		afterDeps:     make([]MiddlewareHandle, 0),
+		previousDeps:  make([]DependenceHandle, 0),
+		afterDeps:     make([]DependenceHandle, 0),
 		events:        make([]*Event, 0),
 	}
 	app.ctx, app.cancel = context.WithCancel(context.Background())

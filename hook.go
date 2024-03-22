@@ -6,13 +6,8 @@ import (
 	"net/http"
 )
 
-// MiddlewareHandle 中间件函数
-//
-// 由于 Wrapper 的核心实现类似于装饰器,而非常规的中间件,因此应当通过 Wrapper 来定义中间件, 以避免通过 MuxWrapper 注册的中间件对 Wrapper 产生副作用;
-// 此处中间件有校验前中间件和校验后中间件,分别通过 Wrapper.UsePrevious 和 Wrapper.UseAfter 注册;
-// 当请求参数校验失败时不会执行 Wrapper.UseAfter 中间件, 请求参数会在 Wrapper.UsePrevious 执行完成之后被触发;
-// 如果中间件要终止后续的流程,应返回 error, 错误消息会作为消息体返回给客户端, 响应状态码默认为400,可通过 Context.Status 进行修改;
-type MiddlewareHandle func(c *Context) error
+// DependenceHandle 依赖函数 Depends/Hook
+type DependenceHandle func(c *Context) error
 
 // Handler 路由函数，实现逻辑类似于装饰器
 //
@@ -37,12 +32,12 @@ func (f *Wrapper) Handler(ctx MuxContext) error {
 	wrapperCtx := f.acquireCtx(ctx)
 	defer f.releaseCtx(wrapperCtx)
 
-	// 校验前中间件
+	// 校验前依赖函数
 	var err error
 	for i := 0; i < len(f.previousDeps); i++ {
 		err = f.previousDeps[i](wrapperCtx)
 		if err != nil {
-			// 中间件中断执行, 应主动设置响应状态码
+			// 依赖函数中断执行, 应主动设置响应状态码
 			wrapperCtx.response.Content = err.Error()
 			return f.write(wrapperCtx)
 		}
@@ -55,11 +50,11 @@ func (f *Wrapper) Handler(ctx MuxContext) error {
 		return f.write(wrapperCtx)
 	}
 
-	// 执行校验后中间件
+	// 执行校验后依赖函数
 	for i := 0; i < len(f.afterDeps); i++ {
 		err = f.afterDeps[i](wrapperCtx)
 		if err != nil {
-			// 中间件中断执行
+			// 依赖函数中断执行
 			wrapperCtx.response.Content = err.Error()
 			return f.write(wrapperCtx)
 		}

@@ -267,3 +267,12 @@ var ValidatorLabelToOpenapiLabel = map[string]string{
 	"rgb":       "rgb",  // RGB颜色值
 	"rgba":      "rgba", // RGBA颜色值
 }
+
+// 用于路由参数的结构体标签名称，允许自行更改
+var structParamTagName = "type"
+
+const (
+	CookiesParamType = "cookies" // 声明一个cookies参数
+	HeadersParamType = "header"  // 声明一个header参数
+	PathParamType    = "path"    // 声明一个路径参数，不同与路由path{}定义混用
+)

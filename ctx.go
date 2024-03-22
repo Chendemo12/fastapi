@@ -218,7 +218,7 @@ func (c *Context) GetTime(key string) (t time.Time) {
 	return
 }
 
-// Response 响应体，配合 UseBeforeWrite 实现在中间件中读取响应体内容，以进行日志记录等 ！慎重对 Response 进行修改！
+// Response 响应体，配合 UseBeforeWrite 实现在依赖函数中读取响应体内容，以进行日志记录等 ！慎重对 Response 进行修改！
 func (c *Context) Response() *Response { return c.response }
 
 // ================================ 路由组路由方法 ================================
