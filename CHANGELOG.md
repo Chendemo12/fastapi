@@ -6,6 +6,11 @@
 
 - 修改UseXXX系列方法的解释说明;
 
+### Feat
+
+- update to fiver:v2.52.2;
+- update to validator:v10.19.0;
+
 ## 0.2.3 - (2024-03-20)
 
 ### Fix
