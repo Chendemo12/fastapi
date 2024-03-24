@@ -19,6 +19,7 @@ import (
 //	Context 的任何引用都是不对的, 若需在return之后监听 Context.Context() 则应该显式的复制或派生
 type Context struct {
 	muxCtx      MuxContext         `description:"路由器Context"`
+	appCtx      context.Context    `description:"根context"`
 	routeCtx    context.Context    `description:"获取针对此次请求的唯一context"`
 	routeCancel context.CancelFunc `description:"获取针对此次请求的唯一取消函数"`
 	// 存储路径参数, 路径参数类型全部为字符串类型, 路径参数都是肯定存在的
@@ -49,6 +50,7 @@ func (f *Wrapper) acquireCtx(ctx MuxContext) *Context {
 	if !f.conf.ContextAutomaticDerivationDisabled {
 		c.routeCtx, c.routeCancel = context.WithCancel(f.ctx)
 	}
+	c.appCtx = f.ctx
 	c.pathFields = map[string]string{}
 	c.queryFields = map[string]any{}
 	c.mu = sync.RWMutex{}
@@ -61,6 +63,7 @@ func (f *Wrapper) releaseCtx(ctx *Context) {
 	ReleaseResponse(ctx.response)
 
 	ctx.muxCtx = nil
+	ctx.appCtx = nil
 	ctx.routeCtx = nil
 	ctx.routeCancel = nil
 	ctx.requestModel = nil
@@ -80,10 +83,15 @@ func (c *Context) MuxContext() MuxContext { return c.muxCtx }
 
 // Context 针对此次请求的唯一context, 当路由执行完毕返回时,将会自动关闭
 // <如果 ContextAutomaticDerivationDisabled = true 则异常>
+//
 // 为每一个请求创建一个新的 context.Context 其代价是非常高的，因此允许通过设置关闭此功能
 //
-//	@return	context.Context 唯一context
+//	@return	context.Context 当前请求的唯一context
 func (c *Context) Context() context.Context { return c.routeCtx }
+
+// RootContext 根context
+// 当禁用了context自动派生功能 <ContextAutomaticDerivationDisabled = true>，但又需要一个context时，可获得路由器Wrapper的context
+func (c *Context) RootContext() context.Context { return c.appCtx }
 
 // Done 监听 Context 是否完成退出
 // <如果 ContextAutomaticDerivationDisabled = true 则异常>
@@ -210,7 +218,7 @@ func (c *Context) GetTime(key string) (t time.Time) {
 	return
 }
 
-// Response 响应体，配合 UseBeforeWrite 实现在中间件中读取响应体内容，以进行日志记录等 ！慎重对 Response 进行修改！
+// Response 响应体，配合 UseBeforeWrite 实现在依赖函数中读取响应体内容，以进行日志记录等 ！慎重对 Response 进行修改！
 func (c *Context) Response() *Response { return c.response }
 
 // ================================ 路由组路由方法 ================================

@@ -52,8 +52,8 @@ type Wrapper struct {
 	genericRoutes []RouteIface       `description:"泛型路由对象"`
 	events        []*Event           `description:"启动和关闭事件"`
 	finder        Finder[RouteIface] `description:"路由对象查找器"`
-	previousDeps  []MiddlewareHandle `description:"在接口参数校验前执行的中间件"`
-	afterDeps     []MiddlewareHandle `description:"在接口参数校验成功后执行的中间件(相当于路由函数前钩子)"`
+	previousDeps  []DependenceHandle `description:"在接口参数校验前执行的依赖函数"`
+	afterDeps     []DependenceHandle `description:"在接口参数校验成功后执行的依赖函数(相当于路由函数前钩子)"`
 	beforeWrite   func(c *Context)   `description:"在数据写入响应流之前执行的钩子方法"`
 }
 
@@ -226,8 +226,11 @@ func (f *Wrapper) Logger() LoggerIface { return dLog }
 // Done 监听程序是否退出或正在关闭，仅当程序关闭时解除阻塞
 func (f *Wrapper) Done() <-chan struct{} { return f.ctx.Done() }
 
-// RootCtx 根 context
+// Deprecated: RootCtx 根 context, 使用 Wrapper.Context()
 func (f *Wrapper) RootCtx() context.Context { return f.ctx }
+
+// Context Wrapper根 context
+func (f *Wrapper) Context() context.Context { return f.ctx }
 
 // Mux 获取路由器
 func (f *Wrapper) Mux() MuxWrapper { return f.mux }
@@ -283,15 +286,15 @@ func (f *Wrapper) IncludeRouter(router GroupRouter) *Wrapper {
 	return f
 }
 
-// UsePrevious 添加一个校验前中间件，此中间件会在：请求参数校验前调用
-func (f *Wrapper) UsePrevious(middleware ...MiddlewareHandle) *Wrapper {
-	f.previousDeps = append(f.previousDeps, middleware...)
+// UsePrevious 添加一个校验前依赖函数，此依赖函数会在：请求参数校验前调用
+func (f *Wrapper) UsePrevious(hooks ...DependenceHandle) *Wrapper {
+	f.previousDeps = append(f.previousDeps, hooks...)
 	return f
 }
 
-// UseAfter 添加一个校验后中间件(也即路由前), 此中间件会在：请求参数校验后-路由函数调用前执行
-func (f *Wrapper) UseAfter(middleware ...MiddlewareHandle) *Wrapper {
-	f.afterDeps = append(f.afterDeps, middleware...)
+// UseAfter 添加一个校验后依赖函数(也即路由前), 此依赖函数会在：请求参数校验后-路由函数调用前执行
+func (f *Wrapper) UseAfter(hooks ...DependenceHandle) *Wrapper {
+	f.afterDeps = append(f.afterDeps, hooks...)
 	return f
 }
 
@@ -301,9 +304,28 @@ func (f *Wrapper) UseBeforeWrite(fc func(c *Context)) *Wrapper {
 	return f
 }
 
-// Use 添加一个中间件, 数据校验后中间件
-func (f *Wrapper) Use(middleware ...MiddlewareHandle) *Wrapper {
-	return f.UseAfter(middleware...)
+// Use 添加一个依赖函数(锚点), 数据校验后依赖函数
+//
+// 由于 Wrapper 的核心实现类似于装饰器, 而非常规的中间件,因此无法通过 MuxWrapper 的中间件来影响到 Wrapper 的执行过程;
+// 因此 Wrapper 在关键环节均定义了相关的依赖函数，类似于hook，以此来控制执行流程;
+//
+//	与python-FastApi的Depends不同的地方在于：
+//		python-FastApi.Depends接收Request作为入参，并将其返回值作为路由函数Handler的入参;
+//		而此处的hook不返回值，而是通过 Context.Set 和 Context.Get 来进行上下文数据的传递，并通过返回 error 来终止后续的流程;
+//		同时，由于 Context.Set 和 Context.Get 是线程安全的，因此可以放心的在依赖函数中操作 Context;
+//	   	依赖函数的执行始终是顺序进行的，其执行顺序是固定的：
+//	   	始终由 UsePrevious -> (请求参数)Validate -> UseAfter -> (路由函数)RouteHandler -> (响应参数)Validate -> UseBeforeWrite -> exit;
+//
+// 此处的依赖函数有校验前依赖函数和校验后依赖函数,分别通过 Wrapper.UsePrevious 和 Wrapper.UseAfter 注册;
+// 当请求参数校验失败时不会执行 Wrapper.UseAfter 依赖函数, 请求参数会在 Wrapper.UsePrevious 执行完成之后被触发;
+// 如果依赖函数要终止后续的流程,应返回 error, 错误消息会作为消息体返回给客户端, 响应状态码默认为400,可通过 Context.Status 进行修改;
+func (f *Wrapper) Use(hooks ...DependenceHandle) *Wrapper {
+	return f.UseAfter(hooks...)
+}
+
+// UseDepends 【别名】添加一个数据校验后依赖函数
+func (f *Wrapper) UseDepends(hooks ...DependenceHandle) *Wrapper {
+	return f.UseAfter(hooks...)
 }
 
 // ActivateHotSwitch 创建一个热开关，监听信号量(默认值：30)，用来改变程序调试开关状态
@@ -412,25 +434,27 @@ func (f *Wrapper) Run(host, port string) {
 }
 
 type Config struct {
-	Logger                         LoggerIface `json:"-" description:"日志"`
-	Version                        string      `json:"version,omitempty" description:"APP版本号"`
-	Description                    string      `json:"description,omitempty" description:"APP描述"`
-	Title                          string      `json:"title,omitempty" description:"APP标题,也是日志文件名"`
-	ShutdownTimeout                int         `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
-	DisableSwagAutoCreate          bool        `json:"disable_swag_auto_create,omitempty" description:"禁用自动文档"`
-	StopImmediatelyWhenErrorOccurs bool        `json:"stopImmediatelyWhenErrorOccurs" description:"是否在遇到错误字段时立刻停止校验"`
-	Debug                          bool        `json:"debug,omitempty" description:"调试模式"`
+	Logger                             LoggerIface `json:"-" description:"日志"`
+	Version                            string      `json:"version,omitempty" description:"APP版本号"`
+	Description                        string      `json:"description,omitempty" description:"APP描述"`
+	Title                              string      `json:"title,omitempty" description:"APP标题,也是日志文件名"`
+	ShutdownTimeout                    int         `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
+	DisableSwagAutoCreate              bool        `json:"disable_swag_auto_create,omitempty" description:"禁用自动文档"`
+	StopImmediatelyWhenErrorOccurs     bool        `json:"stopImmediatelyWhenErrorOccurs" description:"是否在遇到错误字段时立刻停止校验"`
+	Debug                              bool        `json:"debug,omitempty" description:"调试模式"`
+	ContextAutomaticDerivationDisabled bool        `json:"contextAutomaticDerivationDisabled,omitempty" description:"禁止为每一个请求创建单独的Context"`
 }
 
 func cleanConfig(confs ...Config) Config {
 	conf := Config{
-		Title:                 "FastAPI",
-		Version:               "1.0.0",
-		Debug:                 false,
-		Description:           "FastAPI Application",
-		Logger:                nil,
-		ShutdownTimeout:       5,
-		DisableSwagAutoCreate: false,
+		Version:                            "1.0.0",
+		Description:                        "FastAPI Application",
+		Title:                              "FastAPI",
+		ShutdownTimeout:                    5,
+		DisableSwagAutoCreate:              false,
+		StopImmediatelyWhenErrorOccurs:     false,
+		Debug:                              false,
+		ContextAutomaticDerivationDisabled: false,
 	}
 	if len(confs) > 0 {
 		if confs[0].Title != "" {
@@ -447,6 +471,7 @@ func cleanConfig(confs ...Config) Config {
 		conf.ShutdownTimeout = confs[0].ShutdownTimeout
 		conf.DisableSwagAutoCreate = confs[0].DisableSwagAutoCreate
 		conf.StopImmediatelyWhenErrorOccurs = confs[0].StopImmediatelyWhenErrorOccurs
+		conf.ContextAutomaticDerivationDisabled = confs[0].ContextAutomaticDerivationDisabled
 	}
 
 	return conf
@@ -473,18 +498,20 @@ func Create(c Config) *Wrapper {
 
 	app := &Wrapper{
 		conf: &Profile{
-			Title:           conf.Title,
-			Version:         conf.Version,
-			Description:     conf.Description,
-			Debug:           conf.Debug,
-			SwaggerDisabled: conf.DisableSwagAutoCreate,
-			ShutdownTimeout: time.Duration(conf.ShutdownTimeout) * time.Second,
+			Title:                              conf.Title,
+			Version:                            conf.Version,
+			Description:                        conf.Description,
+			Debug:                              conf.Debug,
+			SwaggerDisabled:                    conf.DisableSwagAutoCreate,
+			ShutdownTimeout:                    time.Duration(conf.ShutdownTimeout) * time.Second,
+			ContextAutomaticDerivationDisabled: conf.ContextAutomaticDerivationDisabled,
+			StopImmediatelyWhenErrorOccurs:     conf.StopImmediatelyWhenErrorOccurs,
 		},
 		genericRoutes: make([]RouteIface, 0),
 		groupRouters:  make([]*GroupRouterMeta, 0),
 		isStarted:     make(chan struct{}, 1),
-		previousDeps:  make([]MiddlewareHandle, 0),
-		afterDeps:     make([]MiddlewareHandle, 0),
+		previousDeps:  make([]DependenceHandle, 0),
+		afterDeps:     make([]DependenceHandle, 0),
 		events:        make([]*Event, 0),
 	}
 	app.ctx, app.cancel = context.WithCancel(context.Background())
