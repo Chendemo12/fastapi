@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 0.2.5 - (2024-03-24)
+
+### Feat
+
+- upgrade version;
+
 ## 0.2.4 - (2024-03-22)
 
 ### Fix
