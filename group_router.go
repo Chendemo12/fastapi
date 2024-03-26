@@ -121,6 +121,7 @@ func (g *BaseGroupRouter) InParamsName() map[string]map[int]string {
 const WebsocketMethod = "WS"
 const HttpMethodMinimumLength = len(http.MethodGet)
 const (
+	ReceiverParamOffset      = 0                      // 接收器参数的索引位置
 	FirstInParamOffset       = 1                      // 第一个有效参数的索引位置，由于结构体接收器处于第一位置
 	FirstCustomInParamOffset = FirstInParamOffset + 1 // 第一个自定义参数的索引位置
 	FirstOutParamOffset      = 0
@@ -197,9 +198,6 @@ func (r *GroupRouterMeta) Scan() (err error) {
 	// 扫描tags
 	r.scanTags()
 
-	if err != nil {
-		return err
-	}
 	// 扫描方法路由
 	err = r.scanMethod()
 
@@ -356,6 +354,16 @@ func (r *GroupRouterMeta) isRouteMethod(method reflect.Method) (*openapi.RouteSw
 	if inParamNum < FirstInParamOffset || outParamNum != OutParamNum {
 		// 方法参数数量不对
 		return nil, false
+	}
+
+	if utils.Has([]string{http.MethodPut, http.MethodPatch, http.MethodPost}, swagger.Method) {
+		// 以下方法必须有一个请求体：receiver + Context + requestBody
+		if inParamNum < FirstInParamOffset+2 {
+			panic(fmt.Sprintf(
+				"method: '%s.%s' has no request body, you must specify a request body parameter, and if you really don't need one, use 'fastapi.None' instead.",
+				r.pkg, method.Name,
+			))
+		}
 	}
 
 	// 获取请求参数

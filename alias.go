@@ -17,6 +17,11 @@ type Opt = Option
 
 type BaseRouter = BaseGroupRouter
 
+// None 可用于POST/PATH/PUT方法的占位
+type None struct{}
+
+func (*None) SchemaDesc() string { return "Empty Request Content" }
+
 //goland:noinspection GoUnusedGlobalVariable
 var (
 	ReflectObjectType = utils.ReflectObjectType
