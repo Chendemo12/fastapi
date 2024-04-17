@@ -181,6 +181,10 @@ func (r *RequestBodyRouter) StringQueryParamPatch(c *fastapi.Context, name strin
 	return name, nil
 }
 
+func (r *RequestBodyRouter) NoRequestBodyParamPatch(c *fastapi.Context, null *fastapi.None) (string, error) {
+	return "no-request-body-param", nil
+}
+
 func (r *RequestBodyRouter) Path() map[string]string {
 	return map[string]string{
 		"RegisterWithParamPost": "register-with/:location",
