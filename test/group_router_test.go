@@ -125,7 +125,7 @@ type PageReq struct {
 func (r *QueryParamRouter) GetPathAndQueryParam(c *fastapi.Context, page *PageReq) (*PageReq, error) {
 	pf := c.PathField("day", time.Now().String())
 
-	c.Logger().Info("path params: ", pf)
+	fastapi.Info("path params: ", pf)
 	return page, nil
 }
 
@@ -311,17 +311,16 @@ func (r *ResponseModelRouter) GetComplexModel(c *fastapi.Context) (*EnosData, er
 }
 
 func routeCtxCancel(s *fastapi.Context) *fastapi.Response {
-	cl := s.Logger() // 当路由执行完毕退出时, ctx将被释放
 	ctx := s.Context()
 
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
-				cl.Info("route canceled.")
+				fastapi.Info("route canceled.")
 				return
 			case <-time.Tick(time.Millisecond * 400):
-				cl.Info("route not cancel.")
+				fastapi.Info("route not cancel.")
 			}
 		}
 	}()
@@ -510,8 +509,8 @@ func BeforeValidate(c *fastapi.Context) error {
 }
 
 func PrintRequestLog(c *fastapi.Context) {
-	c.Logger().Info("请求耗时: ", time.Since(c.GetTime("before-validate")))
-	c.Logger().Info("响应状态码: ", c.Response().StatusCode)
+	fastapi.Info("请求耗时: ", time.Since(c.GetTime("before-validate")))
+	fastapi.Info("响应状态码: ", c.Response().StatusCode)
 }
 
 func TestNew(t *testing.T) {

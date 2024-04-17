@@ -257,12 +257,12 @@ func customRecoverHandler(c *fiber.Ctx, e any) {
 	msg := utils.CombineStrings(
 		"Request RelativePath: ", c.Path(), fmt.Sprintf(", Error: %v, \n", e), string(buf),
 	)
-	fastapi.Logger().Error(msg)
+	fastapi.Error(msg)
 }
 
 // customFiberErrorHandler 自定义fiber接口错误处理函数
 func customFiberErrorHandler(c *fiber.Ctx, e error) error {
-	fastapi.Logger().Warn(utils.CombineStrings(
+	fastapi.Warn(utils.CombineStrings(
 		"error happened during: '",
 		c.Method(), ": ", c.Path(),
 		"', Msg: ", e.Error(),

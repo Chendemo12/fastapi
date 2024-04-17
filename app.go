@@ -17,7 +17,6 @@ import (
 
 var one = &sync.Once{}
 var wrapper *Wrapper = nil // 默认实例
-var dLog LoggerIface = NewDefaultLogger()
 
 // HotSwitchSigint 默认热调试开关
 const HotSwitchSigint = 30
@@ -165,7 +164,7 @@ func (f *Wrapper) initialize() *Wrapper {
 	f.initMux()
 	f.initSwagger() // === 必须最后调用
 
-	f.Logger().Debug(
+	Debug(
 		"Run at: " + utils.Ternary[string](f.conf.Debug, "Development", "Production"),
 	)
 	return f
@@ -185,9 +184,9 @@ func (f *Wrapper) wrap(mux MuxWrapper) *Wrapper {
 			err = mux.BindRoute(route.Swagger().Method, route.Swagger().Url, f.Handler)
 			if err != nil {
 				// 此时日志已初始化完毕
-				f.Logger().Error(fmt.Sprintf(
+				Errorf(
 					"route: '%s:%s' bind failed, %v", route.Swagger().Method, route.Swagger().Url, err,
-				))
+				)
 			}
 		}
 	}
@@ -196,9 +195,9 @@ func (f *Wrapper) wrap(mux MuxWrapper) *Wrapper {
 		err = mux.BindRoute(route.Swagger().Method, route.Swagger().Url, f.Handler)
 		if err != nil {
 			// 此时日志已初始化完毕
-			f.Logger().Error(fmt.Sprintf(
+			Errorf(
 				"route: '%s:%s' bind failed, %v", route.Swagger().Method, route.Swagger().Url, err,
-			))
+			)
 		}
 	}
 
@@ -209,7 +208,6 @@ func (f *Wrapper) wrap(mux MuxWrapper) *Wrapper {
 
 func (f *Wrapper) Config() Config {
 	return Config{
-		Logger:                         dLog,
 		Version:                        f.conf.Version,
 		Description:                    f.conf.Description,
 		Title:                          f.conf.Title,
@@ -219,9 +217,6 @@ func (f *Wrapper) Config() Config {
 		Debug:                          f.conf.Debug,
 	}
 }
-
-// Logger 获取日志句柄
-func (f *Wrapper) Logger() LoggerIface { return dLog }
 
 // Done 监听程序是否退出或正在关闭，仅当程序关闭时解除阻塞
 func (f *Wrapper) Done() <-chan struct{} { return f.ctx.Done() }
@@ -259,14 +254,6 @@ func (f *Wrapper) OnEvent(kind EventKind, fc func()) *Wrapper {
 		})
 	default:
 	}
-	return f
-}
-
-// SetLogger 替换日志句柄，此操作必须在run之前进行
-//
-//	@param	logger	LoggerIface	日志句柄
-func (f *Wrapper) SetLogger(logger LoggerIface) *Wrapper {
-	dLog = logger
 	return f
 }
 
@@ -349,8 +336,8 @@ func (f *Wrapper) ActivateHotSwitch(s ...int) *Wrapper {
 				} else {
 					f.resetRunMode(true)
 				}
-				dLog.Debug(
-					"Hot-switch received, convert to: ", utils.Ternary[string](f.conf.Debug, "Development", "Production"),
+				Debugf(
+					"Hot-switch received, convert to: %s", utils.Ternary[string](f.conf.Debug, "Development", "Production"),
 				)
 			}
 		}
@@ -417,7 +404,7 @@ func (f *Wrapper) Run(host, port string) {
 
 	f.isStarted <- struct{}{} // 解除阻塞上层的任务
 	addr := net.JoinHostPort(f.conf.Host, f.conf.Port)
-	dLog.Debug("HTTP server listening on: " + addr)
+	Debug("HTTP server listening on: " + addr)
 
 	close(f.isStarted)
 
@@ -434,15 +421,14 @@ func (f *Wrapper) Run(host, port string) {
 }
 
 type Config struct {
-	Logger                             LoggerIface `json:"-" description:"日志"`
-	Version                            string      `json:"version,omitempty" description:"APP版本号"`
-	Description                        string      `json:"description,omitempty" description:"APP描述"`
-	Title                              string      `json:"title,omitempty" description:"APP标题,也是日志文件名"`
-	ShutdownTimeout                    int         `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
-	DisableSwagAutoCreate              bool        `json:"disable_swag_auto_create,omitempty" description:"禁用自动文档"`
-	StopImmediatelyWhenErrorOccurs     bool        `json:"stopImmediatelyWhenErrorOccurs" description:"是否在遇到错误字段时立刻停止校验"`
-	Debug                              bool        `json:"debug,omitempty" description:"调试模式"`
-	ContextAutomaticDerivationDisabled bool        `json:"contextAutomaticDerivationDisabled,omitempty" description:"禁止为每一个请求创建单独的Context"`
+	Version                            string `json:"version,omitempty" description:"APP版本号"`
+	Description                        string `json:"description,omitempty" description:"APP描述"`
+	Title                              string `json:"title,omitempty" description:"APP标题,也是日志文件名"`
+	ShutdownTimeout                    int    `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
+	DisableSwagAutoCreate              bool   `json:"disable_swag_auto_create,omitempty" description:"禁用自动文档"`
+	StopImmediatelyWhenErrorOccurs     bool   `json:"stopImmediatelyWhenErrorOccurs" description:"是否在遇到错误字段时立刻停止校验"`
+	Debug                              bool   `json:"debug,omitempty" description:"调试模式"`
+	ContextAutomaticDerivationDisabled bool   `json:"contextAutomaticDerivationDisabled,omitempty" description:"禁止为每一个请求创建单独的Context"`
 }
 
 func cleanConfig(confs ...Config) Config {
@@ -467,7 +453,6 @@ func cleanConfig(confs ...Config) Config {
 			conf.Description = confs[0].Description
 		}
 		conf.Debug = confs[0].Debug
-		conf.Logger = confs[0].Logger
 		conf.ShutdownTimeout = confs[0].ShutdownTimeout
 		conf.DisableSwagAutoCreate = confs[0].DisableSwagAutoCreate
 		conf.StopImmediatelyWhenErrorOccurs = confs[0].StopImmediatelyWhenErrorOccurs
@@ -519,10 +504,6 @@ func Create(c Config) *Wrapper {
 
 	if conf.Description != "" {
 		app.SetDescription(conf.Description)
-	}
-
-	if conf.Logger != nil {
-		app.SetLogger(conf.Logger)
 	}
 
 	if conf.ShutdownTimeout != 0 {

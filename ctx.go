@@ -105,9 +105,6 @@ func (c *Context) Done() <-chan struct{} {
 	}
 }
 
-// Logger 获取注册的日志句柄
-func (c *Context) Logger() LoggerIface { return dLog }
-
 // Query 获取查询参数
 // 对于已经在路由处定义的查询参数，首先从 Context.queryFields 内部读取
 // 对于没有定义的其他查询参数则调用低层 MuxContext 进行解析

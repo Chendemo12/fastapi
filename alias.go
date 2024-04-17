@@ -33,8 +33,6 @@ var (
 	F = utils.CombineStrings
 )
 
-func Logger() LoggerIface { return dLog }
-
 func Iter[T any, S any](seq []S, fc func(elem S) T) []T {
 	ns := make([]T, len(seq))
 	for i := 0; i < len(seq); i++ {
