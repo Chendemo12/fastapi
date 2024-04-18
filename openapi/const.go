@@ -146,6 +146,20 @@ const (
 	MIMETextJavaScriptCharsetUTF8  string = "text/javascript; charset=utf-8"
 	MIMEApplicationXMLCharsetUTF8  string = "application/xml; charset=utf-8"
 	MIMEApplicationJSONCharsetUTF8 string = "application/json; charset=utf-8"
+
+	MIMEJpg  = "image/jpeg"
+	MIMEJpeg = "image/jpeg"
+	MIMEPng  = "image/png"
+	MIMEGif  = "image/gif"
+	MIMETiff = "image/tiff"
+	MIMEBmp  = "image/bmp"
+	MIMEWebp = "image/webp"
+	MIMESvg  = "image/svg+xml"
+	MIMEPdf  = "application/pdf"
+	MIMEZip  = "application/zip"
+	MIMEPpt  = "application/vnd.ms-powerpoint"
+	MIMEWord = "application/msword"
+	MIMEXls  = "application/vnd.ms-excel"
 )
 
 const ( // see validator.validator_instance.go

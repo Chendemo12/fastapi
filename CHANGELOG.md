@@ -5,7 +5,10 @@
 ### Feat
 
 - 增加报错信息以显式提醒`POST/PATCH/PUT`方法缺少必要参数；
-- (2024-04-17)修改logger, 移除Context.Logger()方法, 但是可以通过`fastapi.Info`获得;
+- (2024-04-17) 修改logger, 废弃Context.Logger()方法, 但是可以通过`fastapi.Info`获得;
+- (2024-04-19) 新增`路由错误处理函数`;
+- (2024-04-19) 新增`MIME`类型;
+- (2024-04-19) 修改`Wrapper.write` 和 `Context.Response`;
 
 ## 0.2.5 - (2024-03-24)
 

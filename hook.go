@@ -6,8 +6,33 @@ import (
 	"net/http"
 )
 
+// RouteErrorHandle 路由函数返回错误时的处理函数
+//
+//	当路由函数返回错误时，会调用此函数，返回值会作为响应码和响应内容
+//	默认情况下，错误码为500，错误信息会作为字符串直接返回给客户端
+type RouteErrorHandle func(c *Context, err error) (statusCode int, resp any)
+
 // DependenceHandle 依赖函数 Depends/Hook
 type DependenceHandle func(c *Context) error
+
+// 默认的错误处理函数
+var routeErrorHandle RouteErrorHandle = func(c *Context, err error) (statusCode int, resp any) {
+	statusCode = DefaultErrorStatusCode
+	resp = err.Error()
+	c.response.Type = StringResponseType
+	c.response.ContentType = openapi.MIMETextPlainCharsetUTF8
+
+	if c.response.StatusCode != 0 {
+		// 允许上层自定义错误码
+		statusCode = c.response.StatusCode
+	}
+	return
+}
+
+// SetRouteErrorHandler 设置路由错误处理函数
+func SetRouteErrorHandler(handle RouteErrorHandle) {
+	routeErrorHandle = handle
+}
 
 // Handler 路由函数，实现逻辑类似于装饰器
 //
@@ -123,46 +148,40 @@ func (f *Wrapper) write(c *Context) error {
 		c.response.StatusCode = http.StatusOK
 	}
 
-	// 执行钩子
-	f.beforeWrite(c)
+	f.beforeWrite(c) // 执行钩子
 
-	//if c.response.StatusCode == http.StatusUnprocessableEntity {
-	//	// 校验不通过，直接返回错误信息
-	//	return c.muxCtx.JSON(http.StatusUnprocessableEntity, c.response.Content)
-	//}
+	c.muxCtx.Status(c.response.StatusCode)
 
 	switch c.response.Type {
-
-	case JsonResponseType, ErrResponseType: // Json类型
-		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
-
 	case StringResponseType:
-		c.muxCtx.Status(c.response.StatusCode)
+		// 设置返回类型
+		if c.response.ContentType != "" {
+			c.muxCtx.Header(openapi.HeaderContentType, c.response.ContentType)
+		} else {
+			c.muxCtx.Header(openapi.HeaderContentType, openapi.MIMETextPlainCharsetUTF8)
+		}
 		return c.muxCtx.SendString(c.response.Content.(string))
 
 	case HtmlResponseType: // 返回HTML页面
-		c.muxCtx.Status(c.response.StatusCode)
-		// 设置返回类型
 		c.muxCtx.Header(openapi.HeaderContentType, openapi.MIMETextHTMLCharsetUTF8)
 		//return c.muxCtx.Render(c.response.StatusCode, bytes.NewReader(c.response.Content.(string)))
-		return nil
+		return c.muxCtx.SendString(c.response.Content.(string))
 
 	case FileResponseType: // 返回一个文件
-		c.muxCtx.Status(c.response.StatusCode)
+		if c.response.ContentType != "" {
+			c.muxCtx.Header(openapi.HeaderContentType, c.response.ContentType)
+		} else {
+			c.muxCtx.Header(openapi.HeaderContentType, openapi.MIMETextPlain)
+		}
 		return c.muxCtx.File(c.response.Content.(string))
 
 	case StreamResponseType: // 返回字节流
-		c.muxCtx.Status(c.response.StatusCode)
+		if c.response.ContentType != "" {
+			c.muxCtx.Header(openapi.HeaderContentType, c.response.ContentType)
+		}
 		return c.muxCtx.SendStream(c.response.Content.(io.Reader))
 
-	case CustomResponseType:
-		c.muxCtx.Status(c.response.StatusCode)
-		c.muxCtx.Header(openapi.HeaderContentType, c.response.ContentType)
-		_, err := c.muxCtx.Write(c.response.Content.([]byte))
-		return err
-
-	default:
-		c.muxCtx.Status(c.response.StatusCode)
+	default: // Json类型, any类型
 		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
 	}
 }

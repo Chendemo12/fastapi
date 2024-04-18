@@ -18,6 +18,7 @@ const (
 )
 
 var console = NewDefaultLogger()
+var dLog = NewDefaultLogger()
 
 func init() {
 	console.calldepth += 1

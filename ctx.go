@@ -105,6 +105,9 @@ func (c *Context) Done() <-chan struct{} {
 	}
 }
 
+// Deprecated: 弃用, 请使用 fastapi.Info 系列方法
+func (c *Context) Logger() LoggerIface { return dLog }
+
 // Query 获取查询参数
 // 对于已经在路由处定义的查询参数，首先从 Context.queryFields 内部读取
 // 对于没有定义的其他查询参数则调用低层 MuxContext 进行解析
@@ -215,7 +218,7 @@ func (c *Context) GetTime(key string) (t time.Time) {
 	return
 }
 
-// Response 响应体，配合 UseBeforeWrite 实现在依赖函数中读取响应体内容，以进行日志记录等 ！慎重对 Response 进行修改！
+// Response 响应体，配合 Wrapper.UseBeforeWrite 实现在依赖函数中读取响应体内容，以进行日志记录等 ！慎重对 Response 进行修改！
 func (c *Context) Response() *Response { return c.response }
 
 // ================================ 路由组路由方法 ================================
@@ -249,8 +252,10 @@ func (c *Context) Validator() *validator.Validate { return defaultValidator }
 //	@param	content		any	可以json序列化的类型
 //	@return	resp *Response response返回体
 func (c *Context) JSONResponse(statusCode int, content any) *Response {
+	c.response.Type = JsonResponseType
 	c.response.StatusCode = statusCode
 	c.response.Content = content
+	c.response.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
 
 	// 通过校验
 	return c.response
@@ -261,27 +266,31 @@ func (c *Context) JSONResponse(statusCode int, content any) *Response {
 //	@param	content	any	可以json序列化的类型
 //	@return	resp *Response response返回体
 func (c *Context) OKResponse(content any) *Response {
-	c.response.Content = content
-
-	return c.response
+	return c.JSONResponse(http.StatusOK, content)
 }
 
 // StringResponse 返回值为字符串对象 (不校验返回值)
 //
-//	@param	content	string	字符串文本
+//	@param	statusCode	int		响应状态码
+//	@param	content		string	字符串文本
 //	@return	resp *Response response返回体
-func (c *Context) StringResponse(content string) *Response {
+func (c *Context) StringResponse(statusCode int, content string) *Response {
+	c.response.Type = StringResponseType
+	c.response.StatusCode = statusCode
 	c.response.Content = content
+	c.response.ContentType = openapi.MIMETextPlainCharsetUTF8
 
 	return c.response
 }
 
 // StreamResponse 返回值为字节流对象 (不校验返回值)
 //
-//	@param	reader	io.Reader	字节流
-//	@param	mime	string		返回头媒体资源类型信息,	缺省则为	"text/plain"
+//	@param	statusCode	int			响应状态码
+//	@param	reader		io.Reader	字节流
+//	@param	mime		string		返回头媒体资源类型信息,缺省则为"text/plain"
 //	@return	resp *Response response返回体
-func (c *Context) StreamResponse(reader io.Reader, mime ...string) *Response {
+func (c *Context) StreamResponse(statusCode int, reader io.Reader, mime ...string) *Response {
+	c.response.StatusCode = statusCode
 	c.response.Content = reader
 	c.response.Type = StreamResponseType
 
@@ -299,6 +308,7 @@ func (c *Context) StreamResponse(reader io.Reader, mime ...string) *Response {
 //	@param	filepath	string	文件路径
 //	@return	resp *Response response返回体
 func (c *Context) FileResponse(filepath string) *Response {
+	c.response.StatusCode = http.StatusOK
 	c.response.Content = filepath
 	c.response.Type = FileResponseType
 
@@ -312,7 +322,8 @@ func (c *Context) FileResponse(filepath string) *Response {
 func (c *Context) ErrorResponse(content any) *Response {
 	c.response.StatusCode = http.StatusInternalServerError
 	c.response.Content = content
-	c.response.Type = ErrResponseType
+	c.response.Type = JsonResponseType
+	c.response.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
 
 	return c.response
 }
@@ -347,7 +358,7 @@ func (c *Context) AnyResponse(statusCode int, content any, contentType ...string
 	c.response.StatusCode = statusCode
 	c.response.Content = content
 	c.response.ContentType = ct
-	c.response.Type = CustomResponseType
+	c.response.Type = AnyResponseType
 
 	return c.response
 }

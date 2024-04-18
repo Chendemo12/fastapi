@@ -315,6 +315,12 @@ func (f *Wrapper) UseDepends(hooks ...DependenceHandle) *Wrapper {
 	return f.UseAfter(hooks...)
 }
 
+// SetRouteErrorHandler 设置路由错误处理函数
+func (f *Wrapper) SetRouteErrorHandler(handle RouteErrorHandle) *Wrapper {
+	routeErrorHandle = handle
+	return f
+}
+
 // ActivateHotSwitch 创建一个热开关，监听信号量(默认值：30)，用来改变程序调试开关状态
 func (f *Wrapper) ActivateHotSwitch(s ...int) *Wrapper {
 	var st = HotSwitchSigint
