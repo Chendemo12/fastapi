@@ -720,7 +720,7 @@ func (r *GroupRoute) Call(ctx *Context) {
 		ctx.response.Content = result[FirstOutParamOffset].Interface()
 	} else {
 		err := last.Interface().(error)
-		ctx.response.StatusCode, ctx.response.Content = routeErrorHandle(ctx, err)
+		ctx.response.StatusCode, ctx.response.Content = routeErrorFormatter(ctx, err)
 	}
 }
 

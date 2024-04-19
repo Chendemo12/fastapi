@@ -6,17 +6,17 @@ import (
 	"net/http"
 )
 
-// RouteErrorHandle 路由函数返回错误时的处理函数
+// RouteErrorFormatter 路由函数返回错误时的处理函数，可用于格式化错误信息后返回给客户端
 //
-//	当路由函数返回错误时，会调用此函数，返回值会作为响应码和响应内容
+//	当路由函数返回错误时，会调用此函数，返回值会作为响应码和响应内容, 返回值仅限于可以JSON序列化的消息体
 //	默认情况下，错误码为500，错误信息会作为字符串直接返回给客户端
-type RouteErrorHandle func(c *Context, err error) (statusCode int, resp any)
+type RouteErrorFormatter func(c *Context, err error) (statusCode int, resp any)
 
 // DependenceHandle 依赖函数 Depends/Hook
 type DependenceHandle func(c *Context) error
 
 // 默认的错误处理函数
-var routeErrorHandle RouteErrorHandle = func(c *Context, err error) (statusCode int, resp any) {
+var routeErrorFormatter RouteErrorFormatter = func(c *Context, err error) (statusCode int, resp any) {
 	statusCode = DefaultErrorStatusCode
 	resp = err.Error()
 	c.response.Type = StringResponseType
@@ -29,9 +29,9 @@ var routeErrorHandle RouteErrorHandle = func(c *Context, err error) (statusCode 
 	return
 }
 
-// SetRouteErrorHandler 设置路由错误处理函数
-func SetRouteErrorHandler(handle RouteErrorHandle) {
-	routeErrorHandle = handle
+// SetRouteErrorFormatter 设置路由错误信息格式化函数
+func SetRouteErrorFormatter(handle RouteErrorFormatter) {
+	routeErrorFormatter = handle
 }
 
 // Handler 路由函数，实现逻辑类似于装饰器
