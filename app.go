@@ -40,20 +40,21 @@ type Event struct {
 //	# usage
 //	./test/group_router_test.go
 type Wrapper struct {
-	conf          *Profile           `description:"配置项"`
-	openApi       *openapi.OpenApi   `description:"模型文档"`
-	pool          *sync.Pool         `description:"Wrapper.Context资源池"`
-	ctx           context.Context    `description:"根Context"`
-	cancel        context.CancelFunc `description:"取消函数"`
-	mux           MuxWrapper         `description:"后端路由器"`
-	isStarted     chan struct{}      `description:"标记程序是否完成启动"`
-	groupRouters  []*GroupRouterMeta `description:"路由组对象"`
-	genericRoutes []RouteIface       `description:"泛型路由对象"`
-	events        []*Event           `description:"启动和关闭事件"`
-	finder        Finder[RouteIface] `description:"路由对象查找器"`
-	previousDeps  []DependenceHandle `description:"在接口参数校验前执行的依赖函数"`
-	afterDeps     []DependenceHandle `description:"在接口参数校验成功后执行的依赖函数(相当于路由函数前钩子)"`
-	beforeWrite   func(c *Context)   `description:"在数据写入响应流之前执行的钩子方法"`
+	conf          *Profile               `description:"配置项"`
+	openApi       *openapi.OpenApi       `description:"模型文档"`
+	pool          *sync.Pool             `description:"Wrapper.Context资源池"`
+	ctx           context.Context        `description:"根Context"`
+	cancel        context.CancelFunc     `description:"取消函数"`
+	mux           MuxWrapper             `description:"后端路由器"`
+	isStarted     chan struct{}          `description:"标记程序是否完成启动"`
+	groupRouters  []*GroupRouterMeta     `description:"路由组对象"`
+	genericRoutes []RouteIface           `description:"泛型路由对象"`
+	events        []*Event               `description:"启动和关闭事件"`
+	finder        Finder[RouteIface]     `description:"路由对象查找器"`
+	previousDeps  []DependenceHandle     `description:"在接口参数校验前执行的依赖函数"`
+	afterDeps     []DependenceHandle     `description:"在接口参数校验成功后执行的依赖函数(相当于路由函数前钩子)"`
+	beforeWrite   func(c *Context)       `description:"在数据写入响应流之前执行的钩子方法"`
+	hotListener   func(wrapper *Wrapper) `description:"热开关监听器"`
 }
 
 type FastApi = Wrapper
@@ -168,11 +169,6 @@ func (f *Wrapper) initialize() *Wrapper {
 		"Run at: " + utils.Ternary[string](f.conf.Debug, "Development", "Production"),
 	)
 	return f
-}
-
-// ResetRunMode 重设运行时环境
-func (f *Wrapper) resetRunMode(md bool) {
-	f.conf.Debug = md
 }
 
 // 绑定数据到路由器上
@@ -315,13 +311,7 @@ func (f *Wrapper) UseDepends(hooks ...DependenceHandle) *Wrapper {
 	return f.UseAfter(hooks...)
 }
 
-// SetRouteErrorHandler 设置路由错误处理函数
-func (f *Wrapper) SetRouteErrorHandler(handle RouteErrorHandle) *Wrapper {
-	routeErrorHandle = handle
-	return f
-}
-
-// ActivateHotSwitch 创建一个热开关，监听信号量(默认值：30)，用来改变程序调试开关状态
+// ActivateHotSwitch 创建一个热开关，监听信号量(默认值：30)，用来触发一个动作
 func (f *Wrapper) ActivateHotSwitch(s ...int) *Wrapper {
 	var st = HotSwitchSigint
 	if len(s) > 0 {
@@ -337,18 +327,25 @@ func (f *Wrapper) ActivateHotSwitch(s ...int) *Wrapper {
 			case <-f.Done():
 				return
 			case <-swt:
-				if f.conf.Debug {
-					f.resetRunMode(false)
-				} else {
-					f.resetRunMode(true)
-				}
-				Debugf(
-					"Hot-switch received, convert to: %s", utils.Ternary[string](f.conf.Debug, "Development", "Production"),
-				)
+				f.hotListener(f)
 			}
 		}
 	}()
 
+	return f
+}
+
+// SetHotListener 设置热开关监听器
+func (f *Wrapper) SetHotListener(listener func(wrapper *Wrapper)) *Wrapper {
+	if listener != nil {
+		f.hotListener = listener
+	}
+	return f
+}
+
+// SetRouteErrorFormatter 设置路由错误信息格式化函数
+func (f *Wrapper) SetRouteErrorFormatter(handle RouteErrorFormatter) *Wrapper {
+	routeErrorFormatter = handle
 	return f
 }
 
@@ -520,5 +517,8 @@ func Create(c Config) *Wrapper {
 		app.DisableSwagAutoCreate()
 	}
 
+	app.hotListener = func(wrapper *Wrapper) {
+		Debugf("hot-listener receive signal at: %s", time.Now().Format(time.DateTime))
+	}
 	return app
 }

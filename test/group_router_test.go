@@ -502,6 +502,16 @@ func (r *AnonymousRouter) GetAnonymousModel(c *fastapi.Context, params *Anonymou
 	}, nil
 }
 
+type ErrorRouter struct {
+	fastapi.BaseGroupRouter
+}
+
+func (r *ErrorRouter) Prefix() string { return "/api/error" }
+
+func (r *ErrorRouter) GetReturnString(c *fastapi.Context) (string, error) {
+	return "", errors.New("string error")
+}
+
 func BeforeValidate(c *fastapi.Context) error {
 	c.Set("before-validate", time.Now())
 
@@ -511,6 +521,21 @@ func BeforeValidate(c *fastapi.Context) error {
 func PrintRequestLog(c *fastapi.Context) {
 	fastapi.Info("请求耗时: ", time.Since(c.GetTime("before-validate")))
 	fastapi.Info("响应状态码: ", c.Response().StatusCode)
+}
+
+type ErrorMessage struct {
+	Message   string `json:"message,omitempty"`
+	Code      string `json:"code,omitempty"`
+	Timestamp int64  `json:"timestamp,omitempty"`
+}
+
+// 格式化路由函数错误消息
+func FormatErrorMessage(c *fastapi.Context, err error) (statusCode int, message any) {
+	return 400, &ErrorMessage{
+		Message:   err.Error(),
+		Code:      "0x1234",
+		Timestamp: time.Now().Unix(),
+	}
 }
 
 func TestNew(t *testing.T) {
@@ -534,7 +559,10 @@ func TestNew(t *testing.T) {
 		IncludeRouter(&ResponseModelRouter{}).
 		IncludeRouter(&GenericRouter{}).
 		IncludeRouter(&AnonymousRouter{}).
+		IncludeRouter(&ErrorRouter{}).
 		IncludeRouter(routers.NewInfoRouter(app.Config())) // 开启默认基础路由
 
+	//fastapi.SetRouteErrorFormatter(FormatErrorMessage)
+	app.SetRouteErrorFormatter(FormatErrorMessage)
 	app.Run("0.0.0.0", "8099") // 阻塞运行
 }
