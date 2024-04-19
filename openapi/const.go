@@ -123,7 +123,7 @@ var IllegalRouteParamType = []reflect.Kind{
 	reflect.Func,
 	reflect.Chan,
 	reflect.UnsafePointer,
-	reflect.Map, // TODO Future-231126.7: 查询参数值不允许为map
+	reflect.Map,
 }
 
 const HeaderContentType = "Content-Type"
