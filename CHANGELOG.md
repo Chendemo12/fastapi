@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 0.2.7 - (2024-04-19)
+
+### Feat
+
+- (2024-04-19) 新增方法`fiber.NewAuthInterceptor`
+
+### Fix
+
+- (2024-04-19) 修复`Wrapper.Shutdown`的错误；
+
 ## 0.2.6 - (2024-03-26)
 
 ### Feat

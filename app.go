@@ -6,7 +6,6 @@ import (
 	"github.com/Chendemo12/fastapi/openapi"
 	"github.com/Chendemo12/fastapi/utils"
 	jsoniter "github.com/json-iterator/go"
-	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -165,9 +164,6 @@ func (f *Wrapper) initialize() *Wrapper {
 	f.initMux()
 	f.initSwagger() // === 必须最后调用
 
-	Debug(
-		"Run at: " + utils.Ternary[string](f.conf.Debug, "Development", "Production"),
-	)
 	return f
 }
 
@@ -365,6 +361,10 @@ func (f *Wrapper) DisableSwagAutoCreate() *Wrapper {
 
 // Shutdown 平滑关闭
 func (f *Wrapper) Shutdown() {
+	Debug("ready to shutdown...")
+	ctx, cancelFunc := context.WithTimeout(f.ctx, f.conf.ShutdownTimeout)
+	defer cancelFunc()
+
 	f.cancel() // 标记结束
 
 	// 执行关机前事件
@@ -374,17 +374,13 @@ func (f *Wrapper) Shutdown() {
 		}
 	}
 
-	go func() {
-		err := f.mux.ShutdownWithTimeout(f.conf.ShutdownTimeout)
-		if err != nil {
-			fmt.Println(err.Error())
-		}
-	}()
+	err := f.mux.ShutdownWithTimeout(f.conf.ShutdownTimeout)
+	if err != nil {
+		Warnf("graceful shutdown failed, err: %s", err)
+	}
 	// Engine().Shutdown() 执行成功后将会直接退出进程，以下代码段仅当超时未关闭时执行到。
 	// Shutdown() 不会关闭设置了 keepalive 的连接，除非设置了 ReadTimeout ，因此设置以下内容以确保关闭.
-	<-time.After(f.conf.ShutdownTimeout * time.Second)
-	// 此处避免因logger关闭引发错误
-	fmt.Println("Forced shutdown.") // 仅当超时时会到达此行
+	<-ctx.Done()
 }
 
 // Run 启动服务, 此方法会阻塞运行，因此必须放在main函数结尾
@@ -392,9 +388,10 @@ func (f *Wrapper) Shutdown() {
 // 当 Interrupt 信号被触发时，首先会关闭 根Context，然后逐步执行“关机事件”，最后调用平滑关闭方法，关闭服务
 // 启动前通过 SetShutdownTimeout 设置"平滑关闭异常时"的最大超时时间
 func (f *Wrapper) Run(host, port string) {
+	Debug("run in the " + utils.Ternary(f.conf.Debug, "development mode", "production mode"))
+
 	f.conf.Host = host
 	f.conf.Port = port
-
 	f.initialize()
 	f.ActivateHotSwitch()
 
@@ -407,12 +404,15 @@ func (f *Wrapper) Run(host, port string) {
 
 	f.isStarted <- struct{}{} // 解除阻塞上层的任务
 	addr := net.JoinHostPort(f.conf.Host, f.conf.Port)
-	Debug("HTTP server listening on: " + addr)
+	Debug("http server listening on: " + addr)
 
 	close(f.isStarted)
 
 	go func() {
-		log.Fatal(f.mux.Listen(addr))
+		err := f.mux.Listen(addr)
+		if err != nil {
+			panic(err)
+		}
 	}()
 
 	// 关闭开关, buffered
