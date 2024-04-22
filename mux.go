@@ -23,6 +23,7 @@ type MuxWrapper interface {
 type MuxContext interface {
 	Method() string                                // [重要方法]获得当前请求方法，取为为 http.MethodGet, http.MethodPost 等
 	Path() string                                  // [重要方法]获的当前请求的路由模式，而非请求Url
+	Ctx() any                                      // 原始的 Context
 	ContentType() string                           // Content-Type
 	Header(key, value string)                      // 添加响应头
 	Cookie(name string) (string, error)            // 读取cookie

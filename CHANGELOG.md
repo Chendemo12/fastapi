@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 0.2.8 - (2024-04-22)
+
+### Feat
+
+- expose MuxContext;
+
 ## 0.2.7 - (2024-04-19)
 
 ### Feat
