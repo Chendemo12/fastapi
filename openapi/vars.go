@@ -13,6 +13,9 @@ var ValidationErrorDefinition = &ValidationError{}
 // ValidationErrorResponseDefinition 请求体相应体错误消息
 var ValidationErrorResponseDefinition = &HTTPValidationError{}
 
+var RouteErrorStatusCode = 500                  // 请求错误时的状态码
+var RouteErrorResponseMete *BaseModelMeta = nil // 请求错误时的响应体，空则为字符串
+
 type dict map[string]any
 
 // ValidationError 参数校验错误

@@ -316,8 +316,6 @@ func (r *GroupRouterMeta) scanMethod() (err error) {
 		swagger.Summary = r.scanSummary(swagger, method)
 		swagger.Description = r.scanDescription(swagger, method)
 		swagger.Tags = append(r.tags)
-		// TODO: 待完善, 不能为 nil
-		swagger.ErrStatusCode, _ = r.errorFormatter(nil, errors.New(""))
 
 		r.routes = append(r.routes, NewGroupRoute(swagger, method, r))
 	}

@@ -31,11 +31,6 @@ var routeErrorFormatter RouteErrorFormatter = func(c *Context, err error) (statu
 	return
 }
 
-// SetRouteErrorFormatter 设置路由错误信息格式化函数
-func SetRouteErrorFormatter(handle RouteErrorFormatter) {
-	routeErrorFormatter = handle
-}
-
 // Handler 路由函数，实现逻辑类似于装饰器
 //
 // 路由处理方法(装饰器实现)，用于请求体校验和返回体序列化，同时注入全局服务依赖,

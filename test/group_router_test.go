@@ -562,7 +562,9 @@ func TestNew(t *testing.T) {
 		IncludeRouter(&ErrorRouter{}).
 		IncludeRouter(routers.NewInfoRouter(app.Config())) // 开启默认基础路由
 
-	//fastapi.SetRouteErrorFormatter(FormatErrorMessage)
 	app.SetRouteErrorFormatter(FormatErrorMessage)
+	app.SetRouteErrorStatusCode(500)
+	app.SetRouteErrorResponse(&ErrorMessage{})
+
 	app.Run("0.0.0.0", "8099") // 阻塞运行
 }

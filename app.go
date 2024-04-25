@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"reflect"
 	"sync"
 	"syscall"
 	"time"
@@ -39,21 +40,20 @@ type Event struct {
 //	# usage
 //	./test/group_router_test.go
 type Wrapper struct {
-	conf          *Profile               `description:"配置项"`
-	openApi       *openapi.OpenApi       `description:"模型文档"`
-	pool          *sync.Pool             `description:"Wrapper.Context资源池"`
-	ctx           context.Context        `description:"根Context"`
-	cancel        context.CancelFunc     `description:"取消函数"`
-	mux           MuxWrapper             `description:"后端路由器"`
-	isStarted     chan struct{}          `description:"标记程序是否完成启动"`
-	groupRouters  []*GroupRouterMeta     `description:"路由组对象"`
-	genericRoutes []RouteIface           `description:"泛型路由对象"`
-	events        []*Event               `description:"启动和关闭事件"`
-	finder        Finder[RouteIface]     `description:"路由对象查找器"`
-	previousDeps  []DependenceHandle     `description:"在接口参数校验前执行的依赖函数"`
-	afterDeps     []DependenceHandle     `description:"在接口参数校验成功后执行的依赖函数(相当于路由函数前钩子)"`
-	beforeWrite   func(c *Context)       `description:"在数据写入响应流之前执行的钩子方法"`
-	hotListener   func(wrapper *Wrapper) `description:"热开关监听器"`
+	conf         *Profile               `description:"配置项"`
+	openApi      *openapi.OpenApi       `description:"模型文档"`
+	pool         *sync.Pool             `description:"Wrapper.Context资源池"`
+	ctx          context.Context        `description:"根Context"`
+	cancel       context.CancelFunc     `description:"取消函数"`
+	mux          MuxWrapper             `description:"后端路由器"`
+	isStarted    chan struct{}          `description:"标记程序是否完成启动"`
+	groupRouters []*GroupRouterMeta     `description:"路由组对象"`
+	events       []*Event               `description:"启动和关闭事件"`
+	finder       Finder[RouteIface]     `description:"路由对象查找器"`
+	previousDeps []DependenceHandle     `description:"在接口参数校验前执行的依赖函数"`
+	afterDeps    []DependenceHandle     `description:"在接口参数校验成功后执行的依赖函数(相当于路由函数前钩子)"`
+	beforeWrite  func(c *Context)       `description:"在数据写入响应流之前执行的钩子方法"`
+	hotListener  func(wrapper *Wrapper) `description:"热开关监听器"`
 }
 
 type FastApi = Wrapper
@@ -99,11 +99,6 @@ func (f *Wrapper) initRoutes() *Wrapper {
 		}
 	}
 
-	// 处理并记录泛型路由
-	for _, route := range f.genericRoutes {
-		_ = route
-	}
-
 	return f
 }
 
@@ -114,11 +109,6 @@ func (f *Wrapper) initFinder() *Wrapper {
 		for _, r := range group.Routes() {
 			routes = append(routes, r)
 		}
-	}
-
-	// 处理并记录泛型路由
-	for _, r := range f.genericRoutes {
-		routes = append(routes, r)
 	}
 
 	// 初始化finder
@@ -176,16 +166,6 @@ func (f *Wrapper) wrap(mux MuxWrapper) *Wrapper {
 					"route: '%s:%s' bind failed, %v", route.Swagger().Method, route.Swagger().Url, err,
 				)
 			}
-		}
-	}
-
-	for _, route := range f.genericRoutes {
-		err = mux.BindRoute(route.Swagger().Method, route.Swagger().Url, f.Handler)
-		if err != nil {
-			// 此时日志已初始化完毕
-			Errorf(
-				"route: '%s:%s' bind failed, %v", route.Swagger().Method, route.Swagger().Url, err,
-			)
 		}
 	}
 
@@ -337,7 +317,47 @@ func (f *Wrapper) SetHotListener(listener func(wrapper *Wrapper)) *Wrapper {
 
 // SetRouteErrorFormatter 设置路由错误信息格式化函数
 func (f *Wrapper) SetRouteErrorFormatter(handle RouteErrorFormatter) *Wrapper {
-	routeErrorFormatter = handle
+	if handle == nil {
+		Warn("route error formatter is nil, ignore")
+	} else {
+		routeErrorFormatter = handle
+	}
+	return f
+}
+
+// SetRouteErrorStatusCode 描述错误信息格式化函数 RouteErrorFormatter 的响应状态码
+//
+//	由于暂无法准确模拟出一个有效的 Context 对象，因此无法通过 RouteErrorFormatter 来推断出错误响应码和错误响应体
+//	故此处需要配合 SetRouteErrorResponse 来显示设置错误响应信息，以生成openApi文档，未设置则不构建此部分的文档
+func (f *Wrapper) SetRouteErrorStatusCode(statusCode int) *Wrapper {
+	if statusCode == 0 {
+		Warn("route error status code is 0, ignore")
+	} else {
+		openapi.RouteErrorStatusCode = statusCode
+	}
+	return f
+}
+
+// SetRouteErrorResponse 描述错误信息格式化函数 RouteErrorFormatter 的响应体
+func (f *Wrapper) SetRouteErrorResponse(model any) *Wrapper {
+	if model == nil {
+		Warn("route error response is nil, ignore")
+	} else {
+		rt := reflect.TypeOf(model)
+		param := openapi.NewRouteParam(rt, 0, openapi.RouteParamResponse)
+		err := param.Init()
+		if err != nil {
+			Warnf("route error response model is invalid, err: %s", err)
+		} else {
+			meta := openapi.NewBaseModelMeta(param)
+			err = meta.Init()
+			if err != nil {
+				Warnf("route error response model is invalid, err: %s", err)
+			} else {
+				openapi.RouteErrorResponseMete = meta
+			}
+		}
+	}
 	return f
 }
 
@@ -491,12 +511,11 @@ func Create(c Config) *Wrapper {
 			ContextAutomaticDerivationDisabled: conf.ContextAutomaticDerivationDisabled,
 			StopImmediatelyWhenErrorOccurs:     conf.StopImmediatelyWhenErrorOccurs,
 		},
-		genericRoutes: make([]RouteIface, 0),
-		groupRouters:  make([]*GroupRouterMeta, 0),
-		isStarted:     make(chan struct{}, 1),
-		previousDeps:  make([]DependenceHandle, 0),
-		afterDeps:     make([]DependenceHandle, 0),
-		events:        make([]*Event, 0),
+		groupRouters: make([]*GroupRouterMeta, 0),
+		isStarted:    make(chan struct{}, 1),
+		previousDeps: make([]DependenceHandle, 0),
+		afterDeps:    make([]DependenceHandle, 0),
+		events:       make([]*Event, 0),
 	}
 	app.ctx, app.cancel = context.WithCancel(context.Background())
 	app.beforeWrite = func(c *Context) {}
