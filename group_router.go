@@ -63,6 +63,10 @@ type GroupRouter interface {
 	//			},
 	//		}
 	InParamsName() map[string]map[int]string
+
+	// ErrorFormatter 路由函数返回错误时的处理函数, 可用于格式化错误信息后返回给客户端
+	// 优先级高于全局的 RouteErrorFormatter, 如果未设置则采用全局的方法
+	ErrorFormatter() RouteErrorFormatter
 }
 
 // BaseGroupRouter (面向对象式)路由组基类
@@ -116,6 +120,10 @@ func (g *BaseGroupRouter) InParamsName() map[string]map[int]string {
 	return map[string]map[int]string{}
 }
 
+func (g *BaseGroupRouter) ErrorFormatter() RouteErrorFormatter {
+	return nil
+}
+
 // =================================== 👇 路由组元数据 ===================================
 
 const WebsocketMethod = "WS"
@@ -151,11 +159,12 @@ var IllegalLastInParamType = append(openapi.IllegalRouteParamType, reflect.Ptr)
 
 // GroupRouterMeta 反射构建路由组的元信息
 type GroupRouterMeta struct {
-	router      GroupRouter
-	routerValue reflect.Value
-	pkg         string `description:"结构体.包名"`
-	routes      []*GroupRoute
-	tags        []string
+	router         GroupRouter
+	routerValue    reflect.Value
+	pkg            string `description:"结构体.包名"`
+	routes         []*GroupRoute
+	tags           []string
+	errorFormatter RouteErrorFormatter
 }
 
 // NewGroupRouteMeta 构建一个路由组的主入口
@@ -185,6 +194,12 @@ func (r *GroupRouterMeta) Scan() (err error) {
 	if obj.Kind() != reflect.Struct && obj.Kind() != reflect.Pointer {
 		return fmt.Errorf("router: '%s' not a struct", obj.String())
 	}
+
+	errFormatter := r.router.ErrorFormatter()
+	if errFormatter == nil {
+		errFormatter = routeErrorFormatter
+	}
+	r.errorFormatter = errFormatter
 
 	// 记录包名
 	if obj.Kind() == reflect.Ptr {
@@ -301,6 +316,8 @@ func (r *GroupRouterMeta) scanMethod() (err error) {
 		swagger.Summary = r.scanSummary(swagger, method)
 		swagger.Description = r.scanDescription(swagger, method)
 		swagger.Tags = append(r.tags)
+		// TODO: 待完善, 不能为 nil
+		swagger.ErrStatusCode, _ = r.errorFormatter(nil, errors.New(""))
 
 		r.routes = append(r.routes, NewGroupRoute(swagger, method, r))
 	}
@@ -720,7 +737,7 @@ func (r *GroupRoute) Call(ctx *Context) {
 		ctx.response.Content = result[FirstOutParamOffset].Interface()
 	} else {
 		err := last.Interface().(error)
-		ctx.response.StatusCode, ctx.response.Content = routeErrorFormatter(ctx, err)
+		ctx.response.StatusCode, ctx.response.Content = r.group.errorFormatter(ctx, err)
 	}
 }
 

@@ -31,6 +31,7 @@ const (
 type RouteSwagger struct {
 	RequestModel        *BaseModelMeta `description:"请求体元数据"`
 	ResponseModel       *BaseModelMeta `description:"响应体元数据"`
+	ErrResponseModel    *BaseModelMeta `description:"错误响应体元数据"`
 	Summary             string         `json:"summary" description:"摘要描述"`
 	Url                 string         `json:"url" description:"完整请求路由"`
 	Description         string         `json:"description" description:"详细描述"`
@@ -44,6 +45,7 @@ type RouteSwagger struct {
 	QueryFields         []*QModel      `json:"-" description:"查询参数"`
 	UploadFile          SchemaIface    `json:"-" description:"是否是上传文件,不能与RequestModel共存"`
 	Deprecated          bool           `json:"deprecated" description:"是否禁用"`
+	ErrStatusCode       int            `json:"err_status_code,omitempty" description:"错误响应状态码"`
 }
 
 func (r *RouteSwagger) Init() (err error) {

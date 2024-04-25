@@ -104,10 +104,6 @@ func (f *Wrapper) initRoutes() *Wrapper {
 		_ = route
 	}
 
-	for _, route := range f.genericRoutes {
-		_ = route
-	}
-
 	return f
 }
 

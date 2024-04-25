@@ -8,6 +8,8 @@ import (
 
 // RouteErrorFormatter 路由函数返回错误时的处理函数，可用于格式化错误信息后返回给客户端
 //
+//	程序启动时会主动调用此方法用于生成openApi文档，所以此函数不应返回 map等类型，否则将无法生成openApi文档
+//
 //	当路由函数返回错误时，会调用此函数，返回值会作为响应码和响应内容, 返回值仅限于可以JSON序列化的消息体
 //	默认情况下，错误码为500，错误信息会作为字符串直接返回给客户端
 type RouteErrorFormatter func(c *Context, err error) (statusCode int, resp any)
