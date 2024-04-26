@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/Chendemo12/fastapi/openapi"
-	"github.com/Chendemo12/fastapi/utils"
 	jsoniter "github.com/json-iterator/go"
 	"net"
 	"os"
@@ -65,7 +64,6 @@ type Profile struct {
 	Version                            string        `json:"version,omitempty" description:"程序版本号"`
 	Description                        string        `json:"description,omitempty" description:"程序描述"`
 	ShutdownTimeout                    time.Duration `json:"shutdownTimeout,omitempty" description:"平滑关机,单位秒"`
-	Debug                              bool          `json:"debug,omitempty" description:"调试开关"`
 	SwaggerDisabled                    bool          `json:"swaggerDisabled,omitempty" description:"禁用自动文档"`
 	ContextAutomaticDerivationDisabled bool          `json:"contextAutomaticDerivationDisabled,omitempty" description:"禁用context自动派生"`
 	// 默认情况下当请求校验过程遇到错误字段时，仍会继续向下校验其他字段，并最终将所有的错误消息一次性返回给调用方-
@@ -121,7 +119,7 @@ func (f *Wrapper) initFinder() *Wrapper {
 // 创建 OpenApi Swagger 文档, 必须等上层注册完路由之后才能调用
 func (f *Wrapper) initSwagger() *Wrapper {
 	f.openApi = openapi.NewOpenApi(f.Config().Title, f.Config().Version, f.Config().Description)
-	if !f.conf.SwaggerDisabled || f.conf.Debug {
+	if !f.conf.SwaggerDisabled {
 		f.registerRouteDoc()
 		f.registerRouteHandle()
 	}
@@ -182,7 +180,6 @@ func (f *Wrapper) Config() Config {
 		ShutdownTimeout:                int(f.conf.ShutdownTimeout.Seconds()),
 		DisableSwagAutoCreate:          f.conf.SwaggerDisabled,
 		StopImmediatelyWhenErrorOccurs: f.conf.StopImmediatelyWhenErrorOccurs,
-		Debug:                          f.conf.Debug,
 	}
 }
 
@@ -316,11 +313,15 @@ func (f *Wrapper) SetHotListener(listener func(wrapper *Wrapper)) *Wrapper {
 }
 
 // SetRouteErrorFormatter 设置路由错误信息格式化函数
-func (f *Wrapper) SetRouteErrorFormatter(handle RouteErrorFormatter) *Wrapper {
+func (f *Wrapper) SetRouteErrorFormatter(handle RouteErrorFormatter, opt ...RouteErrorOpt) *Wrapper {
 	if handle == nil {
 		Warn("route error formatter is nil, ignore")
 	} else {
 		routeErrorFormatter = handle
+	}
+	if len(opt) > 0 {
+		f.SetRouteErrorStatusCode(opt[0].StatusCode)
+		f.SetRouteErrorResponse(opt[0].ResponseMode)
 	}
 	return f
 }
@@ -342,22 +343,24 @@ func (f *Wrapper) SetRouteErrorStatusCode(statusCode int) *Wrapper {
 func (f *Wrapper) SetRouteErrorResponse(model any) *Wrapper {
 	if model == nil {
 		Warn("route error response is nil, ignore")
-	} else {
-		rt := reflect.TypeOf(model)
-		param := openapi.NewRouteParam(rt, 0, openapi.RouteParamResponse)
-		err := param.Init()
-		if err != nil {
-			Warnf("route error response model is invalid, err: %s", err)
-		} else {
-			meta := openapi.NewBaseModelMeta(param)
-			err = meta.Init()
-			if err != nil {
-				Warnf("route error response model is invalid, err: %s", err)
-			} else {
-				openapi.RouteErrorResponseMete = meta
-			}
-		}
+		return f
 	}
+	rt := reflect.TypeOf(model)
+	for rt.Kind() == reflect.Pointer {
+		rt = rt.Elem()
+	}
+	if rt.Kind() != reflect.Struct {
+		Warn("route error response model is not struct, ignore")
+		return f
+	}
+
+	meta, err := openapi.BaseModelMetaFrom(model, 0, openapi.RouteParamResponse)
+	if err != nil {
+		Warnf("route error response model is invalid, err: %s", err.Error())
+	} else {
+		openapi.RouteErrorResponseMete = meta
+	}
+
 	return f
 }
 
@@ -404,10 +407,10 @@ func (f *Wrapper) Shutdown() {
 // 当 Interrupt 信号被触发时，首先会关闭 根Context，然后逐步执行“关机事件”，最后调用平滑关闭方法，关闭服务
 // 启动前通过 SetShutdownTimeout 设置"平滑关闭异常时"的最大超时时间
 func (f *Wrapper) Run(host, port string) {
-	Debug("run in the " + utils.Ternary(f.conf.Debug, "development mode", "production mode"))
-
 	f.conf.Host = host
 	f.conf.Port = port
+	Debugf("%s starting...", f.Config().Title)
+
 	f.initialize()
 	f.ActivateHotSwitch()
 
@@ -446,7 +449,6 @@ type Config struct {
 	ShutdownTimeout                    int    `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
 	DisableSwagAutoCreate              bool   `json:"disable_swag_auto_create,omitempty" description:"禁用自动文档"`
 	StopImmediatelyWhenErrorOccurs     bool   `json:"stopImmediatelyWhenErrorOccurs" description:"是否在遇到错误字段时立刻停止校验"`
-	Debug                              bool   `json:"debug,omitempty" description:"调试模式"`
 	ContextAutomaticDerivationDisabled bool   `json:"contextAutomaticDerivationDisabled,omitempty" description:"禁止为每一个请求创建单独的Context"`
 }
 
@@ -458,7 +460,6 @@ func cleanConfig(confs ...Config) Config {
 		ShutdownTimeout:                    5,
 		DisableSwagAutoCreate:              false,
 		StopImmediatelyWhenErrorOccurs:     false,
-		Debug:                              false,
 		ContextAutomaticDerivationDisabled: false,
 	}
 	if len(confs) > 0 {
@@ -471,7 +472,6 @@ func cleanConfig(confs ...Config) Config {
 		if confs[0].Description != "" {
 			conf.Description = confs[0].Description
 		}
-		conf.Debug = confs[0].Debug
 		conf.ShutdownTimeout = confs[0].ShutdownTimeout
 		conf.DisableSwagAutoCreate = confs[0].DisableSwagAutoCreate
 		conf.StopImmediatelyWhenErrorOccurs = confs[0].StopImmediatelyWhenErrorOccurs
@@ -505,7 +505,6 @@ func Create(c Config) *Wrapper {
 			Title:                              conf.Title,
 			Version:                            conf.Version,
 			Description:                        conf.Description,
-			Debug:                              conf.Debug,
 			SwaggerDisabled:                    conf.DisableSwagAutoCreate,
 			ShutdownTimeout:                    time.Duration(conf.ShutdownTimeout) * time.Second,
 			ContextAutomaticDerivationDisabled: conf.ContextAutomaticDerivationDisabled,

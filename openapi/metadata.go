@@ -25,6 +25,21 @@ func NewBaseModelMeta(param *RouteParam) *BaseModelMeta {
 	return meta
 }
 
+// BaseModelMetaFrom 反射结构体获得 BaseModelMeta
+func BaseModelMetaFrom(obj any, index int, paramType RouteParamType) (*BaseModelMeta, error) {
+	param := NewRouteParam(reflect.TypeOf(obj), index, paramType)
+	err := param.Init()
+	if err != nil {
+		return nil, err
+	}
+
+	meta := NewBaseModelMeta(param)
+	if err = meta.Init(); err != nil {
+		return nil, err
+	}
+	return meta, nil
+}
+
 func (m *BaseModelMeta) Init() (err error) {
 	err = m.Scan()
 

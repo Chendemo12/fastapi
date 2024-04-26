@@ -66,7 +66,8 @@ type GroupRouter interface {
 
 	// ErrorFormatter 路由函数返回错误时的处理函数, 可用于格式化错误信息后返回给客户端
 	// 优先级高于全局的 RouteErrorFormatter, 如果未设置则采用全局的方法
-	ErrorFormatter() RouteErrorFormatter
+	// 240426 先隐藏此方法
+	//ErrorFormatter() RouteErrorFormatter
 }
 
 // BaseGroupRouter (面向对象式)路由组基类
@@ -120,6 +121,7 @@ func (g *BaseGroupRouter) InParamsName() map[string]map[int]string {
 	return map[string]map[int]string{}
 }
 
+// Deprecated: 240426 隐藏此方法
 func (g *BaseGroupRouter) ErrorFormatter() RouteErrorFormatter {
 	return nil
 }
@@ -195,7 +197,8 @@ func (r *GroupRouterMeta) Scan() (err error) {
 		return fmt.Errorf("router: '%s' not a struct", obj.String())
 	}
 
-	errFormatter := r.router.ErrorFormatter()
+	//errFormatter := r.router.ErrorFormatter()
+	errFormatter := routeErrorFormatter
 	if errFormatter == nil {
 		errFormatter = routeErrorFormatter
 	}

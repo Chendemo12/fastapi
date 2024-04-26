@@ -543,7 +543,6 @@ func TestNew(t *testing.T) {
 		Version:     "v0.2.0",
 		Description: "",
 		Title:       "FastApi Example",
-		Debug:       true,
 	})
 
 	// 底层采用fiber
@@ -562,7 +561,10 @@ func TestNew(t *testing.T) {
 		IncludeRouter(&ErrorRouter{}).
 		IncludeRouter(routers.NewInfoRouter(app.Config())) // 开启默认基础路由
 
-	app.SetRouteErrorFormatter(FormatErrorMessage)
+	app.SetRouteErrorFormatter(FormatErrorMessage, fastapi.RouteErrorOpt{
+		StatusCode:   500,
+		ResponseMode: &ErrorMessage{},
+	})
 	app.SetRouteErrorStatusCode(500)
 	app.SetRouteErrorResponse(&ErrorMessage{})
 

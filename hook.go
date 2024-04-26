@@ -17,6 +17,12 @@ type RouteErrorFormatter func(c *Context, err error) (statusCode int, resp any)
 // DependenceHandle 依赖函数 Depends/Hook
 type DependenceHandle func(c *Context) error
 
+// RouteErrorOpt 错误处理函数选项, 用于在 SetRouteErrorFormatter 方法里同时设置错误码和响应内容等内容
+type RouteErrorOpt struct {
+	StatusCode   int
+	ResponseMode any
+}
+
 // 默认的错误处理函数
 var routeErrorFormatter RouteErrorFormatter = func(c *Context, err error) (statusCode int, resp any) {
 	statusCode = DefaultErrorStatusCode
