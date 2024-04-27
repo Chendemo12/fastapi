@@ -341,12 +341,12 @@ func (m IPModel) SchemaDesc() string { return "IP信息" }
 
 type DomainRecord struct {
 	IP struct {
-		Record *IPModel `json:"record" description:"解析记录"`
-	} `json:"ip"`
+		Record *IPModel `json:"record" validate:"required" description:"解析记录"`
+	} `json:"ip" validate:"required"`
 	Addresses []struct {
 		Host string `json:"host"`
 		Port string `json:"port"`
-	} `json:"addresses" description:"主机地址"`
+	} `json:"addresses" validate:"required,gte=1" description:"主机地址"`
 	Timestamp int64 `json:"timestamp" description:"时间戳"`
 }
 
@@ -524,24 +524,24 @@ func PrintRequestLog(c *fastapi.Context) {
 }
 
 type ErrorMessage struct {
-	Message   string `json:"message,omitempty"`
-	Code      string `json:"code,omitempty"`
+	Code      string `json:"code,omitempty" description:"错误码"`
+	Message   string `json:"message,omitempty" description:"错误信息"`
 	Timestamp int64  `json:"timestamp,omitempty"`
 }
 
 // 格式化路由函数错误消息
 func FormatErrorMessage(c *fastapi.Context, err error) (statusCode int, message any) {
 	return 400, &ErrorMessage{
-		Message:   err.Error(),
 		Code:      "0x1234",
+		Message:   err.Error(),
 		Timestamp: time.Now().Unix(),
 	}
 }
 
 func TestNew(t *testing.T) {
 	app := fastapi.New(fastapi.Config{
-		Version:     "v0.2.0",
-		Description: "",
+		Version:     "v1.0.0",
+		Description: "这是一段Http服务描述信息，会显示在openApi文档的顶部",
 		Title:       "FastApi Example",
 	})
 
@@ -561,9 +561,11 @@ func TestNew(t *testing.T) {
 		IncludeRouter(&ErrorRouter{}).
 		IncludeRouter(routers.NewInfoRouter(app.Config())) // 开启默认基础路由
 
+	// 自定义错误格式
 	app.SetRouteErrorFormatter(FormatErrorMessage, fastapi.RouteErrorOpt{
 		StatusCode:   500,
 		ResponseMode: &ErrorMessage{},
+		Description:  "服务器内部发生错误，请稍后重试",
 	})
 	app.SetRouteErrorStatusCode(500)
 	app.SetRouteErrorResponse(&ErrorMessage{})

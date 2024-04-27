@@ -170,8 +170,8 @@ type GroupRouterMeta struct {
 }
 
 // NewGroupRouteMeta 构建一个路由组的主入口
-func NewGroupRouteMeta(router GroupRouter) *GroupRouterMeta {
-	r := &GroupRouterMeta{router: router}
+func NewGroupRouteMeta(router GroupRouter, errorFormatter RouteErrorFormatter) *GroupRouterMeta {
+	r := &GroupRouterMeta{router: router, errorFormatter: errorFormatter}
 	return r
 }
 
@@ -196,13 +196,6 @@ func (r *GroupRouterMeta) Scan() (err error) {
 	if obj.Kind() != reflect.Struct && obj.Kind() != reflect.Pointer {
 		return fmt.Errorf("router: '%s' not a struct", obj.String())
 	}
-
-	//errFormatter := r.router.ErrorFormatter()
-	errFormatter := routeErrorFormatter
-	if errFormatter == nil {
-		errFormatter = routeErrorFormatter
-	}
-	r.errorFormatter = errFormatter
 
 	// 记录包名
 	if obj.Kind() == reflect.Ptr {

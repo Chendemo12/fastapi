@@ -264,13 +264,13 @@ func (o *Operation) ResponseFrom(model *BaseModelMeta) *Operation {
 	m = append(m, m0, m1)
 
 	// 可选的错误返回值
-	if RouteErrorResponseMete != nil {
+	if RouteErrorOption.ResponseMode != nil {
 		m2 := &Response{
-			StatusCode:  RouteErrorStatusCode,
-			Description: http.StatusText(RouteErrorStatusCode),
+			StatusCode:  RouteErrorOption.StatusCode,
+			Description: RouteErrorOption.Description,
 			Content: &PathModelContent{
 				MIMEType: MIMEApplicationJSON,
-				Schema:   RouteErrorResponseMete,
+				Schema:   RouteErrorOption.ResponseMode,
 			},
 		}
 		m = append(m, m2)
@@ -427,8 +427,8 @@ func (o *OpenApi) modelFrom(swagger *RouteSwagger) {
 	}
 
 	// 注册错误响应体模型
-	if RouteErrorResponseMete != nil {
-		o.AddDefinition(RouteErrorResponseMete)
+	if RouteErrorOption.ResponseMode != nil {
+		o.AddDefinition(RouteErrorOption.ResponseMode)
 	}
 }
 

@@ -1,21 +1,11 @@
 # Persional Files
 
-/logs/
 **/logs/
-/venv/
-/exe/
-/etc/
-/data/
-project.env
 main
 main.go
-flying
-config.yaml
 .vscode/
 .idea/
 *.env
-*.txt
-*.pid
 **/.DS_Store
 
 # If you prefer the allow list template instead of the deny list, see community template:

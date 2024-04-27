@@ -6,8 +6,12 @@
 
 - expose MuxContext;
 - 不再打算支持泛型路由;
-- (2024-04-26) 路由组新增`ErrorFormatter`方法;
-- (2024-04-26) 支持设置全局错误处理函数及其数据模型，并为其生成文档;
+- ~~(2024-04-26) 路由组新增`ErrorFormatter`方法~~;
+- (2024-04-26) 支持设置全局错误处理函数`RouteErrorFormatter`及其数据模型，并为其生成文档;
+
+### Fix
+
+- (2024-04-27) 依赖函数返回错误时同样通过`RouteErrorFormatter`进行格式化
 
 ### BREAKING
 
