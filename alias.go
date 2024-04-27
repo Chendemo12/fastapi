@@ -13,8 +13,6 @@ type Dict = map[string]any // python.Dict
 
 type Ctx = Context
 
-type Opt = Option
-
 type BaseRouter = BaseGroupRouter
 
 // None 可用于POST/PATH/PUT方法的占位

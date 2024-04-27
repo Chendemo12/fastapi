@@ -15,7 +15,17 @@ type GinContext struct {
 	ctx *gin.Context
 }
 
-func (c *GinContext) BindQuery(obj any) {
+func (c *GinContext) ContentType() string {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *GinContext) BindQuery(obj any) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *GinContext) ShouldBindNotImplemented() bool {
 	//TODO implement me
 	panic("implement me")
 }
@@ -143,6 +153,8 @@ func (c *GinContext) Path() string {
 	//TODO implement me
 	panic("implement me")
 }
+
+func (c *GinContext) Ctx() any { return c.ctx }
 
 func (c *GinContext) BodyParser(model any) error {
 	//TODO implement me

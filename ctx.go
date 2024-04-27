@@ -81,6 +81,9 @@ func (f *Wrapper) releaseCtx(ctx *Context) {
 // MuxContext 获取web引擎的上下文
 func (c *Context) MuxContext() MuxContext { return c.muxCtx }
 
+// MX shortcut web引擎的上下文
+func (c *Context) MX() any { return c.muxCtx.Ctx() }
+
 // Context 针对此次请求的唯一context, 当路由执行完毕返回时,将会自动关闭
 // <如果 ContextAutomaticDerivationDisabled = true 则异常>
 //

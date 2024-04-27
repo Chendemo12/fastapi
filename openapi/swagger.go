@@ -193,7 +193,7 @@ type Operation struct {
 	Parameters []*Parameter `json:"parameters,omitempty" description:"路径参数和查询参数"`
 	// 请求体，通过 MakeOperationRequestBody 构建
 	RequestBody *RequestBody `json:"requestBody,omitempty" description:"请求体"`
-	// 响应文档，对于任一个路由，均包含2个响应实例：200 + 422， 通过函数 MakeOperationResponses 构建
+	// 响应文档，对于任一个路由，均包含2个固定的响应实例：200 + 422 和一个可选的 RouteErrorFormatter 响应实例， 通过函数 ResponseFrom 构建
 	Responses  []*Response `json:"responses,omitempty" description:"响应体"`
 	Deprecated bool        `json:"deprecated,omitempty" description:"是否禁用"`
 }
@@ -242,9 +242,9 @@ func (o *Operation) ResponseFrom(model *BaseModelMeta) *Operation {
 		model = &BaseModelMeta{}
 	}
 
-	m := make([]*Response, 2) // 200 + 422
+	m := make([]*Response, 0) // 200 + 422
 	// 200 接口处注册的返回值
-	m[0] = &Response{
+	m0 := &Response{
 		StatusCode:  http.StatusOK,
 		Description: http.StatusText(http.StatusOK),
 		Content: &PathModelContent{
@@ -253,13 +253,27 @@ func (o *Operation) ResponseFrom(model *BaseModelMeta) *Operation {
 		},
 	}
 	// 422 所有接口默认携带的请求体校验错误返回值
-	m[1] = &Response{
+	m1 := &Response{
 		StatusCode:  http.StatusUnprocessableEntity,
 		Description: http.StatusText(http.StatusUnprocessableEntity),
 		Content: &PathModelContent{
 			MIMEType: MIMEApplicationJSON,
 			Schema:   &ValidationError{},
 		},
+	}
+	m = append(m, m0, m1)
+
+	// 可选的错误返回值
+	if RouteErrorOption.ResponseMode != nil {
+		m2 := &Response{
+			StatusCode:  RouteErrorOption.StatusCode,
+			Description: RouteErrorOption.Description,
+			Content: &PathModelContent{
+				MIMEType: MIMEApplicationJSON,
+				Schema:   RouteErrorOption.ResponseMode,
+			},
+		}
+		m = append(m, m2)
 	}
 
 	o.Responses = m
@@ -410,6 +424,11 @@ func (o *OpenApi) modelFrom(swagger *RouteSwagger) {
 				o.AddDefinition(inner)
 			}
 		}
+	}
+
+	// 注册错误响应体模型
+	if RouteErrorOption.ResponseMode != nil {
+		o.AddDefinition(RouteErrorOption.ResponseMode)
 	}
 }
 

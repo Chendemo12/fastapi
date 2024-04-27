@@ -122,6 +122,8 @@ func (c *FiberContext) Path() string {
 	return c.ctx.Route().Path
 }
 
+func (c *FiberContext) Ctx() any { return c.ctx }
+
 func (c *FiberContext) Query(key string, undefined ...string) string {
 	return c.ctx.Query(key, undefined...)
 }

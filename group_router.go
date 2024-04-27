@@ -63,6 +63,11 @@ type GroupRouter interface {
 	//			},
 	//		}
 	InParamsName() map[string]map[int]string
+
+	// ErrorFormatter 路由函数返回错误时的处理函数, 可用于格式化错误信息后返回给客户端
+	// 优先级高于全局的 RouteErrorFormatter, 如果未设置则采用全局的方法
+	// 240426 先隐藏此方法
+	//ErrorFormatter() RouteErrorFormatter
 }
 
 // BaseGroupRouter (面向对象式)路由组基类
@@ -116,6 +121,11 @@ func (g *BaseGroupRouter) InParamsName() map[string]map[int]string {
 	return map[string]map[int]string{}
 }
 
+// Deprecated: 240426 隐藏此方法
+func (g *BaseGroupRouter) ErrorFormatter() RouteErrorFormatter {
+	return nil
+}
+
 // =================================== 👇 路由组元数据 ===================================
 
 const WebsocketMethod = "WS"
@@ -151,16 +161,17 @@ var IllegalLastInParamType = append(openapi.IllegalRouteParamType, reflect.Ptr)
 
 // GroupRouterMeta 反射构建路由组的元信息
 type GroupRouterMeta struct {
-	router      GroupRouter
-	routerValue reflect.Value
-	pkg         string `description:"结构体.包名"`
-	routes      []*GroupRoute
-	tags        []string
+	router         GroupRouter
+	routerValue    reflect.Value
+	pkg            string `description:"结构体.包名"`
+	routes         []*GroupRoute
+	tags           []string
+	errorFormatter RouteErrorFormatter
 }
 
 // NewGroupRouteMeta 构建一个路由组的主入口
-func NewGroupRouteMeta(router GroupRouter) *GroupRouterMeta {
-	r := &GroupRouterMeta{router: router}
+func NewGroupRouteMeta(router GroupRouter, errorFormatter RouteErrorFormatter) *GroupRouterMeta {
+	r := &GroupRouterMeta{router: router, errorFormatter: errorFormatter}
 	return r
 }
 
@@ -720,7 +731,7 @@ func (r *GroupRoute) Call(ctx *Context) {
 		ctx.response.Content = result[FirstOutParamOffset].Interface()
 	} else {
 		err := last.Interface().(error)
-		ctx.response.StatusCode, ctx.response.Content = routeErrorFormatter(ctx, err)
+		ctx.response.StatusCode, ctx.response.Content = r.group.errorFormatter(ctx, err)
 	}
 }
 

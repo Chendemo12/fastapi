@@ -1,6 +1,9 @@
 package openapi
 
-import "github.com/Chendemo12/fastapi/utils"
+import (
+	"github.com/Chendemo12/fastapi/utils"
+	"net/http"
+)
 
 const (
 	ValidationErrorName     string = "ValidationError"
@@ -13,7 +16,20 @@ var ValidationErrorDefinition = &ValidationError{}
 // ValidationErrorResponseDefinition 请求体相应体错误消息
 var ValidationErrorResponseDefinition = &HTTPValidationError{}
 
+var RouteErrorOption = &RouteErrorOpt{
+	StatusCode:   http.StatusInternalServerError,
+	ResponseMode: nil,
+	Description:  http.StatusText(http.StatusInternalServerError),
+}
+
 type dict map[string]any
+
+// RouteErrorOpt 错误处理函数选项
+type RouteErrorOpt struct {
+	StatusCode   int            `json:"statusCode" validate:"required" description:"请求错误时的状态码"`
+	ResponseMode *BaseModelMeta `json:"responseMode" validate:"required" description:"请求错误时的响应体，空则为字符串"`
+	Description  string         `json:"description,omitempty" description:"错误文档"`
+}
 
 // ValidationError 参数校验错误
 type ValidationError struct {

@@ -148,7 +148,6 @@ func (r *RouteSwagger) Id() string { return r.Api }
 // 具体包含查询参数,路径参数,请求体参数和响应体参数
 type RouteParam struct {
 	Prototype      reflect.Type   `description:"直接反射后获取的类型,未提取指针指向的类型"`
-	T              ModelSchema    `description:"泛型路由"`
 	Name           string         `description:"名称"`
 	Pkg            string         `description:"包含包名,如果是结构体则为: 包名.结构体名, 处理了指针"`
 	QueryName      string         `description:"作为查询参数时显示的名称,由于无法通过反射获得参数的名称，因此此名称为手动分配"`

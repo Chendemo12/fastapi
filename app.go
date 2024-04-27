@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"github.com/Chendemo12/fastapi/openapi"
-	"github.com/Chendemo12/fastapi/utils"
 	jsoniter "github.com/json-iterator/go"
 	"net"
 	"os"
 	"os/signal"
+	"reflect"
 	"sync"
 	"syscall"
 	"time"
@@ -39,21 +39,21 @@ type Event struct {
 //	# usage
 //	./test/group_router_test.go
 type Wrapper struct {
-	conf          *Profile               `description:"配置项"`
-	openApi       *openapi.OpenApi       `description:"模型文档"`
-	pool          *sync.Pool             `description:"Wrapper.Context资源池"`
-	ctx           context.Context        `description:"根Context"`
-	cancel        context.CancelFunc     `description:"取消函数"`
-	mux           MuxWrapper             `description:"后端路由器"`
-	isStarted     chan struct{}          `description:"标记程序是否完成启动"`
-	groupRouters  []*GroupRouterMeta     `description:"路由组对象"`
-	genericRoutes []RouteIface           `description:"泛型路由对象"`
-	events        []*Event               `description:"启动和关闭事件"`
-	finder        Finder[RouteIface]     `description:"路由对象查找器"`
-	previousDeps  []DependenceHandle     `description:"在接口参数校验前执行的依赖函数"`
-	afterDeps     []DependenceHandle     `description:"在接口参数校验成功后执行的依赖函数(相当于路由函数前钩子)"`
-	beforeWrite   func(c *Context)       `description:"在数据写入响应流之前执行的钩子方法"`
-	hotListener   func(wrapper *Wrapper) `description:"热开关监听器"`
+	conf                *Profile               `description:"配置项"`
+	openApi             *openapi.OpenApi       `description:"模型文档"`
+	pool                *sync.Pool             `description:"Wrapper.Context资源池"`
+	ctx                 context.Context        `description:"根Context"`
+	cancel              context.CancelFunc     `description:"取消函数"`
+	mux                 MuxWrapper             `description:"后端路由器"`
+	isStarted           chan struct{}          `description:"标记程序是否完成启动"`
+	groupRouters        []*GroupRouterMeta     `description:"路由组对象"`
+	events              []*Event               `description:"启动和关闭事件"`
+	finder              Finder[RouteIface]     `description:"路由对象查找器"`
+	previousDeps        []DependenceHandle     `description:"在接口参数校验前执行的依赖函数"`
+	afterDeps           []DependenceHandle     `description:"在接口参数校验成功后执行的依赖函数(相当于路由函数前钩子)"`
+	beforeWrite         func(c *Context)       `description:"在数据写入响应流之前执行的钩子方法"`
+	hotListener         func(wrapper *Wrapper) `description:"热开关监听器"`
+	routeErrorFormatter RouteErrorFormatter    `description:"请求错误时的响应格式化"`
 }
 
 type FastApi = Wrapper
@@ -65,7 +65,6 @@ type Profile struct {
 	Version                            string        `json:"version,omitempty" description:"程序版本号"`
 	Description                        string        `json:"description,omitempty" description:"程序描述"`
 	ShutdownTimeout                    time.Duration `json:"shutdownTimeout,omitempty" description:"平滑关机,单位秒"`
-	Debug                              bool          `json:"debug,omitempty" description:"调试开关"`
 	SwaggerDisabled                    bool          `json:"swaggerDisabled,omitempty" description:"禁用自动文档"`
 	ContextAutomaticDerivationDisabled bool          `json:"contextAutomaticDerivationDisabled,omitempty" description:"禁用context自动派生"`
 	// 默认情况下当请求校验过程遇到错误字段时，仍会继续向下校验其他字段，并最终将所有的错误消息一次性返回给调用方-
@@ -99,15 +98,6 @@ func (f *Wrapper) initRoutes() *Wrapper {
 		}
 	}
 
-	// 处理并记录泛型路由
-	for _, route := range f.genericRoutes {
-		_ = route
-	}
-
-	for _, route := range f.genericRoutes {
-		_ = route
-	}
-
 	return f
 }
 
@@ -120,11 +110,6 @@ func (f *Wrapper) initFinder() *Wrapper {
 		}
 	}
 
-	// 处理并记录泛型路由
-	for _, r := range f.genericRoutes {
-		routes = append(routes, r)
-	}
-
 	// 初始化finder
 	f.finder = DefaultFinder()
 	f.finder.Init(routes)
@@ -135,7 +120,7 @@ func (f *Wrapper) initFinder() *Wrapper {
 // 创建 OpenApi Swagger 文档, 必须等上层注册完路由之后才能调用
 func (f *Wrapper) initSwagger() *Wrapper {
 	f.openApi = openapi.NewOpenApi(f.Config().Title, f.Config().Version, f.Config().Description)
-	if !f.conf.SwaggerDisabled || f.conf.Debug {
+	if !f.conf.SwaggerDisabled {
 		f.registerRouteDoc()
 		f.registerRouteHandle()
 	}
@@ -183,16 +168,6 @@ func (f *Wrapper) wrap(mux MuxWrapper) *Wrapper {
 		}
 	}
 
-	for _, route := range f.genericRoutes {
-		err = mux.BindRoute(route.Swagger().Method, route.Swagger().Url, f.Handler)
-		if err != nil {
-			// 此时日志已初始化完毕
-			Errorf(
-				"route: '%s:%s' bind failed, %v", route.Swagger().Method, route.Swagger().Url, err,
-			)
-		}
-	}
-
 	return f
 }
 
@@ -206,7 +181,6 @@ func (f *Wrapper) Config() Config {
 		ShutdownTimeout:                int(f.conf.ShutdownTimeout.Seconds()),
 		DisableSwagAutoCreate:          f.conf.SwaggerDisabled,
 		StopImmediatelyWhenErrorOccurs: f.conf.StopImmediatelyWhenErrorOccurs,
-		Debug:                          f.conf.Debug,
 	}
 }
 
@@ -261,7 +235,7 @@ func (f *Wrapper) SetDescription(description string) *Wrapper {
 //
 //	@param	router	*Router	路由组
 func (f *Wrapper) IncludeRouter(router GroupRouter) *Wrapper {
-	f.groupRouters = append(f.groupRouters, NewGroupRouteMeta(router))
+	f.groupRouters = append(f.groupRouters, NewGroupRouteMeta(router, f.routeErrorFormatter))
 	return f
 }
 
@@ -297,7 +271,7 @@ func (f *Wrapper) UseBeforeWrite(fc func(c *Context)) *Wrapper {
 //
 // 此处的依赖函数有校验前依赖函数和校验后依赖函数,分别通过 Wrapper.UsePrevious 和 Wrapper.UseAfter 注册;
 // 当请求参数校验失败时不会执行 Wrapper.UseAfter 依赖函数, 请求参数会在 Wrapper.UsePrevious 执行完成之后被触发;
-// 如果依赖函数要终止后续的流程,应返回 error, 错误消息会作为消息体返回给客户端, 响应状态码默认为400,可通过 Context.Status 进行修改;
+// 如果依赖函数要终止后续的流程,应返回 error, 错误消息会作为消息体返回给客户端, 响应数据格式默认为500+string,可通过 Wrapper.SetRouteErrorFormatter 进行修改;
 func (f *Wrapper) Use(hooks ...DependenceHandle) *Wrapper {
 	return f.UseAfter(hooks...)
 }
@@ -340,8 +314,57 @@ func (f *Wrapper) SetHotListener(listener func(wrapper *Wrapper)) *Wrapper {
 }
 
 // SetRouteErrorFormatter 设置路由错误信息格式化函数
-func (f *Wrapper) SetRouteErrorFormatter(handle RouteErrorFormatter) *Wrapper {
-	routeErrorFormatter = handle
+// @param	handle	RouteErrorFormatter	路由错误信息格式化函数
+// @param	opt		RouteErrorOpt		路由错误信息的配置项, 仅用于设置文档显示
+func (f *Wrapper) SetRouteErrorFormatter(handle RouteErrorFormatter, opt ...RouteErrorOpt) *Wrapper {
+	if handle == nil {
+		Warn("route error formatter is nil, ignore")
+	} else {
+		f.routeErrorFormatter = handle
+	}
+	if len(opt) > 0 {
+		f.SetRouteErrorStatusCode(opt[0].StatusCode)
+		f.SetRouteErrorResponse(opt[0].ResponseMode)
+		openapi.RouteErrorOption.Description = opt[0].Description
+	}
+	return f
+}
+
+// SetRouteErrorStatusCode 描述错误信息格式化函数 RouteErrorFormatter 的响应状态码
+//
+//	由于暂无法准确模拟出一个有效的 Context 对象，因此无法通过 RouteErrorFormatter 来推断出错误响应码和错误响应体
+//	故此处需要配合 SetRouteErrorResponse 来显示设置错误响应信息，以生成openApi文档，未设置则不构建此部分的文档
+func (f *Wrapper) SetRouteErrorStatusCode(statusCode int) *Wrapper {
+	if statusCode == 0 {
+		Warn("route error status code is 0, ignore")
+	} else {
+		openapi.RouteErrorOption.StatusCode = statusCode
+	}
+	return f
+}
+
+// SetRouteErrorResponse 描述错误信息格式化函数 RouteErrorFormatter 的响应体
+func (f *Wrapper) SetRouteErrorResponse(model any) *Wrapper {
+	if model == nil {
+		Warn("route error response is nil, ignore")
+		return f
+	}
+	rt := reflect.TypeOf(model)
+	for rt.Kind() == reflect.Pointer {
+		rt = rt.Elem()
+	}
+	if rt.Kind() != reflect.Struct {
+		Warn("route error response model is not struct, ignore")
+		return f
+	}
+
+	meta, err := openapi.BaseModelMetaFrom(model, 0, openapi.RouteParamResponse)
+	if err != nil {
+		Warnf("route error response model is invalid, err: %s", err.Error())
+	} else {
+		openapi.RouteErrorOption.ResponseMode = meta
+	}
+
 	return f
 }
 
@@ -388,10 +411,10 @@ func (f *Wrapper) Shutdown() {
 // 当 Interrupt 信号被触发时，首先会关闭 根Context，然后逐步执行“关机事件”，最后调用平滑关闭方法，关闭服务
 // 启动前通过 SetShutdownTimeout 设置"平滑关闭异常时"的最大超时时间
 func (f *Wrapper) Run(host, port string) {
-	Debug("run in the " + utils.Ternary(f.conf.Debug, "development mode", "production mode"))
-
 	f.conf.Host = host
 	f.conf.Port = port
+	Debugf("%s starting...", f.Config().Title)
+
 	f.initialize()
 	f.ActivateHotSwitch()
 
@@ -426,11 +449,10 @@ func (f *Wrapper) Run(host, port string) {
 type Config struct {
 	Version                            string `json:"version,omitempty" description:"APP版本号"`
 	Description                        string `json:"description,omitempty" description:"APP描述"`
-	Title                              string `json:"title,omitempty" description:"APP标题,也是日志文件名"`
+	Title                              string `json:"title,omitempty" description:"APP标题"`
 	ShutdownTimeout                    int    `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
-	DisableSwagAutoCreate              bool   `json:"disable_swag_auto_create,omitempty" description:"禁用自动文档"`
+	DisableSwagAutoCreate              bool   `json:"disable_swag_auto_create,omitempty" description:"禁用OpenApi文档，但是不禁用参数校验"`
 	StopImmediatelyWhenErrorOccurs     bool   `json:"stopImmediatelyWhenErrorOccurs" description:"是否在遇到错误字段时立刻停止校验"`
-	Debug                              bool   `json:"debug,omitempty" description:"调试模式"`
 	ContextAutomaticDerivationDisabled bool   `json:"contextAutomaticDerivationDisabled,omitempty" description:"禁止为每一个请求创建单独的Context"`
 }
 
@@ -442,7 +464,6 @@ func cleanConfig(confs ...Config) Config {
 		ShutdownTimeout:                    5,
 		DisableSwagAutoCreate:              false,
 		StopImmediatelyWhenErrorOccurs:     false,
-		Debug:                              false,
 		ContextAutomaticDerivationDisabled: false,
 	}
 	if len(confs) > 0 {
@@ -455,7 +476,6 @@ func cleanConfig(confs ...Config) Config {
 		if confs[0].Description != "" {
 			conf.Description = confs[0].Description
 		}
-		conf.Debug = confs[0].Debug
 		conf.ShutdownTimeout = confs[0].ShutdownTimeout
 		conf.DisableSwagAutoCreate = confs[0].DisableSwagAutoCreate
 		conf.StopImmediatelyWhenErrorOccurs = confs[0].StopImmediatelyWhenErrorOccurs
@@ -489,18 +509,17 @@ func Create(c Config) *Wrapper {
 			Title:                              conf.Title,
 			Version:                            conf.Version,
 			Description:                        conf.Description,
-			Debug:                              conf.Debug,
 			SwaggerDisabled:                    conf.DisableSwagAutoCreate,
 			ShutdownTimeout:                    time.Duration(conf.ShutdownTimeout) * time.Second,
 			ContextAutomaticDerivationDisabled: conf.ContextAutomaticDerivationDisabled,
 			StopImmediatelyWhenErrorOccurs:     conf.StopImmediatelyWhenErrorOccurs,
 		},
-		genericRoutes: make([]RouteIface, 0),
-		groupRouters:  make([]*GroupRouterMeta, 0),
-		isStarted:     make(chan struct{}, 1),
-		previousDeps:  make([]DependenceHandle, 0),
-		afterDeps:     make([]DependenceHandle, 0),
-		events:        make([]*Event, 0),
+		groupRouters:        make([]*GroupRouterMeta, 0),
+		isStarted:           make(chan struct{}, 1),
+		previousDeps:        make([]DependenceHandle, 0),
+		afterDeps:           make([]DependenceHandle, 0),
+		events:              make([]*Event, 0),
+		routeErrorFormatter: defaultRouteErrorFormatter,
 	}
 	app.ctx, app.cancel = context.WithCancel(context.Background())
 	app.beforeWrite = func(c *Context) {}

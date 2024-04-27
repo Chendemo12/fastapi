@@ -8,6 +8,8 @@ import (
 
 // RouteErrorFormatter 路由函数返回错误时的处理函数，可用于格式化错误信息后返回给客户端
 //
+//	程序启动时会主动调用此方法用于生成openApi文档，所以此函数不应返回 map等类型，否则将无法生成openApi文档
+//
 //	当路由函数返回错误时，会调用此函数，返回值会作为响应码和响应内容, 返回值仅限于可以JSON序列化的消息体
 //	默认情况下，错误码为500，错误信息会作为字符串直接返回给客户端
 type RouteErrorFormatter func(c *Context, err error) (statusCode int, resp any)
@@ -15,23 +17,21 @@ type RouteErrorFormatter func(c *Context, err error) (statusCode int, resp any)
 // DependenceHandle 依赖函数 Depends/Hook
 type DependenceHandle func(c *Context) error
 
+// RouteErrorOpt 错误处理函数选项, 用于在 SetRouteErrorFormatter 方法里同时设置错误码和响应内容等内容
+type RouteErrorOpt struct {
+	StatusCode   int    `json:"statusCode" validate:"required" description:"请求错误时的状态码"`
+	ResponseMode any    `json:"responseMode" validate:"required" description:"请求错误时的响应体，空则为字符串"`
+	Description  string `json:"description,omitempty" description:"错误文档"`
+}
+
 // 默认的错误处理函数
-var routeErrorFormatter RouteErrorFormatter = func(c *Context, err error) (statusCode int, resp any) {
+var defaultRouteErrorFormatter RouteErrorFormatter = func(c *Context, err error) (statusCode int, resp any) {
 	statusCode = DefaultErrorStatusCode
 	resp = err.Error()
 	c.response.Type = StringResponseType
 	c.response.ContentType = openapi.MIMETextPlainCharsetUTF8
 
-	if c.response.StatusCode != 0 {
-		// 允许上层自定义错误码
-		statusCode = c.response.StatusCode
-	}
 	return
-}
-
-// SetRouteErrorFormatter 设置路由错误信息格式化函数
-func SetRouteErrorFormatter(handle RouteErrorFormatter) {
-	routeErrorFormatter = handle
 }
 
 // Handler 路由函数，实现逻辑类似于装饰器
@@ -43,7 +43,7 @@ func SetRouteErrorFormatter(handle RouteErrorFormatter) {
 // 反之：
 //
 //  1. 申请一个 Context, 并初始化请求体、路由参数等
-//  2. 之后会校验并绑定路由参数（包含路径参数和查询参数）是否正确，如果错误则直接返回422错误，反之会继续序列化并绑定请求体（如果存在）序列化成功之后会校验请求参数正确性，
+//  2. 之后会校验并绑定路由参数（包含路径参数和查询参数）是否正确，如果错误则直接返回422错误，反之会继续序列化并绑定请求体（如果存在）序列化成功之后会校验请求参数的正确性，
 //  3. 校验通过后会调用 RouteIface.Call 并将返回值绑定在 Context 内的 Response 上
 //  4. 校验返回值，并返回422或将返回值写入到实际的 response
 func (f *Wrapper) Handler(ctx MuxContext) error {
@@ -59,11 +59,11 @@ func (f *Wrapper) Handler(ctx MuxContext) error {
 
 	// 校验前依赖函数
 	var err error
-	for i := 0; i < len(f.previousDeps); i++ {
-		err = f.previousDeps[i](wrapperCtx)
+	for _, dep := range f.previousDeps {
+		err = dep(wrapperCtx)
 		if err != nil {
-			// 依赖函数中断执行, 应主动设置响应状态码
-			wrapperCtx.response.Content = err.Error()
+			// 依赖函数中断执行
+			wrapperCtx.response.StatusCode, wrapperCtx.response.Content = f.routeErrorFormatter(wrapperCtx, err)
 			return f.write(wrapperCtx)
 		}
 	}
@@ -76,11 +76,11 @@ func (f *Wrapper) Handler(ctx MuxContext) error {
 	}
 
 	// 执行校验后依赖函数
-	for i := 0; i < len(f.afterDeps); i++ {
-		err = f.afterDeps[i](wrapperCtx)
+	for _, dep := range f.afterDeps {
+		err = dep(wrapperCtx)
 		if err != nil {
 			// 依赖函数中断执行
-			wrapperCtx.response.Content = err.Error()
+			wrapperCtx.response.StatusCode, wrapperCtx.response.Content = f.routeErrorFormatter(wrapperCtx, err)
 			return f.write(wrapperCtx)
 		}
 	}
