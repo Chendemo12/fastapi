@@ -281,6 +281,158 @@ type DomainRecord struct {
 
   <div style="text-align: center;">显示效果</div>
 
+
+
+#### 2.1.4 路由url解析 [RoutePathSchema](./pathschema/pathschema.go)
+
+- 方法开头或结尾中包含的http方法名会被忽略，对于方法中包含多个关键字的仅第一个会被采用：
+  - `PostDelet` - > 路由为`delte`， 方法为`Post`
+- 允许通过`PathSchema() pathschema.RoutePathSchema`来自定义解析规则，支持以下规则：
+  - `LowerCaseDash`：全小写-短横线
+  - `LowerCaseBackslash`：全小写段路由
+  - `LowerCamelCase`：将结构体名称按单词分割后转换为小驼峰的形式后作为相对路由
+  - `LowerCase`：将方法名按单词分割后全部转换为小写字符再直接拼接起来
+  - `UnixDash`/ `Dash`：将方法名按单词分割后用"-"相连接
+  - `Underline`：将方法名按单词分割后用"_"相连接
+  - `Backslash`：按单词分段，每一个单词都作为一个路由段
+  - `Original`：原始不变，保持结构体方法名(不含HTTP方法名),只拼接成合法的路由
+  - `AddPrefix`：用于在分段路由基础上添加一个前缀字符，作用于每一段路径，通常与其他方案组合使用
+  - `AddSuffix`：用于在分段路由基础上添加一个后缀字符，作用于每一段路径，通常与其他方案组合使用
+  - `Composition`：组合式路由格式化方案, 通过按顺序执行多个 `RoutePathSchema` 获得最终路由
+
+- 详细示例可见 [pathschema_test.go](./pathschema/pathschema_test.go)
+
+  ```go
+  func TestFormat(t *testing.T) {
+  	type args struct {
+  		schema       RoutePathSchema
+  		prefix       string
+  		relativePath string
+  	}
+  	tests := []struct {
+  		name string
+  		args args
+  		want string
+  	}{
+  		{
+  			name: "UnixDash",
+  			args: args{
+  				prefix:       "/api",
+  				relativePath: "ReadUnixProcTree",
+  				schema:       &UnixDash{},
+  			},
+  			want: "/api/Read-Unix-Proc-Tree",
+  		},
+  		{
+  			name: "Underline",
+  			args: args{
+  				prefix:       "/api",
+  				relativePath: "ReadUnixProcTree",
+  				schema:       &Underline{},
+  			},
+  			want: "/api/Read_Unix_Proc_Tree",
+  		},
+  		{
+  			name: "LowerCamelCase",
+  			args: args{
+  				prefix:       "/api",
+  				relativePath: "ReadUnixProcTree",
+  				schema:       &LowerCamelCase{},
+  			},
+  			want: "/api/readUnixProcTree",
+  		},
+  		{
+  			name: "LowerCase",
+  			args: args{
+  				prefix:       "/api",
+  				relativePath: "ReadUnixProcTree",
+  				schema:       &LowerCase{},
+  			},
+  			want: "/api/readunixproctree",
+  		},
+  		{
+  			name: "Backslash",
+  			args: args{
+  				prefix:       "/api",
+  				relativePath: "ReadUnixProcTree",
+  				schema:       &Backslash{},
+  			},
+  			want: "/api/Read/Unix/Proc/Tree",
+  		},
+  		{
+  			name: "Original",
+  			args: args{
+  				prefix:       "/api",
+  				relativePath: "ReadUnixProcTree",
+  				schema:       &Original{},
+  			},
+  			want: "/api/ReadUnixProcTree",
+  		},
+  		{
+  			name: "LowerCaseDash",
+  			args: args{
+  				prefix:       "/api",
+  				relativePath: "ReadUnixProcTree",
+  				schema:       Default(),
+  			},
+  			want: "/api/read-unix-proc-tree",
+  		},
+  		{
+  			name: "LowerCaseUnderline",
+  			args: args{
+  				prefix:       "/api",
+  				relativePath: "ReadUnixProcTree",
+  				schema:       NewComposition(&LowerCase{}, &Underline{}),
+  			},
+  			want: "/api/read_unix_proc_tree",
+  		},
+  		{
+  			name: "LowerCaseDashUnderline",
+  			args: args{
+  				prefix:       "/api",
+  				relativePath: "ReadUnixProcTree",
+  				schema:       NewComposition(&LowerCase{}, &UnixDash{}, &Underline{}),
+  			},
+  			want: "/api/read-_unix-_proc-_tree",
+  		},
+  		{
+  			name: "LowerCaseDashUnderlineBackslash",
+  			args: args{
+  				prefix:       "/api",
+  				relativePath: "ReadUnixProcTree",
+  				schema:       NewComposition(NewComposition(&LowerCase{}, &UnixDash{}), &Underline{}, &Backslash{}),
+  			},
+  			want: "/api/read-_/unix-_/proc-_/tree",
+  		},
+  		{
+  			name: "LowerCaseWithPreEqual",
+  			args: args{
+  				prefix:       "/api",
+  				relativePath: "ReadUnixProcTree",
+  				schema:       NewComposition(&LowerCase{}, &AddPrefix{Prefix: "="}, &Backslash{}),
+  			},
+  			want: "/api/=read/=unix/=proc/=tree",
+  		},
+  		{
+  			name: "LowerCaseWithPostDash",
+  			args: args{
+  				prefix:       "/api",
+  				relativePath: "ReadUnixProcTree",
+  				schema:       NewComposition(&LowerCase{}, &AddSuffix{Suffix: "-"}, &Backslash{}),
+  			},
+  			want: "/api/read-/unix-/proc-/tree-",
+  		},
+  	}
+  	for _, tt := range tests {
+  		t.Run(tt.name, func(t *testing.T) {
+  			if got := Format(tt.args.prefix, tt.args.relativePath, tt.args.schema); got != tt.want {
+  				t.Errorf("Format() = %v, want %v", got, tt.want)
+  			}
+  		})
+  	}
+  }
+  ```
+
   
 
 
