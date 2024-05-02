@@ -223,9 +223,9 @@ func (c *Context) Response() *Response { return c.response }
 
 // ================================ 路由组路由方法 ================================
 
-// Status 允许路由组路由函数在error=nil时修改响应状态码
-// 由于路由组路由函数 GroupRouteHandler 签名的限制；当error=nil时状态码默认为500，error!=nil时默认为200
-// 允许通过此方法进行修改
+// Status 修改成功响应的状态码
+// 由于路由组路由函数 GroupRouteHandler 签名的限制；当error!=nil时状态码默认为500，error==nil时默认为200
+// 允许通过此方法修改当error=nil的响应状态码
 func (c *Context) Status(code int) {
 	c.response.StatusCode = code
 }

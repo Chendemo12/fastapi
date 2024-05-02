@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 0.2.10 - (2024-05-02)
+
+### Fix
+
+- 修改`SetRouteErrorFormatter`不生效的错误；
+- `Context.Status`方法可以正常起作用；
+
 ## 0.2.9 - (2024-05-02)
 
 ### Feat
