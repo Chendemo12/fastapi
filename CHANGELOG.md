@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 0.2.9 - (2024-05-02)
+
+### Feat
+
+- 修改默认logger
+- 新增`MuxContext.GetHeader`
+- `FiberContext`实现`MuxContext`全部方法
+- 初步实现`GinMux`
+
+### BREAKING
+
+- (2024-05-02) 移除`Context.Logger`方法;
+
 ## 0.2.8 - (2024-04-22)
 
 ### Feat

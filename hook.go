@@ -34,7 +34,7 @@ var defaultRouteErrorFormatter RouteErrorFormatter = func(c *Context, err error)
 	return
 }
 
-// Handler 路由函数，实现逻辑类似于装饰器
+// Handler 路由函数 MuxHandler，实现逻辑类似于装饰器
 //
 // 路由处理方法(装饰器实现)，用于请求体校验和返回体序列化，同时注入全局服务依赖,
 // 此方法接收一个业务层面的路由钩子方法 RouteIface.Call
@@ -164,7 +164,7 @@ func (f *Wrapper) write(c *Context) error {
 
 	case HtmlResponseType: // 返回HTML页面
 		c.muxCtx.Header(openapi.HeaderContentType, openapi.MIMETextHTMLCharsetUTF8)
-		//return c.muxCtx.Render(c.response.StatusCode, bytes.NewReader(c.response.Content.(string)))
+		//return c.muxCtx.RenderHTML(c.response.StatusCode, bytes.NewReader(c.response.Content.(string)))
 		return c.muxCtx.SendString(c.response.Content.(string))
 
 	case FileResponseType: // 返回一个文件
@@ -298,8 +298,7 @@ func structQueryValidate(c *Context, route RouteIface, stopImmediately bool) []*
 	var ves []*openapi.ValidationError
 	var instance = route.NewStructQuery()
 
-	if c.muxCtx.BindQueryNotImplemented() {
-		// 采用自定义实现
+	if !c.muxCtx.CustomBindQueryMethod() {
 		values := map[string]any{}
 		for _, q := range route.Swagger().QueryFields {
 			if q.InStruct {
@@ -312,6 +311,7 @@ func structQueryValidate(c *Context, route RouteIface, stopImmediately bool) []*
 
 		ves = structQueryBind.Bind(values, instance)
 	} else {
+		// 采用自定义实现
 		err := c.muxCtx.BindQuery(instance)
 		ves = ParseValidatorError(err, openapi.RouteParamQuery, "")
 	}
@@ -340,7 +340,7 @@ func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) []*
 
 	if instance != nil {
 		// 存在请求体,首先进行反序列化,之后校验参数是否合法,校验通过后绑定到 Context
-		if c.muxCtx.ShouldBindNotImplemented() {
+		if !c.muxCtx.CustomShouldBindMethod() { // 未重写自定义校验方法
 			err = c.muxCtx.BodyParser(instance)
 			if err != nil {
 				ve := ParseJsoniterError(err, openapi.RouteParamRequest, route.Swagger().RequestModel.SchemaTitle())
