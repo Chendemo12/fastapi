@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 0.2.11 - (2024-07-10)
+
+### Feat
+
+- `fiberWrapper.Default` 新增参数；
+
 ## 0.2.10 - (2024-05-02)
 
 ### Fix

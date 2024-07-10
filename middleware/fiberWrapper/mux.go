@@ -45,18 +45,24 @@ func NewWrapper(app *fiber.App) *FiberMux {
 }
 
 // Default 默认的fiber.app，已做好基本的参数配置
-func Default() *FiberMux {
-	app := fiber.New(fiber.Config{
-		Prefork:       false,                   // 多进程模式
-		CaseSensitive: true,                    // 区分路由大小写
-		StrictRouting: true,                    // 严格路由
-		ServerHeader:  "FastApi",               // 服务器头
-		AppName:       "fastapi.fiber",         // 设置为 Response.Header.Server 属性
-		ColorScheme:   fiber.DefaultColors,     // 彩色输出
-		JSONEncoder:   utils.JsonMarshal,       // json序列化器
-		JSONDecoder:   utils.JsonUnmarshal,     // json解码器
-		ErrorHandler:  customFiberErrorHandler, // 设置自定义错误处理
-	})
+func Default(cf ...fiber.Config) *FiberMux {
+	var conf fiber.Config
+	if len(cf) == 0 {
+		conf = fiber.Config{
+			Prefork:       false,                   // 多进程模式
+			CaseSensitive: true,                    // 区分路由大小写
+			StrictRouting: true,                    // 严格路由
+			ServerHeader:  "FastApi",               // 服务器头
+			AppName:       "fastapi.fiber",         // 设置为 Response.Header.Server 属性
+			ColorScheme:   fiber.DefaultColors,     // 彩色输出
+			JSONEncoder:   utils.JsonMarshal,       // json序列化器
+			JSONDecoder:   utils.JsonUnmarshal,     // json解码器
+			ErrorHandler:  customFiberErrorHandler, // 设置自定义错误处理
+		}
+	} else {
+		conf = cf[0]
+	}
+	app := fiber.New(conf)
 
 	// 输出API访问日志
 	echoConfig := echo.ConfigDefault
