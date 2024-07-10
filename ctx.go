@@ -108,9 +108,6 @@ func (c *Context) Done() <-chan struct{} {
 	}
 }
 
-// Deprecated: 弃用, 请使用 fastapi.Info 系列方法
-func (c *Context) Logger() LoggerIface { return dLog }
-
 // Query 获取查询参数
 // 对于已经在路由处定义的查询参数，首先从 Context.queryFields 内部读取
 // 对于没有定义的其他查询参数则调用低层 MuxContext 进行解析
@@ -226,9 +223,9 @@ func (c *Context) Response() *Response { return c.response }
 
 // ================================ 路由组路由方法 ================================
 
-// Status 允许路由组路由函数在error=nil时修改响应状态码
-// 由于路由组路由函数 GroupRouteHandler 签名的限制；当error=nil时状态码默认为500，error!=nil时默认为200
-// 允许通过此方法进行修改
+// Status 修改成功响应的状态码
+// 由于路由组路由函数 GroupRouteHandler 签名的限制；当error!=nil时状态码默认为500，error==nil时默认为200
+// 允许通过此方法修改当error=nil的响应状态码
 func (c *Context) Status(code int) {
 	c.response.StatusCode = code
 }

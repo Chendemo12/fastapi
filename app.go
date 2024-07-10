@@ -96,6 +96,7 @@ func (f *Wrapper) initRoutes() *Wrapper {
 		if err != nil {
 			panic(fmt.Errorf("group-router: '%s' created failld, %v", group.String(), err))
 		}
+		group.errorFormatter = f.routeErrorFormatter
 	}
 
 	return f

@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## 0.2.11 - (2024-07-10)
+
+### Feat
+
+- `fiberWrapper.Default` 新增参数；
+- 更新 `fiber:2.52.5`；
+
+## 0.2.10 - (2024-05-02)
+
+### Fix
+
+- 修改`SetRouteErrorFormatter`不生效的错误；
+- `Context.Status`方法可以正常起作用；
+
+## 0.2.9 - (2024-05-02)
+
+### Feat
+
+- 修改默认logger
+- 新增`MuxContext.GetHeader`
+- `FiberContext`实现`MuxContext`全部方法
+- 初步实现`GinMux`
+
+### BREAKING
+
+- (2024-05-02) 移除`Context.Logger`方法;
+
 ## 0.2.8 - (2024-04-22)
 
 ### Feat

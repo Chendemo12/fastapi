@@ -126,25 +126,33 @@ var IllegalRouteParamType = []reflect.Kind{
 	reflect.Map,
 }
 
+func AddUtf8Charset(m string) string {
+	return m + "; charset=utf-8"
+}
+
 const HeaderContentType = "Content-Type"
 
 const (
-	MIMETextXML                    string = "text/xml"
-	MIMETextHTML                   string = "text/html"
-	MIMETextPlain                  string = "text/plain"
-	MIMETextCSS                    string = "text/css"
 	MIMETextJavaScript             string = "text/javascript"
-	MIMEApplicationXML             string = "application/xml"
-	MIMEApplicationJSON            string = "application/json"
 	MIMEApplicationForm            string = "application/x-www-form-urlencoded"
 	MIMEOctetStream                string = "application/octet-stream"
 	MIMEMultipartForm              string = "multipart/form-data"
+	MIMETextXML                    string = "text/xml"
 	MIMETextXMLCharsetUTF8         string = "text/xml; charset=utf-8"
+	MIMETextHTML                   string = "text/html"
 	MIMETextHTMLCharsetUTF8        string = "text/html; charset=utf-8"
+	MIMETextPlain                  string = "text/plain"
 	MIMETextPlainCharsetUTF8       string = "text/plain; charset=utf-8"
+	MIMETextCSS                    string = "text/css"
 	MIMETextCSSCharsetUTF8         string = "text/css; charset=utf-8"
 	MIMETextJavaScriptCharsetUTF8  string = "text/javascript; charset=utf-8"
+	MIMEApplicationXML             string = "application/xml"
 	MIMEApplicationXMLCharsetUTF8  string = "application/xml; charset=utf-8"
+	MIMEApplicationTOML            string = "application/toml"
+	MIMEApplicationTOMLCharsetUTF8 string = "application/toml; charset=utf-8"
+	MIMEApplicationYAML            string = "application/x-yaml"
+	MIMEApplicationYAMLCharsetUTF8 string = "application/x-yaml; charset=utf-8"
+	MIMEApplicationJSON            string = "application/json"
 	MIMEApplicationJSONCharsetUTF8 string = "application/json; charset=utf-8"
 
 	MIMEJpg  = "image/jpeg"

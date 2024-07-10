@@ -4,43 +4,65 @@ import (
 	"errors"
 	"fmt"
 	"github.com/Chendemo12/fastapi"
+	"github.com/Chendemo12/fastapi/openapi"
 	"github.com/Chendemo12/fastapi/utils"
 	"github.com/gofiber/fiber/v2"
 	echo "github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/pelletier/go-toml/v2"
+	"gopkg.in/yaml.v3"
 	"io"
 	"net/http"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
 
+var pool = &sync.Pool{New: func() any { return &FiberContext{} }}
+
+func AcquireCtx(c *fiber.Ctx) *FiberContext {
+	obj := pool.Get().(*FiberContext)
+	obj.ctx = c
+
+	return obj
+}
+
+func ReleaseCtx(c *FiberContext) {
+	c.ctx = nil
+	pool.Put(c)
+}
+
 type FiberMux struct {
-	app  *fiber.App
-	pool *sync.Pool
+	app *fiber.App
 }
 
 // NewWrapper 创建App实例
 func NewWrapper(app *fiber.App) *FiberMux {
 	return &FiberMux{
-		app:  app,
-		pool: &sync.Pool{New: func() any { return &FiberContext{} }},
+		app: app,
 	}
 }
 
 // Default 默认的fiber.app，已做好基本的参数配置
-func Default() *FiberMux {
-	app := fiber.New(fiber.Config{
-		Prefork:       false,                   // 多进程模式
-		CaseSensitive: true,                    // 区分路由大小写
-		StrictRouting: true,                    // 严格路由
-		ServerHeader:  "FastApi",               // 服务器头
-		AppName:       "fastapi.fiber",         // 设置为 Response.Header.Server 属性
-		ColorScheme:   fiber.DefaultColors,     // 彩色输出
-		JSONEncoder:   utils.JsonMarshal,       // json序列化器
-		JSONDecoder:   utils.JsonUnmarshal,     // json解码器
-		ErrorHandler:  customFiberErrorHandler, // 设置自定义错误处理
-	})
+func Default(cf ...fiber.Config) *FiberMux {
+	var conf fiber.Config
+	if len(cf) == 0 {
+		conf = fiber.Config{
+			Prefork:       false,                   // 多进程模式
+			CaseSensitive: true,                    // 区分路由大小写
+			StrictRouting: true,                    // 严格路由
+			ServerHeader:  "FastApi",               // 服务器头
+			AppName:       "fastapi.fiber",         // 设置为 Response.Header.Server 属性
+			ColorScheme:   fiber.DefaultColors,     // 彩色输出
+			JSONEncoder:   utils.JsonMarshal,       // json序列化器
+			JSONDecoder:   utils.JsonUnmarshal,     // json解码器
+			ErrorHandler:  customFiberErrorHandler, // 设置自定义错误处理
+		}
+	} else {
+		conf = cf[0]
+	}
+	app := fiber.New(conf)
 
 	// 输出API访问日志
 	echoConfig := echo.ConfigDefault
@@ -61,18 +83,6 @@ func Default() *FiberMux {
 
 func (m *FiberMux) App() *fiber.App { return m.app }
 
-func (m *FiberMux) AcquireCtx(c *fiber.Ctx) *FiberContext {
-	obj := m.pool.Get().(*FiberContext)
-	obj.ctx = c
-
-	return obj
-}
-
-func (m *FiberMux) ReleaseCtx(c *FiberContext) {
-	c.ctx = nil
-	m.pool.Put(c)
-}
-
 func (m *FiberMux) Listen(addr string) error {
 	return m.app.Listen(addr)
 }
@@ -85,23 +95,38 @@ func (m *FiberMux) BindRoute(method, path string, handler fastapi.MuxHandler) er
 	switch method {
 	case http.MethodGet:
 		m.app.Get(path, func(ctx *fiber.Ctx) error {
-			return handler(&FiberContext{ctx: ctx})
+			mCtx := AcquireCtx(ctx)
+			defer ReleaseCtx(mCtx)
+
+			return handler(mCtx)
 		})
 	case http.MethodPost:
 		m.app.Post(path, func(ctx *fiber.Ctx) error {
-			return handler(&FiberContext{ctx: ctx})
+			mCtx := AcquireCtx(ctx)
+			defer ReleaseCtx(mCtx)
+
+			return handler(mCtx)
 		})
 	case http.MethodDelete:
 		m.app.Delete(path, func(ctx *fiber.Ctx) error {
-			return handler(&FiberContext{ctx: ctx})
+			mCtx := AcquireCtx(ctx)
+			defer ReleaseCtx(mCtx)
+
+			return handler(mCtx)
 		})
 	case http.MethodPatch:
 		m.app.Patch(path, func(ctx *fiber.Ctx) error {
-			return handler(&FiberContext{ctx: ctx})
+			mCtx := AcquireCtx(ctx)
+			defer ReleaseCtx(mCtx)
+
+			return handler(mCtx)
 		})
 	case http.MethodPut:
 		m.app.Put(path, func(ctx *fiber.Ctx) error {
-			return handler(&FiberContext{ctx: ctx})
+			mCtx := AcquireCtx(ctx)
+			defer ReleaseCtx(mCtx)
+
+			return handler(mCtx)
 		})
 	default:
 		return errors.New(fmt.Sprintf("unknow method:'%s' for path: '%s'", method, path))
@@ -114,15 +139,22 @@ type FiberContext struct {
 	ctx *fiber.Ctx
 }
 
-func (c *FiberContext) Method() string {
-	return c.ctx.Method()
-}
-
-func (c *FiberContext) Path() string {
-	return c.ctx.Route().Path
-}
+func (c *FiberContext) Method() string { return c.ctx.Method() }
+func (c *FiberContext) Path() string   { return c.ctx.Route().Path }
 
 func (c *FiberContext) Ctx() any { return c.ctx }
+
+// Get fiber 未实现此方法，作为替代可以使用 Context.Get()
+func (c *FiberContext) Get(key string) (value any, exists bool) {
+	return nil, false
+}
+
+// Set fiber 未实现此方法，作为替代可以使用 Context.Set()
+func (c *FiberContext) Set(key string, value any) {
+	panic("Method Not Supported, please use 'Context.Set' instead.")
+}
+
+func (c *FiberContext) ClientIP() string { return c.ctx.IP() }
 
 func (c *FiberContext) Query(key string, undefined ...string) string {
 	return c.ctx.Query(key, undefined...)
@@ -132,25 +164,30 @@ func (c *FiberContext) Params(key string, undefined ...string) string {
 	return c.ctx.Params(key, undefined...)
 }
 
+// GetHeader 获取请求头, 当key不存在时返回空字符串，如果存在多个时，返回逗号分隔的字符串
+func (c *FiberContext) GetHeader(key string) string {
+	headers, ok := c.ctx.GetReqHeaders()[key]
+	if !ok {
+		return ""
+	}
+	return strings.Join(headers, ",")
+}
+
+func (c *FiberContext) Cookie(name string) (string, error) {
+	return c.ctx.Cookies(name, ""), nil
+}
+
 func (c *FiberContext) ContentType() string {
 	return string(c.ctx.Context().Request.Header.ContentType())
 }
 
-func (c *FiberContext) BindQuery(obj any) error {
-	return nil
-}
+func (c *FiberContext) BindQuery(obj any) error     { return nil }
+func (c *FiberContext) CustomBindQueryMethod() bool { return false }
 
-func (c *FiberContext) BindQueryNotImplemented() bool {
-	return true
-}
-
-func (c *FiberContext) BodyParser(obj any) error { return c.ctx.BodyParser(obj) }
-
-func (c *FiberContext) Validate(obj any) error { return nil }
-
-func (c *FiberContext) ShouldBind(obj any) error { return nil }
-
-func (c *FiberContext) ShouldBindNotImplemented() bool { return true }
+func (c *FiberContext) BodyParser(obj any) error     { return c.ctx.BodyParser(obj) }
+func (c *FiberContext) Validate(obj any) error       { return nil }
+func (c *FiberContext) ShouldBind(obj any) error     { return nil }
+func (c *FiberContext) CustomShouldBindMethod() bool { return false }
 
 func (c *FiberContext) SetCookie(cookie *http.Cookie) {
 	ck := &fiber.Cookie{
@@ -178,40 +215,35 @@ func (c *FiberContext) SetCookie(cookie *http.Cookie) {
 	c.ctx.Cookie(ck)
 }
 
-func (c *FiberContext) Cookie(name string) (string, error) {
-	return c.ctx.Cookies(name, ""), nil
-}
-
-func (c *FiberContext) Get(key string, defaultValue ...string) string {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (c *FiberContext) Set(key string, value any) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (c *FiberContext) ClientIP() string { return c.ctx.IP() }
-
 func (c *FiberContext) Status(statusCode int) { c.ctx.Status(statusCode) }
 
 func (c *FiberContext) SendStream(stream io.Reader, size ...int) error {
 	return c.ctx.SendStream(stream, size...)
 }
 
-func (c *FiberContext) Render(name string, bind interface{}, layouts ...string) error {
-	//TODO implement me
-	panic("implement me")
+// RenderHTML 返回HTML模板
+func (c *FiberContext) RenderHTML(name string, bind interface{}, layouts ...string) error {
+	return c.ctx.Render(name, bind, layouts...)
 }
 
 func (c *FiberContext) YAML(code int, obj any) error {
-	//TODO implement me
-	panic("implement me")
+	bytes, err := yaml.Marshal(obj)
+	if err != nil {
+		return err
+	}
+	c.ctx.Set(openapi.HeaderContentType, openapi.MIMEApplicationYAMLCharsetUTF8)
+	c.ctx.Status(code)
+	return c.ctx.Send(bytes)
 }
 
 func (c *FiberContext) TOML(code int, obj any) error {
-	return nil
+	bytes, err := toml.Marshal(obj)
+	if err != nil {
+		return err
+	}
+	c.ctx.Set(openapi.HeaderContentType, openapi.MIMEApplicationTOMLCharsetUTF8)
+	c.ctx.Status(code)
+	return c.ctx.Send(bytes)
 }
 
 func (c *FiberContext) Header(key, value string) { c.ctx.Set(key, value) }
@@ -226,13 +258,12 @@ func (c *FiberContext) JSONP(code int, data any) error {
 }
 
 func (c *FiberContext) File(filepath string) error {
-	//TODO implement me
-	panic("implement me")
+	return c.ctx.SendFile(filepath)
 }
 
 func (c *FiberContext) FileAttachment(filepath, filename string) error {
-	//TODO implement me
-	panic("implement me")
+	c.ctx.Attachment(filename)
+	return c.ctx.SendFile(filepath)
 }
 
 func (c *FiberContext) XML(code int, content any) error {
