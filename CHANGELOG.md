@@ -5,6 +5,7 @@
 ### Feat
 
 - `fiberWrapper.Default` 新增参数；
+- 更新 `fiber:2.52.5`；
 
 ## 0.2.10 - (2024-05-02)
 
