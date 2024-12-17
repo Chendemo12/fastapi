@@ -26,7 +26,11 @@ type RouteErrorOpt struct {
 
 // 默认的错误处理函数
 var defaultRouteErrorFormatter RouteErrorFormatter = func(c *Context, err error) (statusCode int, resp any) {
-	statusCode = DefaultErrorStatusCode
+	if c.response.StatusCode != 0 {
+		statusCode = c.response.StatusCode
+	} else {
+		statusCode = DefaultErrorStatusCode
+	}
 	resp = err.Error()
 	c.response.Type = StringResponseType
 	c.response.ContentType = openapi.MIMETextPlainCharsetUTF8

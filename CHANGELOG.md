@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 0.2.12 - (2024-12-17)
+
+### Fix
+
+- 修复默认的错误处理handle`defaultRouteErrorFormatter`覆盖`Context.Status设置状态码后被重置为500`的错误；
+
 ## 0.2.11 - (2024-07-10)
 
 ### Feat

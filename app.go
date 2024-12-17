@@ -53,7 +53,7 @@ type Wrapper struct {
 	afterDeps           []DependenceHandle     `description:"在接口参数校验成功后执行的依赖函数(相当于路由函数前钩子)"`
 	beforeWrite         func(c *Context)       `description:"在数据写入响应流之前执行的钩子方法"`
 	hotListener         func(wrapper *Wrapper) `description:"热开关监听器"`
-	routeErrorFormatter RouteErrorFormatter    `description:"请求错误时的响应格式化"`
+	routeErrorFormatter RouteErrorFormatter    `description:"handle返回错误时的格式化方法"`
 }
 
 type FastApi = Wrapper
