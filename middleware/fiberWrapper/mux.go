@@ -3,6 +3,13 @@ package fiberWrapper
 import (
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"runtime"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/Chendemo12/fastapi"
 	"github.com/Chendemo12/fastapi/openapi"
 	"github.com/Chendemo12/fastapi/utils"
@@ -11,12 +18,6 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/pelletier/go-toml/v2"
 	"gopkg.in/yaml.v3"
-	"io"
-	"net/http"
-	"runtime"
-	"strings"
-	"sync"
-	"time"
 )
 
 var pool = &sync.Pool{New: func() any { return &FiberContext{} }}
@@ -231,7 +232,7 @@ func (c *FiberContext) YAML(code int, obj any) error {
 	if err != nil {
 		return err
 	}
-	c.ctx.Set(openapi.HeaderContentType, openapi.MIMEApplicationYAMLCharsetUTF8)
+	c.ctx.Set(openapi.HeaderContentType, string(openapi.MIMEApplicationYAMLCharsetUTF8))
 	c.ctx.Status(code)
 	return c.ctx.Send(bytes)
 }
@@ -241,7 +242,7 @@ func (c *FiberContext) TOML(code int, obj any) error {
 	if err != nil {
 		return err
 	}
-	c.ctx.Set(openapi.HeaderContentType, openapi.MIMEApplicationTOMLCharsetUTF8)
+	c.ctx.Set(openapi.HeaderContentType, string(openapi.MIMEApplicationTOMLCharsetUTF8))
 	c.ctx.Status(code)
 	return c.ctx.Send(bytes)
 }

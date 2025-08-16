@@ -3,12 +3,12 @@ package test
 import (
 	"errors"
 	"fmt"
+	"testing"
+	"time"
+
 	"github.com/Chendemo12/fastapi"
 	"github.com/Chendemo12/fastapi/middleware/fiberWrapper"
 	"github.com/Chendemo12/fastapi/middleware/routers"
-	"github.com/Chendemo12/fastapi/openapi"
-	"testing"
-	"time"
 )
 
 // ============================================================================
@@ -66,32 +66,6 @@ func (r *QueryParamRouter) Path() map[string]string {
 	}
 }
 
-func (r *QueryParamRouter) InParamsName() map[string]map[int]string {
-	return map[string]map[int]string{
-		"ManyGet": {
-			2: "age",
-			3: "name",
-			4: "graduate",
-			5: "source",
-		},
-		"TimeGet": {
-			2: "day",
-		},
-	}
-}
-
-func (r *QueryParamRouter) IntGet(c *fastapi.Context, age int) (int, error) {
-	return age, nil
-}
-
-func (r *QueryParamRouter) FloatGet(c *fastapi.Context, source float64) (float64, error) {
-	return source, nil
-}
-
-func (r *QueryParamRouter) ManyGet(c *fastapi.Context, age int, name string, graduate bool, source float64) (float64, error) {
-	return source, nil
-}
-
 func (r *QueryParamRouter) StructDelete(c *fastapi.Context, param *Name) (string, error) {
 	return param.Father + " " + param.Name, nil
 }
@@ -108,12 +82,6 @@ func (r *QueryParamRouter) TimeGet(c *fastapi.Context, day time.Time, param *Dat
 
 func (r *QueryParamRouter) TimePost(c *fastapi.Context, day time.Time) (time.Time, error) {
 	return day, nil
-}
-
-func (r *QueryParamRouter) GetPathParam(c *fastapi.Context) (string, error) {
-	c.ContentType(openapi.MIMEApplicationJSONCharsetUTF8)
-	pf := c.PathField("day", time.Now().String())
-	return pf, nil
 }
 
 // PageReq 分页请求参数
@@ -162,7 +130,7 @@ type RegisterForm struct {
 
 func (r *RegisterForm) SchemaDesc() string { return "注册表单" }
 
-func (r *RequestBodyRouter) RegisterPost(c *fastapi.Context, location string, form *RegisterForm) (*RegisterForm, error) {
+func (r *RequestBodyRouter) RegisterPost(c *fastapi.Context, form *RegisterForm) (*RegisterForm, error) {
 	return form, nil
 }
 
@@ -175,10 +143,6 @@ func (r *RequestBodyRouter) RegisterWithParamPost(c *fastapi.Context, name *Name
 
 func (r *RequestBodyRouter) ArrayRequestBodyPost(c *fastapi.Context, names []*Name) ([]*Name, error) {
 	return nil, errors.New(fmt.Sprintf("(array request) always return error, length: %d", len(names)))
-}
-
-func (r *RequestBodyRouter) StringQueryParamPatch(c *fastapi.Context, name string) (string, error) {
-	return name, nil
 }
 
 func (r *RequestBodyRouter) NoRequestBodyParamPatch(c *fastapi.Context, null *fastapi.None) (string, error) {
@@ -308,24 +272,6 @@ func (r *ResponseModelRouter) GetComplexModel(c *fastapi.Context) (*EnosData, er
 		Submsg: "",
 		Code:   0,
 	}, nil
-}
-
-func routeCtxCancel(s *fastapi.Context) *fastapi.Response {
-	ctx := s.Context()
-
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				fastapi.Info("route canceled.")
-				return
-			case <-time.Tick(time.Millisecond * 400):
-				fastapi.Info("route not cancel.")
-			}
-		}
-	}()
-	time.Sleep(time.Second * 2)
-	return s.OKResponse(12)
 }
 
 type IPModel struct {
@@ -567,8 +513,6 @@ func TestNew(t *testing.T) {
 		ResponseMode: &ErrorMessage{},
 		Description:  "服务器内部发生错误，请稍后重试",
 	})
-	app.SetRouteErrorStatusCode(500)
-	app.SetRouteErrorResponse(&ErrorMessage{})
 
 	app.Run("0.0.0.0", "8099") // 阻塞运行
 }

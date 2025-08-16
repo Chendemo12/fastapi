@@ -11,7 +11,7 @@ import (
 //
 //	router := NewInfoRouter(Config{})
 //	app.IncludeRouter(router)
-func NewInfoRouter(conf fastapi.Config, prefix ...string) fastapi.GroupRouter {
+func NewInfoRouter(conf *fastapi.Config, prefix ...string) fastapi.GroupRouter {
 	r := &WrapperInfoRouter{
 		prefix:  "/api/base",
 		Tag:     []string{"Base"},

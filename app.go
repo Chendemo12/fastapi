@@ -3,22 +3,18 @@ package fastapi
 import (
 	"context"
 	"fmt"
-	"github.com/Chendemo12/fastapi/openapi"
-	jsoniter "github.com/json-iterator/go"
 	"net"
 	"os"
 	"os/signal"
-	"reflect"
 	"sync"
-	"syscall"
 	"time"
+
+	"github.com/Chendemo12/fastapi/openapi"
+	jsoniter "github.com/json-iterator/go"
 )
 
 var one = &sync.Once{}
 var wrapper *Wrapper = nil // 默认实例
-
-// HotSwitchSigint 默认热调试开关
-const HotSwitchSigint = 30
 
 // EventKind 事件类型
 type EventKind string
@@ -39,64 +35,79 @@ type Event struct {
 //	# usage
 //	./test/group_router_test.go
 type Wrapper struct {
-	conf                *Profile               `description:"配置项"`
-	openApi             *openapi.OpenApi       `description:"模型文档"`
-	pool                *sync.Pool             `description:"Wrapper.Context资源池"`
-	ctx                 context.Context        `description:"根Context"`
-	cancel              context.CancelFunc     `description:"取消函数"`
-	mux                 MuxWrapper             `description:"后端路由器"`
-	isStarted           chan struct{}          `description:"标记程序是否完成启动"`
-	groupRouters        []*GroupRouterMeta     `description:"路由组对象"`
-	events              []*Event               `description:"启动和关闭事件"`
-	finder              Finder[RouteIface]     `description:"路由对象查找器"`
-	previousDeps        []DependenceHandle     `description:"在接口参数校验前执行的依赖函数"`
-	afterDeps           []DependenceHandle     `description:"在接口参数校验成功后执行的依赖函数(相当于路由函数前钩子)"`
-	beforeWrite         func(c *Context)       `description:"在数据写入响应流之前执行的钩子方法"`
-	hotListener         func(wrapper *Wrapper) `description:"热开关监听器"`
-	routeErrorFormatter RouteErrorFormatter    `description:"handle返回错误时的格式化方法"`
+	conf                *Config             `description:"配置项"`
+	openApi             *openapi.OpenApi    `description:"模型文档"`
+	pool                *sync.Pool          `description:"Wrapper.Context资源池"`
+	ctx                 context.Context     `description:"根Context"`
+	cancel              context.CancelFunc  `description:"取消函数"`
+	mux                 MuxWrapper          `description:"后端路由器"`
+	isStarted           chan struct{}       `description:"标记程序是否完成启动"`
+	groupRouters        []*GroupRouterMeta  `description:"路由组对象"`
+	events              []*Event            `description:"启动和关闭事件"`
+	finder              Finder[RouteIface]  `description:"路由对象查找器"`
+	previousDeps        []DependenceHandle  `description:"在接口参数校验前执行的依赖函数"`
+	afterDeps           []DependenceHandle  `description:"在接口参数校验成功后执行的依赖函数(相当于路由函数前钩子)"`
+	beforeWrite         func(c *Context)    `description:"在数据写入响应流之前执行的钩子方法"`
+	routeErrorFormatter RouteErrorFormatter `description:"handle返回错误时的格式化方法"`
 }
 
 type FastApi = Wrapper
 
-type Profile struct {
-	Host                               string        `json:"host,omitempty" description:"运行地址"`
-	Port                               string        `json:"port,omitempty" description:"运行端口"`
-	Title                              string        `json:"title,omitempty" description:"程序名,同时作为日志文件名"`
-	Version                            string        `json:"version,omitempty" description:"程序版本号"`
-	Description                        string        `json:"description,omitempty" description:"程序描述"`
-	ShutdownTimeout                    time.Duration `json:"shutdownTimeout,omitempty" description:"平滑关机,单位秒"`
-	SwaggerDisabled                    bool          `json:"swaggerDisabled,omitempty" description:"禁用自动文档"`
-	ContextAutomaticDerivationDisabled bool          `json:"contextAutomaticDerivationDisabled,omitempty" description:"禁用context自动派生"`
+// Default 创建应用，多次调用获取同一个对象
+func Default(c ...Config) *Wrapper {
+	one.Do(func() {
+		conf := cleanConfig(c...)
+		wrapper = New(conf)
+	})
+
+	return wrapper
+}
+
+type Config struct {
+	Title                 string `json:"title,omitempty" description:"程序名,同时作为日志文件名"`
+	Description           string `json:"description,omitempty" description:"APP描述"`
+	Version               string `json:"version,omitempty" description:"APP版本号"`
+	ShutdownTimeout       int    `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
+	DisableSwagAutoCreate bool   `json:"disable_swag_auto_create,omitempty" description:"禁用OpenApi文档，但是不禁用参数校验"`
 	// 默认情况下当请求校验过程遇到错误字段时，仍会继续向下校验其他字段，并最终将所有的错误消息一次性返回给调用方-
 	// 当此设置被开启后，在遇到一个错误的参数时，会立刻停止终止流程，直接返回错误消息
-	StopImmediatelyWhenErrorOccurs bool `json:"stopImmediatelyWhenErrorOccurs" description:"是否在遇到错误字段时立刻停止校验"`
+	StopImmediatelyWhenErrorOccurs     bool `json:"stopImmediatelyWhenErrorOccurs" description:"是否在遇到错误字段时立刻停止校验"`
+	ContextAutomaticDerivationDisabled bool `json:"contextAutomaticDerivationDisabled,omitempty" description:"禁止为每一个请求创建单独的Context"`
+	DisableResponseValidate            bool `json:"disableResponseValidate" description:"是否禁用响应参数校验，仅JSON类型有效"`
+
+	host string
+	port string
 }
 
-func (f *Wrapper) initService() *Wrapper {
-	if f.conf.Version == "" {
-		f.conf.Version = "1.0.0"
+func (c *Config) Copy() *Config {
+	return &Config{
+		Title:                              c.Title,
+		Description:                        c.Description,
+		Version:                            c.Version,
+		ShutdownTimeout:                    c.ShutdownTimeout,
+		DisableSwagAutoCreate:              c.DisableSwagAutoCreate,
+		ContextAutomaticDerivationDisabled: c.ContextAutomaticDerivationDisabled,
+		StopImmediatelyWhenErrorOccurs:     c.StopImmediatelyWhenErrorOccurs,
+		DisableResponseValidate:            c.DisableResponseValidate,
+		host:                               c.host,
+		port:                               c.port,
 	}
-
-	f.pool = &sync.Pool{
-		New: func() interface{} {
-			c := new(Context)
-			return c
-		},
-	}
-
-	return f
 }
+
+func (c *Config) ListenAddr() string { return net.JoinHostPort(c.host, c.port) }
 
 // 初始化路由, 必须在路由添加完成，swagger注册之前调用
 func (f *Wrapper) initRoutes() *Wrapper {
 	var err error
 	// 解析路由组路由
 	for _, group := range f.groupRouters {
+		// 必须先设置参数，再 Init 初始化
+		group.errorFormatter = f.routeErrorFormatter
+
 		err = group.Init()
 		if err != nil {
 			panic(fmt.Errorf("group-router: '%s' created failld, %v", group.String(), err))
 		}
-		group.errorFormatter = f.routeErrorFormatter
 	}
 
 	return f
@@ -121,7 +132,7 @@ func (f *Wrapper) initFinder() *Wrapper {
 // 创建 OpenApi Swagger 文档, 必须等上层注册完路由之后才能调用
 func (f *Wrapper) initSwagger() *Wrapper {
 	f.openApi = openapi.NewOpenApi(f.Config().Title, f.Config().Version, f.Config().Description)
-	if !f.conf.SwaggerDisabled {
+	if !f.conf.DisableSwagAutoCreate {
 		f.registerRouteDoc()
 		f.registerRouteHandle()
 	}
@@ -129,37 +140,13 @@ func (f *Wrapper) initSwagger() *Wrapper {
 	return f
 }
 
-func (f *Wrapper) initMux() *Wrapper {
-	if f.mux == nil {
-		panic("mux is not initialized")
-	}
-
-	f.wrap(f.mux)
-	return f
-}
-
-// 初始化Wrapper,并完成服务依赖的建立
-// 启动前，必须显式的初始化Wrapper的基本配置，若初始化中发生异常则panic
-func (f *Wrapper) initialize() *Wrapper {
-	SetJsonEngine(jsoniter.ConfigCompatibleWithStandardLibrary)
-	LazyInit()
-
-	f.initService()
-	f.initRoutes()
-	f.initFinder()
-	f.initMux()
-	f.initSwagger() // === 必须最后调用
-
-	return f
-}
-
 // 绑定数据到路由器上
-func (f *Wrapper) wrap(mux MuxWrapper) *Wrapper {
+func (f *Wrapper) initMux() *Wrapper {
 	var err error
 	// 挂载路由到路由器上
 	for _, group := range f.groupRouters {
 		for _, route := range group.Routes() {
-			err = mux.BindRoute(route.Swagger().Method, route.Swagger().Url, f.Handler)
+			err = f.mux.BindRoute(route.Swagger().Method, route.Swagger().Url, f.Handler)
 			if err != nil {
 				// 此时日志已初始化完毕
 				Errorf(
@@ -172,24 +159,38 @@ func (f *Wrapper) wrap(mux MuxWrapper) *Wrapper {
 	return f
 }
 
+// 初始化Wrapper,并完成服务依赖的建立，启动前，必须显式的初始化Wrapper的基本配置，若初始化中发生异常则panic
+func (f *Wrapper) initialize() *Wrapper {
+	if f.mux == nil {
+		panic("mux is not initialized")
+	}
+
+	if f.conf.Version == "" {
+		f.conf.Version = "1.0.0"
+	}
+
+	f.pool = &sync.Pool{New: func() interface{} {
+		c := new(Context)
+		return c
+	}}
+
+	SetJsonEngine(jsoniter.ConfigCompatibleWithStandardLibrary)
+	LazyInit()
+
+	f.initRoutes()
+	f.initFinder()
+	f.initMux()
+	f.initSwagger() // === 必须最后调用
+
+	return f
+}
+
 // ================================ Api ================================
 
-func (f *Wrapper) Config() Config {
-	return Config{
-		Version:                        f.conf.Version,
-		Description:                    f.conf.Description,
-		Title:                          f.conf.Title,
-		ShutdownTimeout:                int(f.conf.ShutdownTimeout.Seconds()),
-		DisableSwagAutoCreate:          f.conf.SwaggerDisabled,
-		StopImmediatelyWhenErrorOccurs: f.conf.StopImmediatelyWhenErrorOccurs,
-	}
-}
+func (f *Wrapper) Config() *Config { return f.conf.Copy() }
 
 // Done 监听程序是否退出或正在关闭，仅当程序关闭时解除阻塞
 func (f *Wrapper) Done() <-chan struct{} { return f.ctx.Done() }
-
-// Deprecated: RootCtx 根 context, 使用 Wrapper.Context()
-func (f *Wrapper) RootCtx() context.Context { return f.ctx }
 
 // Context Wrapper根 context
 func (f *Wrapper) Context() context.Context { return f.ctx }
@@ -204,9 +205,6 @@ func (f *Wrapper) SetMux(mux MuxWrapper) *Wrapper {
 }
 
 // OnEvent 添加事件
-//
-//	@param	kind	事件类型，取值需为	"startup"/"shutdown"
-//	@param	fs		func()		事件
 func (f *Wrapper) OnEvent(kind EventKind, fc func()) *Wrapper {
 	switch kind {
 	case StartupEvent:
@@ -225,16 +223,12 @@ func (f *Wrapper) OnEvent(kind EventKind, fc func()) *Wrapper {
 }
 
 // SetDescription 设置APP的详细描述信息
-//
-//	@param	Description	string	详细描述信息
 func (f *Wrapper) SetDescription(description string) *Wrapper {
 	f.conf.Description = description
 	return f
 }
 
 // IncludeRouter 注册一个路由组
-//
-//	@param	router	*Router	路由组
 func (f *Wrapper) IncludeRouter(router GroupRouter) *Wrapper {
 	f.groupRouters = append(f.groupRouters, NewGroupRouteMeta(router, f.routeErrorFormatter))
 	return f
@@ -277,41 +271,9 @@ func (f *Wrapper) Use(hooks ...DependenceHandle) *Wrapper {
 	return f.UseAfter(hooks...)
 }
 
-// UseDepends 【别名】添加一个数据校验后依赖函数
+// Deprecated:UseDepends 【别名】添加一个数据校验后依赖函数
 func (f *Wrapper) UseDepends(hooks ...DependenceHandle) *Wrapper {
 	return f.UseAfter(hooks...)
-}
-
-// ActivateHotSwitch 创建一个热开关，监听信号量(默认值：30)，用来触发一个动作
-func (f *Wrapper) ActivateHotSwitch(s ...int) *Wrapper {
-	var st = HotSwitchSigint
-	if len(s) > 0 {
-		st = s[0]
-	}
-
-	swt := make(chan os.Signal, 1)
-	signal.Notify(swt, syscall.Signal(st))
-
-	go func() {
-		for {
-			select {
-			case <-f.Done():
-				return
-			case <-swt:
-				f.hotListener(f)
-			}
-		}
-	}()
-
-	return f
-}
-
-// SetHotListener 设置热开关监听器
-func (f *Wrapper) SetHotListener(listener func(wrapper *Wrapper)) *Wrapper {
-	if listener != nil {
-		f.hotListener = listener
-	}
-	return f
 }
 
 // SetRouteErrorFormatter 设置路由错误信息格式化函数
@@ -324,48 +286,10 @@ func (f *Wrapper) SetRouteErrorFormatter(handle RouteErrorFormatter, opt ...Rout
 		f.routeErrorFormatter = handle
 	}
 	if len(opt) > 0 {
-		f.SetRouteErrorStatusCode(opt[0].StatusCode)
-		f.SetRouteErrorResponse(opt[0].ResponseMode)
-		openapi.RouteErrorOption.Description = opt[0].Description
+		openapi.SetRouteErrorResponse(opt[0].ResponseMode)
+		openapi.SetRouteErrorStatusCode(opt[0].StatusCode)
+		openapi.SetRouteErrorDescription(opt[0].Description)
 	}
-	return f
-}
-
-// SetRouteErrorStatusCode 描述错误信息格式化函数 RouteErrorFormatter 的响应状态码
-//
-//	由于暂无法准确模拟出一个有效的 Context 对象，因此无法通过 RouteErrorFormatter 来推断出错误响应码和错误响应体
-//	故此处需要配合 SetRouteErrorResponse 来显示设置错误响应信息，以生成openApi文档，未设置则不构建此部分的文档
-func (f *Wrapper) SetRouteErrorStatusCode(statusCode int) *Wrapper {
-	if statusCode == 0 {
-		Warn("route error status code is 0, ignore")
-	} else {
-		openapi.RouteErrorOption.StatusCode = statusCode
-	}
-	return f
-}
-
-// SetRouteErrorResponse 描述错误信息格式化函数 RouteErrorFormatter 的响应体
-func (f *Wrapper) SetRouteErrorResponse(model any) *Wrapper {
-	if model == nil {
-		Warn("route error response is nil, ignore")
-		return f
-	}
-	rt := reflect.TypeOf(model)
-	for rt.Kind() == reflect.Pointer {
-		rt = rt.Elem()
-	}
-	if rt.Kind() != reflect.Struct {
-		Warn("route error response model is not struct, ignore")
-		return f
-	}
-
-	meta, err := openapi.BaseModelMetaFrom(model, 0, openapi.RouteParamResponse)
-	if err != nil {
-		Warnf("route error response model is invalid, err: %s", err.Error())
-	} else {
-		openapi.RouteErrorOption.ResponseMode = meta
-	}
-
 	return f
 }
 
@@ -373,23 +297,25 @@ func (f *Wrapper) SetRouteErrorResponse(model any) *Wrapper {
 //
 //	@param	timeout	in	修改关机前最大等待时间,	单位秒
 func (f *Wrapper) SetShutdownTimeout(timeout int) *Wrapper {
-	f.conf.ShutdownTimeout = time.Duration(timeout) * time.Second
+	f.conf.ShutdownTimeout = timeout
 	return f
 }
 
 // DisableSwagAutoCreate 禁用文档自动生成
 func (f *Wrapper) DisableSwagAutoCreate() *Wrapper {
-	f.conf.SwaggerDisabled = true
+	f.conf.DisableSwagAutoCreate = true
+	return f
+}
+
+// DisableResponseValidate 禁用响应参数校验, 仅JSON类型有效
+func (f *Wrapper) DisableResponseValidate() *Wrapper {
+	f.conf.DisableResponseValidate = true
 	return f
 }
 
 // Shutdown 平滑关闭
 func (f *Wrapper) Shutdown() {
 	Debug("ready to shutdown...")
-	ctx, cancelFunc := context.WithTimeout(f.ctx, f.conf.ShutdownTimeout)
-	defer cancelFunc()
-
-	f.cancel() // 标记结束
 
 	// 执行关机前事件
 	for _, event := range f.events {
@@ -398,13 +324,12 @@ func (f *Wrapper) Shutdown() {
 		}
 	}
 
-	err := f.mux.ShutdownWithTimeout(f.conf.ShutdownTimeout)
+	err := f.mux.ShutdownWithTimeout(time.Duration(f.conf.ShutdownTimeout) * time.Second)
 	if err != nil {
 		Warnf("graceful shutdown failed, err: %s", err)
 	}
-	// Engine().Shutdown() 执行成功后将会直接退出进程，以下代码段仅当超时未关闭时执行到。
-	// Shutdown() 不会关闭设置了 keepalive 的连接，除非设置了 ReadTimeout ，因此设置以下内容以确保关闭.
-	<-ctx.Done()
+
+	f.cancel() // 停止所有请求，需最后关闭
 }
 
 // Run 启动服务, 此方法会阻塞运行，因此必须放在main函数结尾
@@ -412,12 +337,11 @@ func (f *Wrapper) Shutdown() {
 // 当 Interrupt 信号被触发时，首先会关闭 根Context，然后逐步执行“关机事件”，最后调用平滑关闭方法，关闭服务
 // 启动前通过 SetShutdownTimeout 设置"平滑关闭异常时"的最大超时时间
 func (f *Wrapper) Run(host, port string) {
-	f.conf.Host = host
-	f.conf.Port = port
+	f.conf.host = host
+	f.conf.port = port
 	Debugf("%s starting...", f.Config().Title)
 
 	f.initialize()
-	f.ActivateHotSwitch()
 
 	// 执行启动前事件
 	for _, event := range f.events {
@@ -427,7 +351,7 @@ func (f *Wrapper) Run(host, port string) {
 	}
 
 	f.isStarted <- struct{}{} // 解除阻塞上层的任务
-	addr := net.JoinHostPort(f.conf.Host, f.conf.Port)
+	addr := net.JoinHostPort(f.conf.host, f.conf.port)
 	Debug("http server listening on: " + addr)
 
 	close(f.isStarted)
@@ -447,17 +371,7 @@ func (f *Wrapper) Run(host, port string) {
 	f.Shutdown()
 }
 
-type Config struct {
-	Version                            string `json:"version,omitempty" description:"APP版本号"`
-	Description                        string `json:"description,omitempty" description:"APP描述"`
-	Title                              string `json:"title,omitempty" description:"APP标题"`
-	ShutdownTimeout                    int    `json:"shutdown_timeout,omitempty" description:"平滑关机,单位秒"`
-	DisableSwagAutoCreate              bool   `json:"disable_swag_auto_create,omitempty" description:"禁用OpenApi文档，但是不禁用参数校验"`
-	StopImmediatelyWhenErrorOccurs     bool   `json:"stopImmediatelyWhenErrorOccurs" description:"是否在遇到错误字段时立刻停止校验"`
-	ContextAutomaticDerivationDisabled bool   `json:"contextAutomaticDerivationDisabled,omitempty" description:"禁止为每一个请求创建单独的Context"`
-}
-
-func cleanConfig(confs ...Config) Config {
+func cleanConfig(cs ...Config) Config {
 	conf := Config{
 		Version:                            "1.0.0",
 		Description:                        "FastAPI Application",
@@ -467,54 +381,32 @@ func cleanConfig(confs ...Config) Config {
 		StopImmediatelyWhenErrorOccurs:     false,
 		ContextAutomaticDerivationDisabled: false,
 	}
-	if len(confs) > 0 {
-		if confs[0].Title != "" {
-			conf.Title = confs[0].Title
+	if len(cs) > 0 {
+		if cs[0].Title != "" {
+			conf.Title = cs[0].Title
 		}
-		if confs[0].Version != "" {
-			conf.Version = confs[0].Version
+		if cs[0].Version != "" {
+			conf.Version = cs[0].Version
 		}
-		if confs[0].Description != "" {
-			conf.Description = confs[0].Description
+		if cs[0].Description != "" {
+			conf.Description = cs[0].Description
 		}
-		conf.ShutdownTimeout = confs[0].ShutdownTimeout
-		conf.DisableSwagAutoCreate = confs[0].DisableSwagAutoCreate
-		conf.StopImmediatelyWhenErrorOccurs = confs[0].StopImmediatelyWhenErrorOccurs
-		conf.ContextAutomaticDerivationDisabled = confs[0].ContextAutomaticDerivationDisabled
+		conf.ShutdownTimeout = cs[0].ShutdownTimeout
+		conf.DisableSwagAutoCreate = cs[0].DisableSwagAutoCreate
+		conf.StopImmediatelyWhenErrorOccurs = cs[0].StopImmediatelyWhenErrorOccurs
+		conf.ContextAutomaticDerivationDisabled = cs[0].ContextAutomaticDerivationDisabled
 	}
 
 	return conf
 }
 
-// New 实例化一个默认 Wrapper, 此方法与 Create 不能同时使用
-// 与 Create 区别在于：Create 每次都会创建一个新的实例，NewNotStruct 多次调用获得的是同一个实例
-// 语义相当于 __new__ 实现的单例
-func New(c ...Config) *Wrapper {
-	one.Do(func() {
-		conf := cleanConfig(c...)
-		wrapper = Create(conf)
-	})
-
-	return wrapper
-}
-
-// Create 创建一个新的 Wrapper 服务
+// New 创建一个新的 Wrapper 服务
 // 其存在目的在于在同一个应用里创建多个 Wrapper 实例，并允许每个实例绑定不同的服务器实现
-//
-// getWrapper
-func Create(c Config) *Wrapper {
+func New(c Config) *Wrapper {
 	conf := cleanConfig(c)
 
 	app := &Wrapper{
-		conf: &Profile{
-			Title:                              conf.Title,
-			Version:                            conf.Version,
-			Description:                        conf.Description,
-			SwaggerDisabled:                    conf.DisableSwagAutoCreate,
-			ShutdownTimeout:                    time.Duration(conf.ShutdownTimeout) * time.Second,
-			ContextAutomaticDerivationDisabled: conf.ContextAutomaticDerivationDisabled,
-			StopImmediatelyWhenErrorOccurs:     conf.StopImmediatelyWhenErrorOccurs,
-		},
+		conf:                conf.Copy(),
 		groupRouters:        make([]*GroupRouterMeta, 0),
 		isStarted:           make(chan struct{}, 1),
 		previousDeps:        make([]DependenceHandle, 0),
@@ -537,8 +429,5 @@ func Create(c Config) *Wrapper {
 		app.DisableSwagAutoCreate()
 	}
 
-	app.hotListener = func(wrapper *Wrapper) {
-		Debugf("hot-listener receive signal at: %s", time.Now().Format(time.DateTime))
-	}
 	return app
 }

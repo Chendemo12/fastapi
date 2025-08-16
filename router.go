@@ -2,9 +2,10 @@ package fastapi
 
 import (
 	"fmt"
-	"github.com/Chendemo12/fastapi/openapi"
 	"net/http"
 	"reflect"
+
+	"github.com/Chendemo12/fastapi/openapi"
 )
 
 type RouteType string
@@ -22,11 +23,11 @@ type QueryParamMode string
 const (
 	// NoQueryParamMode 不存在查询参数 = 0
 	NoQueryParamMode QueryParamMode = "NoQueryParamMode"
-	// SimpleQueryParamMode 只有基本数据类型的简单查询参数类型，不包含结构体类型的查询参数 = 1
+	// Deprecated:SimpleQueryParamMode 只有基本数据类型的简单查询参数类型，不包含结构体类型的查询参数 = 1
 	SimpleQueryParamMode QueryParamMode = "SimpleQueryParamMode"
 	// StructQueryParamMode 以结构体形式定义的查询参数模式 = 4
 	StructQueryParamMode QueryParamMode = "StructQueryParamMode"
-	// MixQueryParamMode 二种形式都有的混合模式 = 7
+	// Deprecated:MixQueryParamMode 二种形式都有的混合模式 = 7
 	MixQueryParamMode QueryParamMode = "MixQueryParamMode"
 )
 
@@ -44,6 +45,7 @@ type Scanner interface {
 // 路由组接口定义或泛型接口定义都需实现此接口
 type RouteIface interface {
 	Scanner
+	Id() string
 	RouteType() RouteType
 	Swagger() *openapi.RouteSwagger           // 路由文档
 	QueryBinders() []*ParamBinder             // 查询参数的处理接口(查询参数名:处理接口)，每一个查询参数都必须绑定一个 ParamBinder
@@ -53,9 +55,8 @@ type RouteIface interface {
 	NewStructQuery() any                      // 创建一个结构体查询参数实例,对于POST/PATCH/PUT, 即为 NewInParams 的最后一个元素; 对于GET/DELETE则为nil
 	NewRequestModel() any                     // 创建一个请求体实例,对于POST/PATCH/PUT, 即为 NewInParams 的最后一个元素; 对于GET/DELETE则为nil
 	HasStructQuery() bool                     // 是否存在结构体查询参数，如果存在则会调用 NewStructQuery 获得结构体实例
-	Call(ctx *Context)                        // 调用API, 需要将响应结果写入 Response 内
-	ResponseValidate(c *Context, stopImmediately bool) []*openapi.ValidationError
-	Id() string
+	HasFileRequest() bool                     // 是否存在上传文件
+	Call(in []reflect.Value) []reflect.Value  // 调用API
 }
 
 // ParamBinder 参数验证模型
@@ -64,8 +65,8 @@ type ParamBinder struct {
 	QModel         *openapi.QModel        `json:"-"`
 	RequestModel   *openapi.BaseModelMeta `json:"-"`
 	ResponseModel  *openapi.BaseModelMeta `json:"-"`
-	Title          string                 `json:"title,omitempty"`
-	RouteParamType openapi.RouteParamType `json:"route_param_type"`
+	Title          string                 `json:"-"`
+	RouteParamType openapi.RouteParamType `json:"-"`
 }
 
 // BaseModel 基本数据模型, 对于上层的路由定义其请求体和响应体都应为继承此结构体的结构体

@@ -1,10 +1,11 @@
 package pathschema
 
 import (
-	"github.com/Chendemo12/fastapi/utils"
 	"regexp"
 	"strings"
 	"unicode"
+
+	"github.com/Chendemo12/fastapi/utils"
 )
 
 const (

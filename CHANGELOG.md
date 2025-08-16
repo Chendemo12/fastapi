@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 0.3.1 - (2025-08-15)
+
+### Feat
+
+### BREAKING
+
+- 移除`Wrapper.ActivateHotSwitch`相关方法。
+- 移除`Wrapper.RootCtx`方法。
+- 移除`Wrapper.SetRouteErrorStatusCode`方法。
+- 移除`Wrapper.SetRouteErrorResponse`方法。
+- **不再支持非结构体参数**，请使用结构体来定义查询参数或请求体参数。
+
 ## 0.3.0 - (2025-05-04)
 
 ### Feat

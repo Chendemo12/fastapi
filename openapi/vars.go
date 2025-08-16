@@ -1,8 +1,10 @@
 package openapi
 
 import (
-	"github.com/Chendemo12/fastapi/utils"
 	"net/http"
+	"reflect"
+
+	"github.com/Chendemo12/fastapi/utils"
 )
 
 const (
@@ -16,10 +18,11 @@ var ValidationErrorDefinition = &ValidationError{}
 // ValidationErrorResponseDefinition 请求体相应体错误消息
 var ValidationErrorResponseDefinition = &HTTPValidationError{}
 
-var RouteErrorOption = &RouteErrorOpt{
+// 自定义路由错误响应的文档描述
+var routeErrorOption = &RouteErrorOpt{
 	StatusCode:   http.StatusInternalServerError,
-	ResponseMode: nil,
 	Description:  http.StatusText(http.StatusInternalServerError),
+	ResponseMode: nil,
 }
 
 type dict map[string]any
@@ -27,8 +30,8 @@ type dict map[string]any
 // RouteErrorOpt 错误处理函数选项
 type RouteErrorOpt struct {
 	StatusCode   int            `json:"statusCode" validate:"required" description:"请求错误时的状态码"`
-	ResponseMode *BaseModelMeta `json:"responseMode" validate:"required" description:"请求错误时的响应体，空则为字符串"`
 	Description  string         `json:"description,omitempty" description:"错误文档"`
+	ResponseMode *BaseModelMeta `json:"responseMode" validate:"required" description:"请求错误时的响应体，空则为字符串"`
 }
 
 // ValidationError 参数校验错误
@@ -126,3 +129,36 @@ func (v *HTTPValidationError) Error() string {
 }
 
 func (v *HTTPValidationError) String() string { return v.Error() }
+
+// SetRouteErrorResponse 设置路由文档错误响应的响应体
+func SetRouteErrorResponse(model any) {
+	if model == nil {
+		return
+	}
+	rt := reflect.TypeOf(model)
+	for rt.Kind() == reflect.Pointer {
+		rt = rt.Elem()
+	}
+	if rt.Kind() != reflect.Struct {
+		return
+	}
+
+	meta, err := BaseModelMetaFrom(model, 0, RouteParamResponse)
+	if err == nil {
+		routeErrorOption.ResponseMode = meta
+	}
+}
+
+// SetRouteErrorStatusCode 设置路由文档错误响应的状态码
+func SetRouteErrorStatusCode(code int) {
+	if code > 0 && code != 200 {
+		routeErrorOption.StatusCode = code
+	}
+}
+
+// SetRouteErrorDescription 设置路由文档错误响应的文字描述
+func SetRouteErrorDescription(desc string) {
+	if desc != "" {
+		routeErrorOption.Description = desc
+	}
+}

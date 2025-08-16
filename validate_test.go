@@ -1,8 +1,9 @@
 package fastapi
 
 import (
-	jsoniter "github.com/json-iterator/go"
 	"testing"
+
+	jsoniter "github.com/json-iterator/go"
 )
 
 type Person struct {

@@ -2,13 +2,11 @@ package fastapi
 
 import (
 	"context"
-	"github.com/Chendemo12/fastapi/openapi"
-	"github.com/Chendemo12/fastapi/utils"
-	"github.com/go-playground/validator/v10"
-	"io"
-	"net/http"
 	"sync"
 	"time"
+
+	"github.com/Chendemo12/fastapi/utils"
+	"github.com/go-playground/validator/v10"
 )
 
 // Context 路由上下文信息, 也是钩子函数的操作句柄
@@ -230,138 +228,10 @@ func (c *Context) Status(code int) {
 	c.response.StatusCode = code
 }
 
-// ContentType 允许路由组路由函数修改响应MIME
-// 由于路由组路由函数 GroupRouteHandler 签名的限制；其返回ContentType默认为"application/json; charset=utf-8"
-// 允许通过此方法进行修改
-func (c *Context) ContentType(contentType string) {
-	// TODO：目前无法生效
-	c.response.ContentType = contentType
-}
-
 // ================================ 范型路由方法 ================================
 
 // Validator 获取请求体验证器
 func (c *Context) Validator() *validator.Validate { return defaultValidator }
-
-// JSONResponse 仅支持可以json序列化的响应体 (校验返回值)
-//
-// 对于结构体类型: 其返回值为序列化后的json
-// 对于基本数据类型: 其返回值为实际数值
-//
-//	@param	statusCode	int	响应状态码
-//	@param	content		any	可以json序列化的类型
-//	@return	resp *Response response返回体
-func (c *Context) JSONResponse(statusCode int, content any) *Response {
-	c.response.Type = JsonResponseType
-	c.response.StatusCode = statusCode
-	c.response.Content = content
-	c.response.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
-
-	// 通过校验
-	return c.response
-}
-
-// OKResponse 返回状态码为200的 JSONResponse (校验返回值)
-//
-//	@param	content	any	可以json序列化的类型
-//	@return	resp *Response response返回体
-func (c *Context) OKResponse(content any) *Response {
-	return c.JSONResponse(http.StatusOK, content)
-}
-
-// StringResponse 返回值为字符串对象 (不校验返回值)
-//
-//	@param	statusCode	int		响应状态码
-//	@param	content		string	字符串文本
-//	@return	resp *Response response返回体
-func (c *Context) StringResponse(statusCode int, content string) *Response {
-	c.response.Type = StringResponseType
-	c.response.StatusCode = statusCode
-	c.response.Content = content
-	c.response.ContentType = openapi.MIMETextPlainCharsetUTF8
-
-	return c.response
-}
-
-// StreamResponse 返回值为字节流对象 (不校验返回值)
-//
-//	@param	statusCode	int			响应状态码
-//	@param	reader		io.Reader	字节流
-//	@param	mime		string		返回头媒体资源类型信息,缺省则为"text/plain"
-//	@return	resp *Response response返回体
-func (c *Context) StreamResponse(statusCode int, reader io.Reader, mime ...string) *Response {
-	c.response.StatusCode = statusCode
-	c.response.Content = reader
-	c.response.Type = StreamResponseType
-
-	if len(mime) > 0 {
-		c.response.ContentType = mime[0]
-	} else {
-		c.response.ContentType = openapi.MIMETextPlain
-	}
-
-	return c.response
-}
-
-// FileResponse 返回值为文件对象，如：照片视频文件流等, 若文件不存在，则状态码置为404 (不校验返回值)
-//
-//	@param	filepath	string	文件路径
-//	@return	resp *Response response返回体
-func (c *Context) FileResponse(filepath string) *Response {
-	c.response.StatusCode = http.StatusOK
-	c.response.Content = filepath
-	c.response.Type = FileResponseType
-
-	return c.response
-}
-
-// ErrorResponse 返回一个服务器错误 (不校验返回值)
-//
-//	@param	content	any	错误消息
-//	@return	resp *Response response返回体
-func (c *Context) ErrorResponse(content any) *Response {
-	c.response.StatusCode = http.StatusInternalServerError
-	c.response.Content = content
-	c.response.Type = JsonResponseType
-	c.response.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
-
-	return c.response
-}
-
-// HTMLResponse 返回一段HTML文本 (不校验返回值)
-//
-//	@param	statusCode	int		响应状态码
-//	@param	content		string	HTML文本字符串
-//	@return	resp *Response response返回体
-func (c *Context) HTMLResponse(statusCode int, content []byte) *Response {
-	c.response.StatusCode = statusCode
-	c.response.Content = content
-	c.response.ContentType = openapi.MIMETextHTMLCharsetUTF8
-	c.response.Type = HtmlResponseType
-
-	return c.response
-}
-
-// AnyResponse 自定义响应体,响应体可是任意类型 (不校验返回值)
-//
-//	@param	statusCode	int			响应状态码
-//	@param	content		any			响应体
-//	@param	contentType	[]string	响应头MIME,	默认值为“application/json;	charset=utf-8”
-//	@return	resp *Response response返回体
-func (c *Context) AnyResponse(statusCode int, content any, contentType ...string) *Response {
-	var ct string
-	if len(contentType) > 0 {
-		ct = contentType[0]
-	} else {
-		ct = openapi.MIMEApplicationJSONCharsetUTF8
-	}
-	c.response.StatusCode = statusCode
-	c.response.Content = content
-	c.response.ContentType = ct
-	c.response.Type = AnyResponseType
-
-	return c.response
-}
 
 // ================================ SHORTCUTS ================================
 

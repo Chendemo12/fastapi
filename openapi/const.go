@@ -92,7 +92,14 @@ const CustomQueryNameConnector = "_"
 
 const ReminderWhenResponseModelIsNil = " `| 路由未明确定义返回值，文档处缺省为map类型，实际可以是任意类型`"
 
-const TimePkg = "time.Time"
+const (
+	TimePkg = "time.Time"
+	// FileRequestPkg 文件请求
+	FileRequestPkg = "fastapi.File"
+	// FileResponsePkg 文件响应
+	FileResponsePkg = "fastapi.FileResponse"
+)
+
 const ( // 针对时间类型的查询参数格式化选项
 	TimeParamSchemaFormat     = "time"
 	DateParamSchemaFormat     = "date"
@@ -132,42 +139,44 @@ func AddUtf8Charset(m string) string {
 
 const HeaderContentType = "Content-Type"
 
-const (
-	MIMETextJavaScript             string = "text/javascript"
-	MIMEApplicationForm            string = "application/x-www-form-urlencoded"
-	MIMEOctetStream                string = "application/octet-stream"
-	MIMEMultipartForm              string = "multipart/form-data"
-	MIMETextXML                    string = "text/xml"
-	MIMETextXMLCharsetUTF8         string = "text/xml; charset=utf-8"
-	MIMETextHTML                   string = "text/html"
-	MIMETextHTMLCharsetUTF8        string = "text/html; charset=utf-8"
-	MIMETextPlain                  string = "text/plain"
-	MIMETextPlainCharsetUTF8       string = "text/plain; charset=utf-8"
-	MIMETextCSS                    string = "text/css"
-	MIMETextCSSCharsetUTF8         string = "text/css; charset=utf-8"
-	MIMETextJavaScriptCharsetUTF8  string = "text/javascript; charset=utf-8"
-	MIMEApplicationXML             string = "application/xml"
-	MIMEApplicationXMLCharsetUTF8  string = "application/xml; charset=utf-8"
-	MIMEApplicationTOML            string = "application/toml"
-	MIMEApplicationTOMLCharsetUTF8 string = "application/toml; charset=utf-8"
-	MIMEApplicationYAML            string = "application/x-yaml"
-	MIMEApplicationYAMLCharsetUTF8 string = "application/x-yaml; charset=utf-8"
-	MIMEApplicationJSON            string = "application/json"
-	MIMEApplicationJSONCharsetUTF8 string = "application/json; charset=utf-8"
+type ContentType string
 
-	MIMEJpg  = "image/jpeg"
-	MIMEJpeg = "image/jpeg"
-	MIMEPng  = "image/png"
-	MIMEGif  = "image/gif"
-	MIMETiff = "image/tiff"
-	MIMEBmp  = "image/bmp"
-	MIMEWebp = "image/webp"
-	MIMESvg  = "image/svg+xml"
-	MIMEPdf  = "application/pdf"
-	MIMEZip  = "application/zip"
-	MIMEPpt  = "application/vnd.ms-powerpoint"
-	MIMEWord = "application/msword"
-	MIMEXls  = "application/vnd.ms-excel"
+const (
+	MIMETextJavaScript             ContentType = "text/javascript"
+	MIMEApplicationForm            ContentType = "application/x-www-form-urlencoded"
+	MIMEOctetStream                ContentType = "application/octet-stream"
+	MIMEMultipartForm              ContentType = "multipart/form-data"
+	MIMETextXML                    ContentType = "text/xml"
+	MIMETextXMLCharsetUTF8         ContentType = "text/xml; charset=utf-8"
+	MIMETextHTML                   ContentType = "text/html"
+	MIMETextHTMLCharsetUTF8        ContentType = "text/html; charset=utf-8"
+	MIMETextPlain                  ContentType = "text/plain"
+	MIMETextPlainCharsetUTF8       ContentType = "text/plain; charset=utf-8"
+	MIMETextCSS                    ContentType = "text/css"
+	MIMETextCSSCharsetUTF8         ContentType = "text/css; charset=utf-8"
+	MIMETextJavaScriptCharsetUTF8  ContentType = "text/javascript; charset=utf-8"
+	MIMEApplicationXML             ContentType = "application/xml"
+	MIMEApplicationXMLCharsetUTF8  ContentType = "application/xml; charset=utf-8"
+	MIMEApplicationTOML            ContentType = "application/toml"
+	MIMEApplicationTOMLCharsetUTF8 ContentType = "application/toml; charset=utf-8"
+	MIMEApplicationYAML            ContentType = "application/x-yaml"
+	MIMEApplicationYAMLCharsetUTF8 ContentType = "application/x-yaml; charset=utf-8"
+	MIMEApplicationJSON            ContentType = "application/json"
+	MIMEApplicationJSONCharsetUTF8 ContentType = "application/json; charset=utf-8"
+
+	MIMEJpg  ContentType = "image/jpeg"
+	MIMEJpeg ContentType = "image/jpeg"
+	MIMEPng  ContentType = "image/png"
+	MIMEGif  ContentType = "image/gif"
+	MIMETiff ContentType = "image/tiff"
+	MIMEBmp  ContentType = "image/bmp"
+	MIMEWebp ContentType = "image/webp"
+	MIMESvg  ContentType = "image/svg+xml"
+	MIMEPdf  ContentType = "application/pdf"
+	MIMEZip  ContentType = "application/zip"
+	MIMEPpt  ContentType = "application/vnd.ms-powerpoint"
+	MIMEWord ContentType = "application/msword"
+	MIMEXls  ContentType = "application/vnd.ms-excel"
 )
 
 const ( // see validator.validator_instance.go

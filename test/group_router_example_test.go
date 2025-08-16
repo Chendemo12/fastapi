@@ -2,10 +2,11 @@ package test
 
 import (
 	"errors"
-	"github.com/Chendemo12/fastapi"
-	"github.com/Chendemo12/fastapi/middleware/fiberWrapper"
 	"testing"
 	"time"
+
+	"github.com/Chendemo12/fastapi"
+	"github.com/Chendemo12/fastapi/middleware/fiberWrapper"
 )
 
 // ExampleRouter 创建一个结构体实现fastapi.GroupRouter接口
@@ -14,6 +15,13 @@ type ExampleRouter struct {
 }
 
 func (r *ExampleRouter) Prefix() string { return "/api/example" }
+
+func (r *ExampleRouter) Summary() map[string]string {
+	return map[string]string{
+		"PostUploadFile":  "上传文件",
+		"GetDownloadFile": "请求文件",
+	}
+}
 
 func (r *ExampleRouter) GetAppTitle(c *fastapi.Context) (string, error) {
 	return "FastApi Example", nil
@@ -30,6 +38,7 @@ func (r *ExampleRouter) PatchUpdateAppTitle(c *fastapi.Context, form *UpdateAppT
 func (r *ExampleRouter) GetError(c *fastapi.Context) (string, error) {
 	return "", errors.New("内部错误")
 }
+
 func (r *ExampleRouter) GetDomainRecord(c *fastapi.Context) (*DomainRecord, error) {
 	m := &DomainRecord{
 		Timestamp: 0,
@@ -61,7 +70,8 @@ func (r *ExampleRouter) GetDomainRecord(c *fastapi.Context) (*DomainRecord, erro
 	}
 	return m, nil
 }
-func (r *ExampleRouter) DeleteMydate(c *fastapi.Context, day time.Time, param *DateTime) (*DateTime, error) {
+
+func (r *ExampleRouter) DeleteMyDate(c *fastapi.Context, day time.Time, param *DateTime) (*DateTime, error) {
 	return &DateTime{
 		Name: &Name{
 			Father: "father",
@@ -71,8 +81,20 @@ func (r *ExampleRouter) DeleteMydate(c *fastapi.Context, day time.Time, param *D
 	}, nil
 }
 
-func returnErrorDeps(c *fastapi.Context) error {
-	return errors.New("deps return error")
+func (r *ExampleRouter) PostUploadFile(c *fastapi.Context, file *fastapi.File) (int64, error) {
+	return 1, nil
+}
+
+type DownloadFileReq struct {
+	FileName string `json:"fileName" validate:"required"`
+}
+
+func (r *ExampleRouter) GetFileAttachment(c *fastapi.Context, param *DownloadFileReq) (*fastapi.FileResponse, error) {
+	return fastapi.FileAttachment("../README.md", "README.md"), nil
+}
+
+func (r *ExampleRouter) GetSendFile(c *fastapi.Context) (*fastapi.FileResponse, error) {
+	return fastapi.SendFile("../README.md"), nil
 }
 
 func TestExampleRouter(t *testing.T) {
@@ -93,7 +115,7 @@ func TestExampleRouter(t *testing.T) {
 	app.SetRouteErrorFormatter(FormatErrorMessage, fastapi.RouteErrorOpt{
 		StatusCode:   400,
 		ResponseMode: &ErrorMessage{},
-		Description:  "服务器内部发生错误，请稍后重试",
+		Description:  "此状态代表服务器处理中遇上了错误",
 	})
 	app.UsePrevious(BeforeValidate)
 	//app.Use(returnErrorDeps)
