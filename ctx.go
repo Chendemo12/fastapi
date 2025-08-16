@@ -31,9 +31,10 @@ type Context struct {
 	queryFields  map[string]any `description:"查询参数, 仅记录存在值的查询参数"`
 	queryStruct  any            `description:"结构体查询参数"`
 	requestModel any            `description:"请求体"`
-	response     *Response      `description:"返回值,以减少函数间复制的开销"`
+	file         *File
+	response     *Response `description:"返回值,以减少函数间复制的开销"`
 	// This mutex protects Keys map.
-	mu sync.RWMutex
+	locker sync.RWMutex
 	// 每个请求专有的K/V
 	Keys map[string]any
 }
@@ -51,7 +52,8 @@ func (f *Wrapper) acquireCtx(ctx MuxContext) *Context {
 	c.appCtx = f.ctx
 	c.pathFields = map[string]string{}
 	c.queryFields = map[string]any{}
-	c.mu = sync.RWMutex{}
+	c.file = nil
+	c.locker = sync.RWMutex{}
 
 	return c
 }
@@ -65,6 +67,7 @@ func (f *Wrapper) releaseCtx(ctx *Context) {
 	ctx.routeCtx = nil
 	ctx.routeCancel = nil
 	ctx.requestModel = nil
+	ctx.file = nil
 	ctx.response = nil // 释放内存
 
 	ctx.pathFields = nil
@@ -142,8 +145,8 @@ func (c *Context) PathField(name string, undefined ...string) string {
 // Set is used to store a new key/value pair exclusively for this context.
 // It also lazy initializes  c.Keys if it was not used previously.
 func (c *Context) Set(key string, value any) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.locker.Lock()
+	defer c.locker.Unlock()
 	if c.Keys == nil {
 		c.Keys = make(map[string]any)
 	}
@@ -156,8 +159,8 @@ func (c *Context) Set(key string, value any) {
 // Get returns the value for the given key, ie: (value, true).
 // If the value does not exist it returns (nil, false)
 func (c *Context) Get(key string) (value any, exists bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.locker.RLock()
+	defer c.locker.RUnlock()
 	value, exists = c.Keys[key]
 	return
 }

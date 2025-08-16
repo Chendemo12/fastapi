@@ -2,6 +2,7 @@ package fastapi
 
 import (
 	"io"
+	"mime/multipart"
 	"net/http"
 	"time"
 )
@@ -44,6 +45,7 @@ type MuxContext interface {
 	Cookie(name string) (string, error)            // 读取cookie
 	Params(key string, undefined ...string) string // 读取路径参数
 	Query(key string, undefined ...string) string  // 读取查询参数
+	MultipartForm() (*multipart.Form, error)       // 读取 multipart/form-data 数据
 	BindQuery(obj any) error                       // BindQuery 解析查询参数, error应为 validator.ValidationErrors 类型
 	CustomBindQueryMethod() bool                   // 是否自定义 BindQuery 方法
 	ShouldBind(obj any) error                      // ShouldBind 绑定请求体到obj上 = BodyParser + Validate，error 应为validator.ValidationErrors 类型
@@ -53,19 +55,19 @@ type MuxContext interface {
 
 	// === 与响应有关方法
 
-	Header(key, value string)                                          // 添加响应头 [!!注意是添加响应头，而非读取]
-	SetCookie(cookie *http.Cookie)                                     // 添加cookie
-	Redirect(code int, location string) error                          // 重定向
-	Status(code int)                                                   // 设置响应状态码
-	Write(p []byte) (int, error)                                       // 写入响应字节流,当此方法执行完毕时应中断后续流程
-	SendString(s string) error                                         // 写字符串到响应体,当此方法执行完毕时应中断后续流程
-	SendStream(stream io.Reader, size ...int) error                    // 写入消息流到响应体
-	JSON(code int, data any) error                                     // 写入json响应体
-	JSONP(code int, data any) error                                    // JSONP 支持
-	RenderHTML(name string, bind interface{}, layouts ...string) error // 用于返回HTML模板
-	XML(code int, obj any) error                                       // 写入XML
-	YAML(code int, obj any) error                                      // 写入YAML
-	TOML(code int, obj any) error                                      // 写入TOML
-	File(filepath string) error                                        // 返回文件
-	FileAttachment(filepath, filename string) error                    // 将指定的文件以有效的方式写入主体流, 在客户端，文件通常会以给定的文件名下载
+	Header(key, value string)                       // 添加响应头 [!!注意是添加响应头，而非读取]
+	SetCookie(cookie *http.Cookie)                  // 添加cookie
+	Redirect(code int, location string) error       // 重定向
+	Status(code int)                                // 设置响应状态码
+	SendString(s string) error                      // 写字符串到响应体,当此方法执行完毕时应中断后续流程
+	JSON(code int, data any) error                  // 写入json响应体
+	SendStream(stream io.Reader, size ...int) error // 写入消息流到响应体
+	File(filepath string) error                     // 返回文件
+	FileAttachment(filepath, filename string) error // 将指定的文件以有效的方式写入主体流, 在客户端，文件通常会以给定的文件名下载
+	Write(p []byte) (int, error)                    // 写入响应字节流,当此方法执行完毕时应中断后续流程
+
+	//RenderHTML(name string, bind interface{}, layouts ...string) error // 用于返回HTML模板
+	//XML(code int, obj any) error                                       // 写入XML
+	//YAML(code int, obj any) error                                      // 写入YAML
+	//TOML(code int, obj any) error                                      // 写入TOML
 }

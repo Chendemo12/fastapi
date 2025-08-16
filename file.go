@@ -1,17 +1,53 @@
 package fastapi
 
-// 上传文件类型, 必须与 FileModelPkg 保持一致
-
 import (
+	"errors"
 	"io"
+	"mime/multipart"
 )
 
 // File 上传文件
-// 通过声明此类型,以接收来自用户的上传文件
+// 通过声明此类型, 以接收来自用户的上传文件
+// 上传文件类型, 必须与 FileModelPkg 保持一致
 type File struct {
-	Filename string
-	File     io.Reader         `json:"-"`
-	Headers  map[string]string `json:"-"`
+	files []*multipart.FileHeader `description:"文件"`
+}
+
+func (f *File) Files() []*multipart.FileHeader {
+	return f.files
+}
+
+func (f *File) RangeFile(fc func(file *multipart.FileHeader) (next bool)) {
+	for _, file := range f.files {
+		if !fc(file) {
+			break
+		}
+	}
+}
+
+func (f *File) Open(index int) (multipart.File, error) {
+	if index >= len(f.files) {
+		return nil, errors.New("index out of range")
+	}
+
+	return f.files[index].Open()
+}
+
+// First 获取第一个文件, 需自行确认文件数量，否则会panic
+func (f *File) First() *multipart.FileHeader {
+	return f.files[0]
+}
+
+func (f *File) OpenFirst() (multipart.File, error) {
+	return f.files[0].Open()
+}
+
+// FileResponse 返回文件或消息流
+type FileResponse struct {
+	mode     FileResponseMode
+	filename string
+	filepath string
+	reader   io.Reader
 }
 
 type FileResponseMode int
@@ -22,14 +58,6 @@ const (
 	FileResponseModeReaderFile                             // 从reader中直接返回文件
 	FileResponseModeStream                                 // 返回任意的数据流
 )
-
-// FileResponse 返回文件或消息流
-type FileResponse struct {
-	mode     FileResponseMode
-	filename string
-	filepath string
-	reader   io.Reader
-}
 
 func (m *FileResponse) SchemaDesc() string {
 	return "文件响应"

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"runtime"
 	"strings"
@@ -59,6 +60,7 @@ func Default(cf ...fiber.Config) *FiberMux {
 			JSONEncoder:   utils.JsonMarshal,       // json序列化器
 			JSONDecoder:   utils.JsonUnmarshal,     // json解码器
 			ErrorHandler:  customFiberErrorHandler, // 设置自定义错误处理
+			BodyLimit:     100 * 1024 * 1024,       // 设置请求体最大为 100MB
 		}
 	} else {
 		conf = cf[0]
@@ -163,6 +165,10 @@ func (c *FiberContext) Query(key string, undefined ...string) string {
 
 func (c *FiberContext) Params(key string, undefined ...string) string {
 	return c.ctx.Params(key, undefined...)
+}
+
+func (c *FiberContext) MultipartForm() (*multipart.Form, error) {
+	return c.ctx.MultipartForm()
 }
 
 // GetHeader 获取请求头, 当key不存在时返回空字符串，如果存在多个时，返回逗号分隔的字符串
@@ -296,11 +302,7 @@ func customRecoverHandler(c *fiber.Ctx, e any) {
 
 // customFiberErrorHandler 自定义fiber接口错误处理函数
 func customFiberErrorHandler(c *fiber.Ctx, e error) error {
-	fastapi.Warn(utils.CombineStrings(
-		"error happened during: '",
-		c.Method(), ": ", c.Path(),
-		"', Msg: ", e.Error(),
-	))
+	fastapi.Warnf("%s %s, Error: %s", c.Method(), c.Path(), e.Error())
 	return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 		"code": fiber.StatusBadRequest,
 		"msg":  e.Error()},

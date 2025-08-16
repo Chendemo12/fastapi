@@ -625,8 +625,8 @@ func (r *GroupRoute) NewInParams(ctx *Context) []reflect.Value {
 				tt := v.(time.Time)
 				instance = reflect.ValueOf(tt)
 			} else if param.IsFile {
-				// TODO 识别到文件
-				//instance = reflect.ValueOf(ctx.requestFile)
+				// 识别到文件
+				instance = reflect.ValueOf(ctx.file)
 			} else {
 				if isLast && !r.getOrDelete { // 最后一个参数, 可以断言为请求体
 					instance = reflect.ValueOf(ctx.requestModel)

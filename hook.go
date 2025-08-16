@@ -334,59 +334,91 @@ func structQueryValidate(c *Context, route RouteIface, stopImmediately bool) []*
 	return ves
 }
 
-// 请求体校验, TODO: 识别文件
+// 请求体校验, 支持识别文件
 func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError {
-	if route.Swagger().RequestContentType != openapi.MIMEApplicationJSON {
+	if route.Swagger().RequestContentType != openapi.MIMEApplicationJSON && route.Swagger().RequestContentType != openapi.MIMEApplicationJSONCharsetUTF8 && route.Swagger().RequestContentType != openapi.MIMEMultipartForm {
 		return nil
 	}
 
-	var requestParam any
-	var file *File
-	var ves []*openapi.ValidationError
-	var err error
+	if route.Swagger().Method == http.MethodPost || route.Swagger().Method == http.MethodPut || route.Swagger().Method == http.MethodPatch {
+		var err error
+		var ves []*openapi.ValidationError
+		var requestParam any
 
-	switch route.Swagger().Method {
-	case http.MethodPost, http.MethodPut, http.MethodPatch:
-		if route.Swagger().RequestFile {
-			// 识别文件
-			file = &File{}
-		}
 		if route.Swagger().RequestModel != nil {
 			requestParam = route.NewRequestModel()
 		}
-	default:
-		requestParam = nil
-	}
 
-	if file != nil {
-		// TODO 识别到文件, 需要特殊处理
-		if requestParam != nil {
+		if route.Swagger().RequestFile {
+			// 存在上传文件定义，则从 multiform-data 中获取上传参数
+			forms, err := c.muxCtx.MultipartForm()
+			if err != nil {
+				return []*openapi.ValidationError{{
+					Loc:  []string{"requestBody", "multiform-data"},
+					Msg:  "read multiform failed",
+					Type: string(openapi.ObjectType),
+					Ctx:  whereClientError,
+				}}
+			}
 
-		}
-	} else {
-		if requestParam != nil {
-			// 存在请求体,首先进行反序列化,之后校验参数是否合法,校验通过后绑定到 Context
-			if !c.muxCtx.CustomShouldBindMethod() { // 未重写自定义校验方法
-				err = c.muxCtx.BodyParser(requestParam)
+			files := forms.File[openapi.MultipartFormFileName]
+			if len(files) == 0 {
+				return []*openapi.ValidationError{{
+					Loc:  []string{"requestBody", "multiform-data", openapi.MultipartFormFileName},
+					Msg:  fmt.Sprintf("'%s' value not found", openapi.MultipartFormFileName),
+					Type: string(openapi.ObjectType),
+					Ctx:  whereClientError,
+				}}
+			}
+			c.file = &File{files}
+			if requestParam != nil {
+				// 同时存在json参数
+				data := forms.Value[openapi.MultipartFormParamName]
+				if len(data) == 0 {
+					return []*openapi.ValidationError{{
+						Loc:  []string{"requestBody", "multiform-data", openapi.MultipartFormParamName},
+						Msg:  fmt.Sprintf("'%s' value not found", openapi.MultipartFormParamName),
+						Type: string(openapi.ObjectType),
+						Ctx:  whereClientError,
+					}}
+				}
+
+				// json 参数绑定
+				err = c.Unmarshal([]byte(data[0]), requestParam)
 				if err != nil {
 					ve := ParseJsoniterError(err, openapi.RouteParamRequest, route.Swagger().RequestModel.SchemaTitle())
 					ve.Ctx[modelDescLabel] = route.Swagger().RequestModel.SchemaDesc()
-					ves = append(ves, ve)
-				} else {
+					return []*openapi.ValidationError{ve}
+				}
+
+				// json 校验
+				c.requestModel, ves = route.RequestBinders().Method.Validate(c.routeCtx, requestParam)
+			}
+		} else { // 不存在上传文件定义，从请求体 application/json 中读取数据
+			if requestParam != nil {
+				// 存在请求体,首先进行反序列化,之后校验参数是否合法,校验通过后绑定到 Context
+				if !c.muxCtx.CustomShouldBindMethod() { // 未重写自定义校验方法
+					err = c.muxCtx.BodyParser(requestParam)
+					if err != nil {
+						ve := ParseJsoniterError(err, openapi.RouteParamRequest, route.Swagger().RequestModel.SchemaTitle())
+						ve.Ctx[modelDescLabel] = route.Swagger().RequestModel.SchemaDesc()
+						return []*openapi.ValidationError{ve}
+					}
 					// 反序列化成功,校验模型
 					c.requestModel, ves = route.RequestBinders().Method.Validate(c.routeCtx, requestParam)
-				}
-			} else {
-				err = c.muxCtx.ShouldBind(requestParam)
-				ves = ParseValidatorError(err, openapi.RouteParamRequest, route.Swagger().RequestModel.SchemaTitle())
-				if len(ves) > 0 {
-					ves[0].Ctx[modelDescLabel] = route.Swagger().RequestModel.SchemaDesc()
+				} else {
+					err = c.muxCtx.ShouldBind(requestParam)
+					ves = ParseValidatorError(err, openapi.RouteParamRequest, route.Swagger().RequestModel.SchemaTitle())
+					if len(ves) > 0 {
+						ves[0].Ctx[modelDescLabel] = route.Swagger().RequestModel.SchemaDesc()
+					}
 				}
 			}
 		}
+		return ves
 	}
 
-	return ves
+	return nil
 }
 
 // 返回值校验入口

@@ -4,6 +4,7 @@
 package fastapi
 
 import (
+	"github.com/Chendemo12/fastapi/openapi"
 	"github.com/Chendemo12/fastapi/utils"
 )
 
@@ -27,9 +28,7 @@ var (
 )
 
 //goland:noinspection GoUnusedGlobalVariable
-var (
-	F = utils.CombineStrings
-)
+var F = utils.CombineStrings
 
 func Iter[T any, S any](seq []S, fc func(elem S) T) []T {
 	ns := make([]T, len(seq))
@@ -38,4 +37,14 @@ func Iter[T any, S any](seq []S, fc func(elem S) T) []T {
 	}
 
 	return ns
+}
+
+// SetMultiFormFileName 设置表单数据中文件的字段名（键名称）
+func SetMultiFormFileName(name string) {
+	openapi.MultipartFormFileName = name
+}
+
+// SetMultiFormParamName 设置表单数据中json参数的字段名（键名称）
+func SetMultiFormParamName(name string) {
+	openapi.MultipartFormParamName = name
 }

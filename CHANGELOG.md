@@ -4,6 +4,9 @@
 
 ### Feat
 
+- 支持上传文件；
+- 支付下载文件；
+
 ### BREAKING
 
 - 移除`Wrapper.ActivateHotSwitch`相关方法。

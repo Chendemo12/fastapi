@@ -159,7 +159,7 @@ app.Run("0.0.0.0", "8090")
     - 对于`Post`, `Patch`,  `Put`  **至少有一个**自定义参数作为请求体，如果不需要请求体参数则用`fastapi.None`代替
     - 对于`Get`, `Delete` 则**只能有一个**自定义结构体参数作为查询参数、cookies、header等参数
 
-#### 有关方法入参的解析规则：
+### 有关方法入参的解析规则：
 
 - 对于`Get`，`Delete`：
     - 有且只有一个结构体入参，被解释为查询/路径等参数
@@ -173,7 +173,71 @@ app.Run("0.0.0.0", "8090")
 - 任何情况下`json`标签都会被解释为参数名，对于查询参数则优先采用`query`标签名
 - 任何模型都可以通过`SchemaDesc() string`方法来添加模型说明，作用等同于`python.__doc__`属性
 
-#### 路由url解析 [RoutePathSchema](./pathschema/pathschema.go)
+### 文件上传
+
+- 通过在`Post`, `Put`, `Patch` 方法中添加`*fastapi.File`参数，即可实现文件上传;
+- 请求体类型固定为`multipart/form-data`
+
+```
+// 仅上传文件
+func (r *ExampleRouter) PostUploadFile(c *fastapi.Context, file *fastapi.File) (int64, error) {
+	return 1, nil
+}
+
+type UpdateUserInfoReq struct {
+	Name  string `json:"name" validate:"required"`
+	Email string `json:"email" validate:"required"`
+}
+
+// 上传文件和json数据
+func (r *ExampleRouter) PostUploadFileWithForm(c *fastapi.Context, file *fastapi.File, param *UpdateUserInfoReq) (int64, error) {
+	return 1, nil
+}
+
+```
+
+#### 注意：
+
+当同时存在文件和json参数时，请把`fastapi.File`放在`json`参数之前,
+`PostUploadFileWithForm(c *fastapi.Context, file *fastapi.File, param *UpdateUserInfoReq)`,
+此情况下，`json`参数会作为`请求体`参数；
+如果`fastapi.File`放在`json`参数之后，则`json`参数会作为`query`参数，如
+`PostUploadFileWithForm(c *fastapi.Context, param *UpdateUserInfoReq, file *fastapi.File)`
+
+由于反射过程中无法获得参数的名称，所以文件和json部分的字段名默认为`file`和`param`, 但可通过以下方法进行修改（必须在启动前设置）：
+
+```go
+fastapi.SetMultiFormFileName("files")
+fastapi.SetMultiFormParamName("data")
+```
+
+### 文件下载
+
+- 通过返回`*fastapi.FileResponse`对象来向客户端发送文件；
+
+```
+// 以附件形式下载文件
+func (r *ExampleRouter) GetFileAttachment(c *fastapi.Context, param *DownloadFileReq) (*fastapi.FileResponse, error) {
+	return fastapi.FileAttachment("../README.md", "README.md"), nil
+}
+
+// 直接发送文件内容给客户端
+func (r *ExampleRouter) GetSendFile(c *fastapi.Context) (*fastapi.FileResponse, error) {
+	return fastapi.SendFile("../README.md"), nil
+}
+
+```
+
+- 对于文件下载支持以下方式：
+
+| 方法             | 作用                                               |
+|----------------|--------------------------------------------------|
+| SendFile       | 向客户端发送本地文件，此时会读取文件内容，并将文件内容作为响应体返回给客户端           |
+| FileAttachment | 以附件形式返回本地文件，自动设置"Content-Disposition"，浏览器会触发自动下载 |
+| FileFromReader | 从io.Reader中读取文件并返回给客户端                           |
+| Stream         | 发送字节流到客户端，Content-Type为application/octet-stream  |
+
+### 路由url解析 [RoutePathSchema](./pathschema/pathschema.go)
 
 - 方法开头或结尾中包含的http方法名会被忽略，对于方法中包含多个关键字的仅第一个会被采用：
     - `PostDelet` - > 路由为`delte`， 方法为`Post`

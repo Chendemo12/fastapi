@@ -2,6 +2,7 @@ package test
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -18,8 +19,9 @@ func (r *ExampleRouter) Prefix() string { return "/api/example" }
 
 func (r *ExampleRouter) Summary() map[string]string {
 	return map[string]string{
-		"PostUploadFile":  "上传文件",
-		"GetDownloadFile": "请求文件",
+		"PostUploadFile":         "上传文件",
+		"GetDownloadFile":        "请求文件",
+		"PostUploadFileWithForm": "修改用户信息",
 	}
 }
 
@@ -82,7 +84,22 @@ func (r *ExampleRouter) DeleteMyDate(c *fastapi.Context, day time.Time, param *D
 }
 
 func (r *ExampleRouter) PostUploadFile(c *fastapi.Context, file *fastapi.File) (int64, error) {
-	return 1, nil
+	fr := file.First()
+	fmt.Println("文件名：", fr.Filename)
+
+	return fr.Size, nil
+}
+
+type UpdateUserInfoReq struct {
+	Name  string `json:"name" validate:"required"`
+	Email string `json:"email" validate:"required"`
+}
+
+func (r *ExampleRouter) PostUploadFileWithForm(c *fastapi.Context, file *fastapi.File, param *UpdateUserInfoReq) (int64, error) {
+	fr := file.First()
+	fmt.Println("文件名：", fr.Filename)
+
+	return fr.Size, nil
 }
 
 type DownloadFileReq struct {

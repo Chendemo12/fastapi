@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"sync"
 	"time"
@@ -184,6 +185,10 @@ func (c *GinContext) Query(key string, undefined ...string) string {
 		return undefined[0]
 	}
 	return value
+}
+
+func (c *GinContext) MultipartForm() (*multipart.Form, error) {
+	return c.ctx.MultipartForm()
 }
 
 func (c *GinContext) BindQuery(obj any) error {

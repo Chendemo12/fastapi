@@ -40,8 +40,8 @@ type RouteSwagger struct {
 	Description         string         `json:"description" description:"详细描述"`
 	Method              string         `json:"method" description:"请求方法"`
 	RelativePath        string         `json:"relative_path" description:"相对路由"`
-	RequestContentType  ContentType    `json:"request_content_type,omitempty" description:"请求体类型, 仅在 application/json 情况下才进行请求体校验"`
-	ResponseContentType ContentType    `json:"response_content_type,omitempty" description:"响应体类型, 仅在 application/json 情况下才进行响应体校验"`
+	RequestContentType  ContentType    `json:"requestContentType,omitempty" description:"请求体类型, 仅在 application/json 情况下才进行请求体校验"`
+	ResponseContentType ContentType    `json:"responseContentType,omitempty" description:"响应体类型, 仅在 application/json 情况下才进行响应体校验"`
 	Api                 string         `description:"用作唯一标识"`
 	Tags                []string       `json:"tags" description:"路由标签"`
 	PathFields          []*QModel      `json:"-" description:"路径参数"`
@@ -104,7 +104,7 @@ func (r *RouteSwagger) ScanInner() (err error) {
 	if r.RequestFile { // 存在上传文件
 		r.RequestContentType = MIMEMultipartForm
 	} else {
-		r.RequestContentType = MIMEApplicationJSONCharsetUTF8
+		r.RequestContentType = MIMEApplicationJSON
 	}
 
 	// 推断响应体类型
@@ -186,8 +186,6 @@ func NewRouteParam(rt reflect.Type, index int, paramType RouteParamType) *RouteP
 	r.Prototype = rt
 	r.PrototypeKind = rt.Kind()
 	r.IsPtr = rt.Kind() == reflect.Ptr
-	r.IsTime = r.Pkg == TimePkg
-	r.IsFile = r.Pkg == FileRequestPkg
 	r.Index = index
 	r.RouteParamType = paramType
 
@@ -211,6 +209,9 @@ func (r *RouteParam) Init() (err error) {
 		r.Name = r.Prototype.Name()
 		r.Pkg = r.Prototype.String()
 	}
+
+	r.IsTime = r.Pkg == TimePkg
+	r.IsFile = r.Pkg == FileRequestPkg
 
 	// 对于[]object 形式，修改其模型名称
 	if r.DataType == ArrayType {
