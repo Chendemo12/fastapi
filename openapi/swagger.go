@@ -36,12 +36,12 @@ func NewOpenApi(title, version, description string) *OpenApi {
 			TermsOfService: "",
 			Contact: Contact{
 				Name:  "FastApi",
-				Url:   "github.com/Chendemo12/fastapi",
-				Email: "chendemo12@gmail.com",
+				Url:   "https://github.com/Chendemo12/fastapi",
+				Email: "ithika@163.com",
 			},
 			License: License{
 				Name: "FastApi",
-				Url:  "github.com/Chendemo12/fastapi",
+				Url:  "https://github.com/Chendemo12/fastapi",
 			},
 		},
 		Components: &Components{Scheme: make([]*ComponentScheme, 0)},
