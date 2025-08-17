@@ -198,15 +198,9 @@ func (c *GinContext) BindQuery(obj any) error {
 // CustomBindQueryMethod 无需自定义实现
 func (c *GinContext) CustomBindQueryMethod() bool { return false }
 
-func (c *GinContext) ShouldBind(obj any) error {
-	return c.ctx.ShouldBind(obj)
+func (c *GinContext) ShouldBind(obj any) (validated bool, err error) {
+	return true, c.ctx.ShouldBind(obj)
 }
-
-func (c *GinContext) BodyParser(model any) error { return nil }
-func (c *GinContext) Validate(obj any) error     { return nil }
-
-// CustomShouldBindMethod 需要自定义实现请求体解析方法
-func (c *GinContext) CustomShouldBindMethod() bool { return true }
 
 func (c *GinContext) Header(key, value string) {
 	c.ctx.Header(key, value)

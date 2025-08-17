@@ -1,6 +1,8 @@
 module github.com/Chendemo12/fastapi
 
-go 1.24
+go 1.24.0
+
+toolchain go1.24.4
 
 require (
 	github.com/gin-gonic/gin v1.10.0
@@ -8,6 +10,7 @@ require (
 	github.com/gofiber/fiber/v2 v2.52.6
 	github.com/json-iterator/go v1.1.12
 	github.com/pelletier/go-toml/v2 v2.2.4
+	golang.org/x/exp v0.0.0-20250813145105-42675adae3e6
 	gopkg.in/yaml.v3 v3.0.1
 )
 

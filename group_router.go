@@ -378,12 +378,12 @@ func (r *GroupRouterMeta) isRouteMethod(method reflect.Method) (*openapi.RouteSw
 type GroupRoute struct {
 	swagger        *openapi.RouteSwagger
 	group          *GroupRouterMeta
-	requestBinder  *ParamBinder          // 请求题校验器，不存在请求题则为 NothingBindMethod
-	responseBinder *ParamBinder          // 响应体校验器，响应体肯定存在 ModelBindMethod
+	requestBinder  ModelBinder           // 请求题校验器，不存在请求题则为 NothingModelBinder
+	responseBinder ModelBinder           // 响应体校验器，响应体肯定存在 ModelBinder
 	outParam       *openapi.RouteParam   // 不包含最后一个 error, 因此只有一个出参
 	queryParamMode QueryParamMode        // 查询参数的定义模式
 	method         reflect.Method        // 路由方法所属的结构体方法, 用于API调用
-	queryBinders   []*ParamBinder        // 查询参数，路径参数的校验器，不存在参数则为 NothingBindMethod
+	queryBinders   []ModelBinder         // 查询参数，路径参数的校验器，不存在参数则为 NothingModelBinder
 	inParams       []*openapi.RouteParam // 不包含第一个 Context 但包含最后一个“查询参数结构体”或“请求体”, 因此 handlerInNum - len(inParams) = 1
 	index          int                   // 当前方法所属的结构体方法的偏移量
 	structQuery    int                   // 结构体查询参数在 inParams 中的索引
@@ -401,7 +401,7 @@ func NewGroupRoute(swagger *openapi.RouteSwagger, method reflect.Method, group *
 	r.index = method.Index
 	r.structQuery = -1 // 不存在
 
-	r.queryBinders = make([]*ParamBinder, 0)
+	r.queryBinders = make([]ModelBinder, 0)
 
 	return r
 }
@@ -557,12 +557,12 @@ func (r *GroupRoute) scanOutParams() (err error) {
 	return err
 }
 
-// 此方法需在 scanInParams, scanOutParams, scanQueryParamMode 执行完成之后执行
+// 此方法需在 scanInParams, scanOutParams，ScanInner 执行完成之后执行
 func (r *GroupRoute) scanBinders() (err error) {
 	r.responseBinder = scanHelper.InferResponseBinder(r.swagger.ResponseModel, r.RouteType())
 
 	// 初始化请求体验证方法
-	r.requestBinder = scanHelper.InferRequestBinder(r.swagger.RequestModel, r.RouteType())
+	r.inferRequestBinder()
 
 	// 构建查询参数验证器
 	for _, qmodel := range r.swagger.QueryFields {
@@ -578,12 +578,12 @@ func (r *GroupRoute) Swagger() *openapi.RouteSwagger {
 	return r.swagger
 }
 
-func (r *GroupRoute) ResponseBinder() *ParamBinder { return r.responseBinder }
+func (r *GroupRoute) ResponseBinder() ModelBinder { return r.responseBinder }
 
-func (r *GroupRoute) RequestBinders() *ParamBinder { return r.requestBinder }
+func (r *GroupRoute) RequestBinders() ModelBinder { return r.requestBinder }
 
 // QueryBinders 查询参数校验方法
-func (r *GroupRoute) QueryBinders() []*ParamBinder { return r.queryBinders }
+func (r *GroupRoute) QueryBinders() []ModelBinder { return r.queryBinders }
 
 func (r *GroupRoute) HasStructQuery() bool { return r.structQuery != -1 }
 
@@ -658,4 +658,37 @@ func (r *GroupRoute) NewRequestModel() any {
 // Call 调用API, 并将响应结果写入 Response 内
 func (r *GroupRoute) Call(in []reflect.Value) []reflect.Value {
 	return r.method.Func.Call(in)
+}
+
+func (r *GroupRoute) inferRequestBinder() {
+	var nothing ModelBinder = &NothingModelBinder{modelName: "", paramType: openapi.RouteParamRequest}
+
+	if r.swagger.RequestContentType != openapi.MIMEApplicationJSON && r.swagger.RequestContentType != openapi.MIMEApplicationJSONCharsetUTF8 && r.swagger.RequestContentType != openapi.MIMEMultipartForm {
+		// 暂不支持非json和multiform-data的请求参数验证
+		r.requestBinder = nothing
+		return
+	}
+
+	if r.swagger.Method == http.MethodPost || r.swagger.Method == http.MethodPut || r.swagger.Method == http.MethodPatch {
+		if r.swagger.RequestFile {
+			// 存在上传文件定义，则从 multiform-data 中获取上传参数
+			if r.swagger.RequestModel != nil { // file + json
+				binder := &FileWithParamModelBinder{}
+				binder.paramType = openapi.RouteParamRequest
+				binder.modelName = r.swagger.RequestModel.JsonName()
+				r.requestBinder = binder
+			} else {
+				// modelName 为固定值，固定为 openapi.MultipartFormFileName
+				r.requestBinder = &FileModelBinder{openapi.MultipartFormFileName}
+			}
+		} else {
+			if r.swagger.RequestModel == nil { // 此情况基本不存在
+				r.requestBinder = nothing
+			} else {
+				r.requestBinder = &RequestModelBinder{modelName: r.swagger.RequestModel.SchemaTitle()}
+			}
+		}
+	} else { // get/delete 方法没有请求体
+		r.requestBinder = nothing
+	}
 }

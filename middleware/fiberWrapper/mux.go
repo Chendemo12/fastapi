@@ -143,7 +143,8 @@ type FiberContext struct {
 }
 
 func (c *FiberContext) Method() string { return c.ctx.Method() }
-func (c *FiberContext) Path() string   { return c.ctx.Route().Path }
+
+func (c *FiberContext) Path() string { return c.ctx.Route().Path }
 
 func (c *FiberContext) Ctx() any { return c.ctx }
 
@@ -188,13 +189,10 @@ func (c *FiberContext) ContentType() string {
 	return string(c.ctx.Context().Request.Header.ContentType())
 }
 
-func (c *FiberContext) BindQuery(obj any) error     { return nil }
-func (c *FiberContext) CustomBindQueryMethod() bool { return false }
-
-func (c *FiberContext) BodyParser(obj any) error     { return c.ctx.BodyParser(obj) }
-func (c *FiberContext) Validate(obj any) error       { return nil }
-func (c *FiberContext) ShouldBind(obj any) error     { return nil }
-func (c *FiberContext) CustomShouldBindMethod() bool { return false }
+func (c *FiberContext) ShouldBind(obj any) (validated bool, err error) {
+	// fiber 没有校验方法，因此需返回 false
+	return false, c.ctx.BodyParser(obj)
+}
 
 func (c *FiberContext) SetCookie(cookie *http.Cookie) {
 	ck := &fiber.Cookie{
