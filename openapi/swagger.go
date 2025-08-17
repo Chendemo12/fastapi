@@ -382,6 +382,11 @@ type PathModelContent struct {
 func (p *PathModelContent) MarshalJSON() ([]byte, error) {
 	m := make(map[string]any)
 
+	if p.Schema == nil {
+		// 此情况是一种异常状态，多存在于将 time.Time 等内置 struct 作为请求体，但是在扫描路由时被作为了查询参数，导致缺少请求体
+		return json.Marshal(m)
+	}
+
 	switch p.Schema.SchemaType() {
 	case ObjectType:
 		m[string(p.MIMEType)] = map[string]any{

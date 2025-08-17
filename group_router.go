@@ -302,7 +302,7 @@ func (r *GroupRouterMeta) isRouteMethod(method reflect.Method) (*openapi.RouteSw
 	}
 
 	// 判断方法参数是否符合要求
-	inParamNum := method.Type.NumIn()
+	inParamNum := method.Type.NumIn() // 包含接收器，因此实际参数数量需-1
 	outParamNum := method.Type.NumOut()
 
 	if inParamNum < FirstInParamOffset || outParamNum != OutParamNum {
@@ -310,9 +310,10 @@ func (r *GroupRouterMeta) isRouteMethod(method reflect.Method) (*openapi.RouteSw
 		return nil, false
 	}
 
-	if utils.Has([]string{http.MethodPut, http.MethodPatch, http.MethodPost}, swagger.Method) {
-		// 以下方法必须有一个请求体：receiver + Context + requestBody
-		if inParamNum < FirstInParamOffset+2 {
+	// 以下方法必须有一个请求体
+	notGetOrDelete := utils.Has([]string{http.MethodPut, http.MethodPatch, http.MethodPost}, swagger.Method)
+	if notGetOrDelete {
+		if inParamNum < FirstInParamOffset+2 { // receiver + Context + requestBody
 			panic(fmt.Sprintf(
 				"method: '%s.%s' has no request body, you must specify a request body parameter, and if you really don't need one, use 'fastapi.None' instead.",
 				r.pkg, method.Name,
@@ -353,6 +354,21 @@ func (r *GroupRouterMeta) isRouteMethod(method reflect.Method) (*openapi.RouteSw
 					"method: '%s.%s' the %d param is not a struct.", r.pkg, method.Name, i,
 				))
 			}
+		}
+	}
+
+	// 边界检查，对于必须存在请求体的方法，如果有且仅有一个结构体参数，但该参数是以下类型的，抛出以异常
+	if notGetOrDelete && inParamNum == FirstCustomInParamOffset+1 {
+		param := method.Type.In(FirstCustomInParamOffset)
+		pPkg := param.String()
+		if param.Kind() == reflect.Pointer {
+			// 通常情况是个结构体指针，此时获取实际的类型
+			pPkg = param.Elem().String()
+		}
+		if utils.Has(specialStructPkg, pPkg) {
+			panic(fmt.Sprintf(
+				"method: '%s.%s' the onlyone request body param cannot be '%s', it should be a custom struct or *fastapi.File.", r.pkg, method.Name, pPkg,
+			))
 		}
 	}
 
@@ -672,7 +688,7 @@ func (r *GroupRoute) inferRequestBinder() {
 	if r.swagger.Method == http.MethodPost || r.swagger.Method == http.MethodPut || r.swagger.Method == http.MethodPatch {
 		if r.swagger.RequestFile {
 			// 存在上传文件定义，则从 multiform-data 中获取上传参数
-			if r.swagger.RequestModel != nil { // file + json
+			if r.swagger.RequestModel != nil && r.swagger.RequestModel.SchemaPkg() != openapi.NoneRequestPkg { // file + json
 				binder := &FileWithParamModelBinder{}
 				binder.paramType = openapi.RouteParamRequest
 				binder.modelName = r.swagger.RequestModel.JsonName()
@@ -682,10 +698,11 @@ func (r *GroupRoute) inferRequestBinder() {
 				r.requestBinder = &FileModelBinder{openapi.MultipartFormFileName}
 			}
 		} else {
-			if r.swagger.RequestModel == nil { // 此情况基本不存在
-				r.requestBinder = nothing
-			} else {
+			// 处理特殊类型 fastapi.None
+			if r.swagger.RequestModel != nil && r.swagger.RequestModel.SchemaPkg() != openapi.NoneRequestPkg { // 此情况基本不存在
 				r.requestBinder = &RequestModelBinder{modelName: r.swagger.RequestModel.SchemaTitle()}
+			} else {
+				r.requestBinder = nothing
 			}
 		}
 	} else { // get/delete 方法没有请求体

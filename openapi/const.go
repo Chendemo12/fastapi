@@ -98,6 +98,8 @@ const (
 	FileRequestPkg = "fastapi.File"
 	// FileResponsePkg 文件响应
 	FileResponsePkg = "fastapi.FileResponse"
+	// NoneRequestPkg 无请求体时的参数类型
+	NoneRequestPkg = "fastapi.None"
 )
 
 const ( // 针对时间类型的查询参数格式化选项

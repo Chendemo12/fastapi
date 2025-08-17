@@ -9,6 +9,12 @@ import (
 
 const staticPrefix = "internal/static/"
 
+// 特殊的结构体，不能作为请求体使用
+var specialStructPkg = []string{
+	openapi.TimePkg,
+	"*" + openapi.TimePkg, // 基本不存在此情况
+}
+
 // 生成模型定义
 func (f *Wrapper) registerRouteDoc() *Wrapper {
 	// 注册路由组数据模型

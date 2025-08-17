@@ -70,7 +70,7 @@ func (r *QueryParamRouter) StructDelete(c *fastapi.Context, param *Name) (string
 	return param.Father + " " + param.Name, nil
 }
 
-func (r *QueryParamRouter) TimeGet(c *fastapi.Context, day time.Time, param *DateTime) (*DateTime, error) {
+func (r *QueryParamRouter) TimeGet(c *fastapi.Context, day time.Time) (*DateTime, error) {
 	return &DateTime{
 		Name: &Name{
 			Father: "father",
@@ -80,7 +80,7 @@ func (r *QueryParamRouter) TimeGet(c *fastapi.Context, day time.Time, param *Dat
 	}, nil
 }
 
-func (r *QueryParamRouter) TimePost(c *fastapi.Context, day time.Time) (time.Time, error) {
+func (r *QueryParamRouter) TimePost(c *fastapi.Context, day time.Time, param *DateTime) (time.Time, error) {
 	return day, nil
 }
 

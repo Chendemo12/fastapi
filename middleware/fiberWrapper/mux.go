@@ -292,10 +292,7 @@ func (c *FiberContext) JSON(statusCode int, data any) error {
 func customRecoverHandler(c *fiber.Ctx, e any) {
 	buf := make([]byte, 1024)
 	buf = buf[:runtime.Stack(buf, true)]
-	msg := utils.CombineStrings(
-		"Request RelativePath: ", c.Path(), fmt.Sprintf(", Error: %v, \n", e), string(buf),
-	)
-	fastapi.Error(msg)
+	fastapi.Errorf("%s %s failed, Error: %s", c.Method(), c.Path(), string(buf))
 }
 
 // customFiberErrorHandler 自定义fiber接口错误处理函数
