@@ -1,9 +1,10 @@
 package openapi
 
 import (
-	"github.com/Chendemo12/fastapi/utils"
 	"reflect"
 	"unicode"
+
+	"github.com/Chendemo12/fastapi/utils"
 )
 
 // QModel 查询参数或路径参数元数据, 此类型对应于swagger中的: openapi.Parameter

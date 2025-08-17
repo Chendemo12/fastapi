@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/Chendemo12/fastapi/openapi"
 	"github.com/Chendemo12/fastapi/utils"
 	"github.com/go-playground/validator/v10"
 	jsoniter "github.com/json-iterator/go"
-	"reflect"
-	"strconv"
-	"strings"
-	"time"
+	"golang.org/x/exp/constraints"
 )
 
 const ( // error message
@@ -43,264 +44,284 @@ var validateErrorTagLabel = "tag"
 var whereServerError = map[string]any{whereErrorLabel: "server"}
 var whereClientError = map[string]any{whereErrorLabel: "client"}
 
-type ModelBindMethod interface {
-	Name() string // 名称
-	// Validate
-	// 校验方法，对于响应首先校验，然后在 Marshal；对于请求，首先 Unmarshal 然后再校验
-	// 对于不需要ctx参数的校验方法可默认设置为nil
-	// data 为需要验证的数据模型，如果验证通过，则第一个返回值为做了类型转换的data
-	Validate(ctx context.Context, data any) (any, []*openapi.ValidationError)
-	Marshal(obj any) ([]byte, error)                                   // 序列化方法，通过 ContentType 确定响应体类型
-	Unmarshal(stream []byte, obj any) (ves []*openapi.ValidationError) // 反序列化方法，通过 "http:header:Content-Type" 推断内容类型
-	New() any                                                          // 创建一个新实例
+// ModelBinder 参数模型校验
+type ModelBinder interface {
+	Name() string                           // 名称，用来区分不同实现
+	ModelName() string                      // 需要校验的模型名称，用于在校验未通过时生成错误信息
+	RouteParamType() openapi.RouteParamType // 参数类型
+	// Validate 校验方法
+	// 对于响应体首先校验，然后再 Marshal；对于请求，首先 Unmarshal 然后再校验
+	// 对于不需要 Context 参数的校验方法可默认设置为nil
+	// requestParam 为需要验证的数据模型，如果验证通过，则第一个返回值为做了类型转换的 requestParam
+	Validate(c *Context, requestParam any) (any, []*openapi.ValidationError)
 }
 
-// UnsignedInteger 无符号数字约束
-type UnsignedInteger interface {
-	~uint8 | ~uint16 | ~uint32 | ~uint64 | ~uint
+// NothingModelBinder 空实现，用于什么也不做
+type NothingModelBinder struct {
+	modelName string
+	paramType openapi.RouteParamType
 }
 
-// SignedInteger 有符号数字约束
-type SignedInteger interface {
-	~int8 | ~int16 | ~int32 | ~int64 | ~int
+func NewNothingModelBinder(model openapi.SchemaIface, paramType openapi.RouteParamType) *NothingModelBinder {
+	return &NothingModelBinder{
+		modelName: model.JsonName(),
+		paramType: paramType,
+	}
 }
 
-// NothingBindMethod 空实现，用于什么也不做
-type NothingBindMethod struct{}
+func (m *NothingModelBinder) Name() string { return "NothingModelBinder" }
 
-func (m *NothingBindMethod) Name() string { return "NothingBindMethod" }
-
-func (m *NothingBindMethod) Validate(ctx context.Context, data any) (any, []*openapi.ValidationError) {
-	return data, nil
+// ModelName 该字段可以为空字符串
+func (m *NothingModelBinder) ModelName() string {
+	return m.modelName
 }
 
-func (m *NothingBindMethod) Marshal(obj any) ([]byte, error) {
-	return []byte{}, nil
+func (m *NothingModelBinder) RouteParamType() openapi.RouteParamType {
+	return m.paramType
 }
 
-func (m *NothingBindMethod) Unmarshal(stream []byte, obj any) (ves []*openapi.ValidationError) {
-	return
+func (m *NothingModelBinder) Validate(c *Context, requestParam any) (any, []*openapi.ValidationError) {
+	return requestParam, nil
 }
 
-func (m *NothingBindMethod) New() any {
+// IntModelBinder 有符号数字验证
+type IntModelBinder[T constraints.Signed | ~string] struct {
+	modelName string
+	paramType openapi.RouteParamType
+	Maximum   int64 `json:"maximum,omitempty"`
+	Minimum   int64 `json:"minimum,omitempty"`
+}
+
+func (m *IntModelBinder[T]) Name() string { return "IntModelBinder" }
+
+func (m *IntModelBinder[T]) ModelName() string {
+	return m.modelName
+}
+
+func (m *IntModelBinder[T]) RouteParamType() openapi.RouteParamType {
+	return m.paramType
+}
+
+func (m *IntModelBinder[T]) valid(v int64) []*openapi.ValidationError {
+	if v > m.Maximum || v < m.Minimum {
+		return []*openapi.ValidationError{{
+			Loc:  []string{string(m.paramType), m.modelName},
+			Ctx:  map[string]any{"where error": "client"},
+			Msg:  fmt.Sprintf("value: %d not <= %d and >= %d", v, m.Maximum, m.Minimum),
+			Type: string(openapi.IntegerType),
+		}}
+	}
 	return nil
 }
 
-// IntBindMethod 有符号数字验证
-type IntBindMethod struct {
-	Title   string       `json:"title,omitempty"`
-	Kind    reflect.Kind `json:"kind,omitempty"`
-	Maximum int64        `json:"maximum,omitempty"`
-	Minimum int64        `json:"minimum,omitempty"`
+// Validate 验证并转换数据类型
+// 如果是string类型，则按照定义进行转换，反之则直接返回
+func (m *IntModelBinder[T]) Validate(c *Context, requestParam any) (any, []*openapi.ValidationError) {
+	switch v := requestParam.(type) {
+	case string:
+		result, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return requestParam, []*openapi.ValidationError{{
+				Loc:  []string{string(m.paramType), m.modelName},
+				Msg:  fmt.Sprintf("value: '%s' is not an integer", requestParam),
+				Type: string(openapi.IntegerType),
+				Ctx:  whereClientError,
+			}}
+		}
+		return result, m.valid(result)
+	case int:
+		return v, m.valid(int64(v))
+	case int8:
+		return v, m.valid(int64(v))
+	case int16:
+		return v, m.valid(int64(v))
+	case int32:
+		return v, m.valid(int64(v))
+	case int64:
+		return v, m.valid(v)
+	default:
+		return requestParam, []*openapi.ValidationError{{
+			Loc:  []string{string(m.paramType), m.modelName},
+			Msg:  fmt.Sprintf("value: '%s' is not an integer", requestParam),
+			Type: string(openapi.IntegerType),
+			Ctx:  whereClientError,
+		}}
+	}
 }
 
-func (m *IntBindMethod) Name() string { return "IntBindMethod" }
+// UintModelBinder 无符号数字验证
+type UintModelBinder[T constraints.Unsigned | ~string] struct {
+	modelName string
+	paramType openapi.RouteParamType
+	Maximum   uint64 `json:"maximum,omitempty"`
+	Minimum   uint64 `json:"minimum,omitempty"`
+}
 
-func (m *IntBindMethod) Validate(ctx context.Context, data any) (any, []*openapi.ValidationError) {
-	var ves []*openapi.ValidationError
-	// 首先 data 必须是字符串类型
-	sv, ok := data.(string)
-	if !ok {
-		ves = append(ves, &openapi.ValidationError{
-			Loc:  []string{"query", m.Title},
-			Msg:  fmt.Sprintf("value: '%s' is not an integer", sv),
-			Type: string(openapi.IntegerType),
-			Ctx:  whereClientError,
-		})
+func (m *UintModelBinder[T]) Name() string { return "UintModelBinder" }
 
-		return nil, ves
-	}
+func (m *UintModelBinder[T]) ModelName() string {
+	return m.modelName
+}
 
-	atoi, err := strconv.ParseInt(sv, 10, 0)
-	if err != nil { // 无法转换为数字
-		ves = append(ves, &openapi.ValidationError{
-			Loc:  []string{"query", m.Title},
-			Msg:  fmt.Sprintf("value: '%s' is not a signed integer", sv),
-			Type: string(openapi.IntegerType),
-			Ctx:  whereClientError,
-		})
-		return nil, ves
-	}
+func (m *UintModelBinder[T]) RouteParamType() openapi.RouteParamType {
+	return m.paramType
+}
 
-	if atoi > m.Maximum || atoi < m.Minimum {
-		ves = append(ves, &openapi.ValidationError{
+func (m *UintModelBinder[T]) valid(v uint64) []*openapi.ValidationError {
+	if v > m.Maximum || v < m.Minimum {
+		return []*openapi.ValidationError{{
 			Ctx:  map[string]any{"where error": "client"},
-			Msg:  fmt.Sprintf("value: %s not <= %d and >= %d", sv, m.Maximum, m.Minimum),
+			Msg:  fmt.Sprintf("value: %d not <= %d and >= %d", v, m.Maximum, m.Minimum),
 			Type: string(openapi.IntegerType),
-			Loc:  []string{"param"},
-		})
-		return nil, ves
+			Loc:  []string{string(m.paramType), m.modelName},
+		}}
 	}
-
-	return atoi, ves
+	return nil
 }
 
-func (m *IntBindMethod) Marshal(obj any) ([]byte, error) {
-	// 目前无实际作用，不实现
-	return []byte{}, nil
-}
-
-func (m *IntBindMethod) Unmarshal(stream []byte, obj any) (ves []*openapi.ValidationError) {
-	// 可以通过 binary.BigEndian.Int64 实现，目前不实现
-	return
-}
-
-// New 返回int的零值
-func (m *IntBindMethod) New() any {
-	return 0
-}
-
-// UintBindMethod 无符号数字验证
-type UintBindMethod struct {
-	Title   string       `json:"title,omitempty"`
-	Kind    reflect.Kind `json:"kind,omitempty"`
-	Maximum uint64       `json:"maximum,omitempty"`
-	Minimum uint64       `json:"minimum,omitempty"`
-}
-
-func (m *UintBindMethod) Name() string { return "UintBindMethod" }
-
-func (m *UintBindMethod) Validate(ctx context.Context, data any) (any, []*openapi.ValidationError) {
-	var ves []*openapi.ValidationError
-	// 首先 data 必须是字符串类型
-	sv, ok := data.(string)
-	if !ok {
-		ves = append(ves, &openapi.ValidationError{
-			Loc:  []string{"query", m.Title},
-			Msg:  fmt.Sprintf("value: '%s' is not an integer", sv),
+// Validate 验证并转换数据类型
+// 如果是string类型，则按照定义进行转换，反之则直接返回
+func (m *UintModelBinder[T]) Validate(c *Context, requestParam any) (any, []*openapi.ValidationError) {
+	switch v := requestParam.(type) {
+	case string:
+		result, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			return requestParam, []*openapi.ValidationError{{
+				Loc:  []string{string(m.paramType), m.modelName},
+				Msg:  fmt.Sprintf("value: '%s' is not an integer", requestParam),
+				Type: string(openapi.IntegerType),
+				Ctx:  whereClientError,
+			}}
+		}
+		return result, m.valid(result)
+	case uint:
+		return v, m.valid(uint64(v))
+	case uint8:
+		return v, m.valid(uint64(v))
+	case uint16:
+		return v, m.valid(uint64(v))
+	case uint32:
+		return v, m.valid(uint64(v))
+	case uint64:
+		return v, m.valid(v)
+	default:
+		return requestParam, []*openapi.ValidationError{{
+			Loc:  []string{string(m.paramType), m.modelName},
+			Msg:  fmt.Sprintf("value: '%s' is not an integer", requestParam),
 			Type: string(openapi.IntegerType),
 			Ctx:  whereClientError,
-		})
-
-		return nil, ves
+		}}
 	}
-
-	atoi, err := strconv.ParseUint(sv, 10, 0)
-	if err != nil { // 无法转换为数字
-		ves = append(ves, &openapi.ValidationError{
-			Loc:  []string{"query", m.Title},
-			Msg:  fmt.Sprintf("value: '%s' is not an unsigned integer", sv),
-			Type: string(openapi.IntegerType),
-			Ctx:  whereClientError,
-		})
-		return nil, ves
-	}
-
-	if atoi > m.Maximum || atoi < m.Minimum {
-		ves = append(ves, &openapi.ValidationError{
-			Ctx:  map[string]any{"where error": "client"},
-			Msg:  fmt.Sprintf("value: %s not <= %d and >= %d", sv, m.Maximum, m.Minimum),
-			Type: string(openapi.IntegerType),
-			Loc:  []string{"param"},
-		})
-		return nil, ves
-	}
-
-	return atoi, ves
 }
 
-func (m *UintBindMethod) Marshal(obj any) ([]byte, error) {
-	// 目前无实际作用，不实现
-	return []byte{}, nil
+type FloatModelBinder[T constraints.Float | ~string] struct {
+	modelName string
+	paramType openapi.RouteParamType
 }
 
-func (m *UintBindMethod) Unmarshal(stream []byte, obj any) (ves []*openapi.ValidationError) {
-	// 可以通过 binary.BigEndian.Uint64 实现，目前不实现
-	return
+func (m *FloatModelBinder[T]) Name() string { return "FloatModelBinder" }
+
+func (m *FloatModelBinder[T]) ModelName() string {
+	return m.modelName
 }
 
-// New 返回uint的零值
-func (m *UintBindMethod) New() any {
-	return uint(0)
+func (m *FloatModelBinder[T]) RouteParamType() openapi.RouteParamType {
+	return m.paramType
 }
 
-type FloatBindMethod struct {
-	Title string       `json:"title,omitempty"`
-	Kind  reflect.Kind `json:"kind,omitempty"`
-}
-
-func (m *FloatBindMethod) Name() string { return "FloatBindMethod" }
-
-// Validate 验证字符串data是否是一个float类型，data 应为string类型
-func (m *FloatBindMethod) Validate(ctx context.Context, data any) (any, []*openapi.ValidationError) {
+// Validate 验证并转换数据类型
+// 如果是string类型，则按照定义进行转换，反之则直接返回
+func (m *FloatModelBinder[T]) Validate(c *Context, requestParam any) (any, []*openapi.ValidationError) {
 	var ves []*openapi.ValidationError
-	sv := data.(string)
+	var result float64
+	var err error
 
-	// 对于float64类型暂不验证范围是否合理
-	atof, err := strconv.ParseFloat(sv, 64)
+	switch v := requestParam.(type) {
+	case string:
+		result, err = strconv.ParseFloat(v, 64)
+	case float32:
+		result = float64(v)
+	case float64:
+		result = v
+	default:
+		err = fmt.Errorf("cannot convert %s to float", v)
+	}
+
 	if err != nil {
 		ves = append(ves, &openapi.ValidationError{
-			Loc:  []string{"query", m.Title},
-			Msg:  fmt.Sprintf("value: '%s' is not a number", sv),
+			Loc:  []string{string(m.paramType), m.modelName},
+			Msg:  fmt.Sprintf("value: '%s' is not an number", requestParam),
 			Type: string(openapi.NumberType),
 			Ctx:  whereClientError,
 		})
-
-		return nil, ves
+		//} else {
+		// 暂不验证范围
+		//if result > m.Maximum || result < m.Minimum {
+		//	ves = append(ves, &openapi.ValidationError{
+		//		Ctx:  map[string]any{"where error": "client"},
+		//		Msg:  fmt.Sprintf("value: %d not <= %d and >= %d", result, m.Maximum, m.Minimum),
+		//		Type: string(openapi.NumberType),
+		//		Loc:  []string{string(m.paramType), m.modelName},
+		//	})
+		//}
 	}
-	return atof, nil
+
+	return result, ves
 }
 
-func (m *FloatBindMethod) Marshal(obj any) ([]byte, error) {
-	return []byte{}, nil
+type BoolModelBinder struct {
+	modelName string
+	paramType openapi.RouteParamType
 }
 
-func (m *FloatBindMethod) Unmarshal(stream []byte, obj any) (ves []*openapi.ValidationError) {
-	return
+func (m *BoolModelBinder) Name() string { return "BoolModelBinder" }
+
+func (m *BoolModelBinder) ModelName() string {
+	return m.modelName
 }
 
-// New 返回float64的零值
-func (m *FloatBindMethod) New() any {
-	return float64(0)
+func (m *BoolModelBinder) RouteParamType() openapi.RouteParamType {
+	return m.paramType
 }
-
-type BoolBindMethod struct {
-	Title string `json:"title,omitempty"`
-}
-
-func (m *BoolBindMethod) Name() string { return "BoolBindMethod" }
 
 // Validate data 为字符串类型
-func (m *BoolBindMethod) Validate(ctx context.Context, data any) (any, []*openapi.ValidationError) {
-	sv := data.(string)
+func (m *BoolModelBinder) Validate(c *Context, requestParam any) (any, []*openapi.ValidationError) {
+	sv := requestParam.(string)
 
 	atob, err := strconv.ParseBool(sv)
 	if err != nil {
 		var ves []*openapi.ValidationError
 		ves = append(ves, &openapi.ValidationError{
-			Loc:  []string{"query", m.Title},
+			Loc:  []string{"query", m.modelName},
 			Msg:  fmt.Sprintf("value: '%s' is not a bool", sv),
 			Type: string(openapi.BoolType),
 			Ctx:  whereClientError,
 		})
-		return nil, ves
+		return false, ves
 	}
 
 	return atob, nil
 }
 
-func (m *BoolBindMethod) Marshal(obj any) ([]byte, error) {
-	return []byte{}, nil
+// JsonModelBinder json数据类型验证器,适用于泛型路由
+type JsonModelBinder[T any] struct {
+	modelName string
+	paramType openapi.RouteParamType
 }
 
-func (m *BoolBindMethod) Unmarshal(stream []byte, obj any) (ves []*openapi.ValidationError) {
-	return ves
+func (m *JsonModelBinder[T]) Name() string { return "JsonModelBinder" }
+
+func (m *JsonModelBinder[T]) ModelName() string {
+	return m.modelName
 }
 
-// New 返回 bool类型而零值false
-func (m *BoolBindMethod) New() any {
-	return false
+func (m *JsonModelBinder[T]) RouteParamType() openapi.RouteParamType {
+	return m.paramType
 }
 
-// JsonBindMethod json数据类型验证器,适用于泛型路由
-type JsonBindMethod[T any] struct {
-	Title          string `json:"title,omitempty"`
-	RouteParamType openapi.RouteParamType
-}
-
-func (m *JsonBindMethod[T]) where(key, value string) map[string]any {
+func (m *JsonModelBinder[T]) where(key, value string) map[string]any {
 	var where = make(map[string]any)
-	if m.RouteParamType == openapi.RouteParamResponse {
+	if m.paramType == openapi.RouteParamResponse {
 		where[whereErrorLabel] = whereServerError[whereErrorLabel]
 	} else {
 		where[whereErrorLabel] = whereClientError[whereErrorLabel]
@@ -312,11 +333,9 @@ func (m *JsonBindMethod[T]) where(key, value string) map[string]any {
 	return where
 }
 
-func (m *JsonBindMethod[T]) Name() string { return "JsonBindMethod" }
-
-func (m *JsonBindMethod[T]) Validate(ctx context.Context, data T) (T, []*openapi.ValidationError) {
+func (m *JsonModelBinder[T]) Validate(c *Context, requestParam any) (any, []*openapi.ValidationError) {
 	var vErr validator.ValidationErrors // validator的校验错误信息
-	err := defaultValidator.StructCtx(ctx, data)
+	err := defaultValidator.Struct(requestParam)
 
 	if ok := errors.As(err, &vErr); ok { // 模型验证错误
 		ves := make([]*openapi.ValidationError, 0)
@@ -325,45 +344,35 @@ func (m *JsonBindMethod[T]) Validate(ctx context.Context, data T) (T, []*openapi
 				Ctx:  m.where(validateErrorTagLabel, verr.Tag()),
 				Msg:  verr.Error(),
 				Type: verr.Type().String(),
-				Loc:  []string{"body", m.Title, verr.Field()},
+				Loc:  []string{"body", m.modelName, verr.Field()},
 			})
 		}
 		var n T
 		return n, ves
 	}
-	return data, nil
+	return requestParam, nil
 }
 
-func (m *JsonBindMethod[T]) Marshal(obj T) ([]byte, error) {
-	return utils.JsonMarshal(obj)
+// TimeModelBinder 时间校验方法
+type TimeModelBinder struct {
+	modelName string
+	paramType openapi.RouteParamType
 }
 
-func (m *JsonBindMethod[T]) Unmarshal(stream []byte, obj T) (ves []*openapi.ValidationError) {
-	err := utils.JsonUnmarshal(stream, obj)
-	if err != nil {
-		ve := ParseJsoniterError(err, m.RouteParamType, m.Title)
-		ves = append(ves, ve)
-	}
+func (m *TimeModelBinder) Name() string { return "TimeModelBinder" }
 
-	return
+func (m *TimeModelBinder) ModelName() string {
+	return m.modelName
 }
 
-func (m *JsonBindMethod[T]) New() any {
-	var value = new(T)
-	return value
+func (m *TimeModelBinder) RouteParamType() openapi.RouteParamType {
+	return m.paramType
 }
-
-// TimeBindMethod 时间校验方法
-type TimeBindMethod struct {
-	Title string `json:"title,omitempty" description:"查询参数名"`
-}
-
-func (m *TimeBindMethod) Name() string { return "TimeBindMethod" }
 
 // Validate 验证一个字符串是否是一个有效的时间字符串
 // @return time.Time
-func (m *TimeBindMethod) Validate(ctx context.Context, data any) (any, []*openapi.ValidationError) {
-	sv := data.(string) // 肯定是string类型
+func (m *TimeModelBinder) Validate(c *Context, requestParam any) (any, []*openapi.ValidationError) {
+	sv := requestParam.(string) // 肯定是string类型
 
 	var err error
 	var t time.Time
@@ -377,7 +386,7 @@ func (m *TimeBindMethod) Validate(ctx context.Context, data any) (any, []*openap
 
 	var ves []*openapi.ValidationError
 	ves = append(ves, &openapi.ValidationError{
-		Loc:  []string{"query", m.Title},
+		Loc:  []string{"query", m.modelName},
 		Msg:  fmt.Sprintf("value: '%s' is not a time, err:%v", sv, err),
 		Type: string(openapi.StringType),
 		Ctx:  whereClientError,
@@ -385,30 +394,24 @@ func (m *TimeBindMethod) Validate(ctx context.Context, data any) (any, []*openap
 	return nil, ves
 }
 
-func (m *TimeBindMethod) Marshal(obj any) ([]byte, error) {
-	t, ok := obj.(time.Time)
-	if ok {
-		return []byte(t.Format(time.TimeOnly)), nil
-	}
-	return nil, errors.New("obj is not a time")
+// DateModelBinder 日期校验
+type DateModelBinder struct {
+	modelName string
+	paramType openapi.RouteParamType
 }
 
-// Unmarshal time 类型不支持反序列化
-func (m *TimeBindMethod) Unmarshal(stream []byte, obj any) (ves []*openapi.ValidationError) {
-	return nil
+func (m *DateModelBinder) Name() string { return "DateModelBinder" }
+
+func (m *DateModelBinder) ModelName() string {
+	return m.modelName
 }
 
-func (m *TimeBindMethod) New() any { return nil }
-
-// DateBindMethod 日期校验
-type DateBindMethod struct {
-	Title string `json:"title,omitempty" description:"查询参数名"`
+func (m *DateModelBinder) RouteParamType() openapi.RouteParamType {
+	return m.paramType
 }
 
-func (m *DateBindMethod) Name() string { return "DateBindMethod" }
-
-func (m *DateBindMethod) Validate(ctx context.Context, data any) (any, []*openapi.ValidationError) {
-	sv := data.(string) // 肯定是string类型
+func (m *DateModelBinder) Validate(c *Context, requestParam any) (any, []*openapi.ValidationError) {
+	sv := requestParam.(string) // 肯定是string类型
 
 	var err error
 	var t time.Time
@@ -422,7 +425,7 @@ func (m *DateBindMethod) Validate(ctx context.Context, data any) (any, []*openap
 
 	var ves []*openapi.ValidationError
 	ves = append(ves, &openapi.ValidationError{
-		Loc:  []string{"query", m.Title},
+		Loc:  []string{"query", m.modelName},
 		Msg:  fmt.Sprintf("value: '%s' is not a date, err:%v", sv, err),
 		Type: string(openapi.StringType),
 		Ctx:  whereClientError,
@@ -430,30 +433,24 @@ func (m *DateBindMethod) Validate(ctx context.Context, data any) (any, []*openap
 	return nil, ves
 }
 
-func (m *DateBindMethod) Marshal(obj any) ([]byte, error) {
-	t, ok := obj.(time.Time)
-	if ok {
-		return []byte(t.Format(time.DateOnly)), nil
-	}
-	return nil, errors.New("obj is not a date")
+// DateTimeModelBinder 日期时间校验
+type DateTimeModelBinder struct {
+	modelName string
+	paramType openapi.RouteParamType
 }
 
-func (m *DateBindMethod) Unmarshal(stream []byte, obj any) (ves []*openapi.ValidationError) {
-	//TODO implement me
-	panic("implement me")
+func (m *DateTimeModelBinder) Name() string { return "DateTimeModelBinder" }
+
+func (m *DateTimeModelBinder) ModelName() string {
+	return m.modelName
 }
 
-func (m *DateBindMethod) New() any { return nil }
-
-// DateTimeBindMethod 日期时间校验
-type DateTimeBindMethod struct {
-	Title string `json:"title,omitempty" description:"查询参数名"`
+func (m *DateTimeModelBinder) RouteParamType() openapi.RouteParamType {
+	return m.paramType
 }
 
-func (m *DateTimeBindMethod) Name() string { return "DateTimeBindMethod" }
-
-func (m *DateTimeBindMethod) Validate(ctx context.Context, data any) (any, []*openapi.ValidationError) {
-	sv := data.(string) // 肯定是string类型
+func (m *DateTimeModelBinder) Validate(c *Context, requestParam any) (any, []*openapi.ValidationError) {
+	sv := requestParam.(string) // 肯定是string类型
 
 	var err error
 	var t time.Time
@@ -474,7 +471,7 @@ func (m *DateTimeBindMethod) Validate(ctx context.Context, data any) (any, []*op
 
 	if errors.As(err, &timeErr) {
 		ves = append(ves, &openapi.ValidationError{
-			Loc:  []string{"query", m.Title},
+			Loc:  []string{"query", m.modelName},
 			Msg:  fmt.Sprintf("value: '%s' is not a datetime, err:%s", sv, err.Error()),
 			Type: string(openapi.StringType),
 			Ctx: map[string]any{
@@ -484,7 +481,7 @@ func (m *DateTimeBindMethod) Validate(ctx context.Context, data any) (any, []*op
 		})
 	} else {
 		ves = append(ves, &openapi.ValidationError{
-			Loc:  []string{"query", m.Title},
+			Loc:  []string{"query", m.modelName},
 			Msg:  fmt.Sprintf("value: '%s' is not a datetime, err:%s", sv, err.Error()),
 			Type: string(openapi.StringType),
 			Ctx:  whereClientError,
@@ -494,25 +491,156 @@ func (m *DateTimeBindMethod) Validate(ctx context.Context, data any) (any, []*op
 	return nil, ves
 }
 
-func (m *DateTimeBindMethod) Marshal(obj any) ([]byte, error) {
-	t, ok := obj.(time.Time)
-	if ok {
-		return []byte(t.Format(time.DateTime)), nil
+type RequestModelBinder struct {
+	modelName string
+	paramType openapi.RouteParamType
+}
+
+func (m *RequestModelBinder) Name() string {
+	return "RequestModelBinder"
+}
+
+func (m *RequestModelBinder) ModelName() string {
+	return m.modelName
+}
+
+func (m *RequestModelBinder) RouteParamType() openapi.RouteParamType {
+	return m.paramType
+}
+
+func (m *RequestModelBinder) Validate(c *Context, requestParam any) (any, []*openapi.ValidationError) {
+	// 存在请求体,首先进行反序列化,之后校验参数是否合法,校验通过后绑定到 Context
+	var ves []*openapi.ValidationError
+
+	validated, err := c.muxCtx.ShouldBind(requestParam)
+	if err != nil {
+		// 转换错误
+		if validated {
+			ves = ParseValidatorError(err, openapi.RouteParamRequest, m.modelName)
+		} else {
+			ve := ParseJsoniterError(err, openapi.RouteParamRequest, m.modelName)
+			if ve != nil {
+				ves = append(ves, ve)
+			}
+		}
+		if len(ves) > 0 {
+			ves[0].Ctx[modelDescLabel] = m.modelName
+		}
+		return requestParam, ves
+	} else {
+		// 没有错误，需要判断是否校验过了，如果没有，则进行校验
+		if !validated {
+			err := defaultValidator.Struct(requestParam)
+			if err != nil {
+				ves := ParseValidatorError(err, openapi.RouteParamRequest, m.modelName)
+				if len(ves) > 0 {
+					ves[0].Ctx[modelDescLabel] = m.modelName
+				}
+			}
+		}
+		return requestParam, ves
 	}
-	return nil, errors.New("obj is not a datetime")
 }
 
-func (m *DateTimeBindMethod) Unmarshal(stream []byte, obj any) (ves []*openapi.ValidationError) {
-	return nil
+// FileModelBinder 文件请求体验证
+type FileModelBinder struct {
+	modelName string
 }
 
-func (m *DateTimeBindMethod) New() any { return nil }
+func (m *FileModelBinder) Name() string {
+	return "FileModelBinder"
+}
+
+func (m *FileModelBinder) ModelName() string {
+	return m.modelName
+}
+
+func (m *FileModelBinder) RouteParamType() openapi.RouteParamType {
+	return openapi.RouteParamRequest
+}
+
+func (m *FileModelBinder) Validate(c *Context, requestParam any) (any, []*openapi.ValidationError) {
+	// 存在上传文件定义，则从 multiform-data 中获取上传参数
+	forms, err := c.muxCtx.MultipartForm()
+	if err != nil {
+		return requestParam, []*openapi.ValidationError{{
+			Loc:  []string{"requestBody", "multiform-data"},
+			Msg:  "read multiform failed",
+			Type: string(openapi.ObjectType),
+			Ctx:  whereClientError,
+		}}
+	}
+
+	files := forms.File[openapi.MultipartFormFileName]
+	if len(files) == 0 {
+		return requestParam, []*openapi.ValidationError{{
+			Loc:  []string{"requestBody", "multiform-data", openapi.MultipartFormFileName},
+			Msg:  fmt.Sprintf("'%s' value not found", openapi.MultipartFormFileName),
+			Type: string(openapi.ObjectType),
+			Ctx:  whereClientError,
+		}}
+	}
+	c.file = &File{files}
+
+	return requestParam, nil
+}
+
+// FileWithParamModelBinder 文件+json 混合请求体验证
+type FileWithParamModelBinder struct {
+	FileModelBinder
+	paramType openapi.RouteParamType
+}
+
+func (m *FileWithParamModelBinder) Name() string {
+	return "FileWithParamModelBinder"
+}
+
+func (m *FileWithParamModelBinder) Validate(c *Context, requestParam any) (any, []*openapi.ValidationError) {
+	// 首先验证文件是否通过
+	_, ves := m.FileModelBinder.Validate(c, requestParam)
+	if len(ves) > 0 {
+		return nil, ves
+	}
+
+	forms, _ := c.MuxContext().MultipartForm()
+	// 文件验证通过，校验json参数
+	params := forms.Value[openapi.MultipartFormParamName]
+	if len(params) == 0 {
+		return requestParam, []*openapi.ValidationError{{
+			Loc:  []string{"requestBody", "multiform-data", openapi.MultipartFormParamName},
+			Msg:  fmt.Sprintf("'%s' value not found", openapi.MultipartFormParamName),
+			Type: string(openapi.ObjectType),
+			Ctx:  whereClientError,
+		}}
+	}
+
+	// json 参数绑定
+	err := c.Unmarshal([]byte(params[0]), requestParam)
+	if err != nil {
+		ve := ParseJsoniterError(err, openapi.RouteParamRequest, m.modelName)
+		ve.Ctx[modelDescLabel] = m.modelName
+		return requestParam, []*openapi.ValidationError{ve}
+	}
+
+	// json 校验
+	err = defaultValidator.Struct(requestParam)
+	if err != nil {
+		ves := ParseValidatorError(err, openapi.RouteParamRequest, m.modelName)
+		if len(ves) > 0 {
+			ves[0].Ctx[modelDescLabel] = m.modelName
+		}
+		return requestParam, ves
+	}
+
+	return requestParam, nil
+}
 
 // StructQueryBind 结构体查询参数验证器
 type StructQueryBind struct {
 	json jsoniter.API
 }
 
+// Unmarshal todo 性能损耗过大了
 func (m *StructQueryBind) Unmarshal(params map[string]any, obj any) *openapi.ValidationError {
 	s, err := m.json.Marshal(params)
 	if err != nil {

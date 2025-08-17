@@ -1,9 +1,10 @@
 package fastapi
 
 import (
-	"github.com/Chendemo12/fastapi/openapi"
-	"io"
+	"fmt"
 	"net/http"
+
+	"github.com/Chendemo12/fastapi/openapi"
 )
 
 // RouteErrorFormatter 路由函数返回错误时的处理函数，可用于格式化错误信息后返回给客户端
@@ -19,17 +20,20 @@ type DependenceHandle func(c *Context) error
 
 // RouteErrorOpt 错误处理函数选项, 用于在 SetRouteErrorFormatter 方法里同时设置错误码和响应内容等内容
 type RouteErrorOpt struct {
-	StatusCode   int    `json:"statusCode" validate:"required" description:"请求错误时的状态码"`
-	ResponseMode any    `json:"responseMode" validate:"required" description:"请求错误时的响应体，空则为字符串"`
-	Description  string `json:"description,omitempty" description:"错误文档"`
+	StatusCode   int                 `json:"statusCode" validate:"required" description:"请求错误时的状态码"`
+	Description  string              `json:"description,omitempty" description:"错误文档"`
+	ContentType  openapi.ContentType `json:"contentType" validate:"required" description:"请求错误时的内容类型"`
+	ResponseMode any                 `json:"responseMode" validate:"required" description:"请求错误时的响应体，空则为字符串"`
 }
 
 // 默认的错误处理函数
 var defaultRouteErrorFormatter RouteErrorFormatter = func(c *Context, err error) (statusCode int, resp any) {
-	statusCode = DefaultErrorStatusCode
+	if c.response.StatusCode != 0 {
+		statusCode = c.response.StatusCode
+	} else {
+		statusCode = DefaultErrorStatusCode
+	}
 	resp = err.Error()
-	c.response.Type = StringResponseType
-	c.response.ContentType = openapi.MIMETextPlainCharsetUTF8
 
 	return
 }
@@ -64,7 +68,7 @@ func (f *Wrapper) Handler(ctx MuxContext) error {
 		if err != nil {
 			// 依赖函数中断执行
 			wrapperCtx.response.StatusCode, wrapperCtx.response.Content = f.routeErrorFormatter(wrapperCtx, err)
-			return f.write(wrapperCtx)
+			return f.write(wrapperCtx, route, openapi.MIMEApplicationJSONCharsetUTF8)
 		}
 	}
 
@@ -72,7 +76,7 @@ func (f *Wrapper) Handler(ctx MuxContext) error {
 	hasError := wrapperCtx.beforeWorkflow(route, f.conf.StopImmediatelyWhenErrorOccurs)
 	if hasError {
 		// 校验工作流不通过, 中断执行
-		return f.write(wrapperCtx)
+		return f.write(wrapperCtx, route, openapi.MIMEApplicationJSONCharsetUTF8)
 	}
 
 	// 执行校验后依赖函数
@@ -81,19 +85,36 @@ func (f *Wrapper) Handler(ctx MuxContext) error {
 		if err != nil {
 			// 依赖函数中断执行
 			wrapperCtx.response.StatusCode, wrapperCtx.response.Content = f.routeErrorFormatter(wrapperCtx, err)
-			return f.write(wrapperCtx)
+			return f.write(wrapperCtx, route, openapi.MIMEApplicationJSONCharsetUTF8)
 		}
 	}
 
 	//
 	// 全部校验完成，执行处理函数并获取返回值, 此处已经完成全部请求参数的校验，调用失败也存在返回值
-	route.Call(wrapperCtx)
-	//
+	params := route.NewInParams(wrapperCtx)
+	result := route.Call(params)
+	last := result[LastOutParamOffset]
+	if last.IsNil() || !last.IsValid() {
+		// err=nil, 不存在错误，则校验返回值，如果存在错误，则直接返回错误信息
+		wrapperCtx.response.StatusCode = http.StatusOK
+		wrapperCtx.response.Content = result[FirstOutParamOffset].Interface()
 
-	// 路由后的校验，校验失败就地修改 Response
-	hasError = wrapperCtx.afterWorkflow(route, f.conf.StopImmediatelyWhenErrorOccurs)
+		// 路由后的校验，校验失败就地修改 Response
+		hasError = wrapperCtx.afterWorkflow(route, f.conf.DisableResponseValidate, f.conf.StopImmediatelyWhenErrorOccurs)
+		if hasError {
+			// 校验工作流不通过, 中断执行
+			return f.write(wrapperCtx, route, openapi.MIMEApplicationJSONCharsetUTF8)
+		} else {
+			// 路由正常响应
+			return f.write(wrapperCtx, route, route.Swagger().ResponseContentType) // 返回消息流
+		}
+	} else {
+		// 存在错误，则返回错误信息
+		err := last.Interface().(error)
+		wrapperCtx.response.StatusCode, wrapperCtx.response.Content = f.routeErrorFormatter(wrapperCtx, err)
 
-	return f.write(wrapperCtx) // 返回消息流
+		return f.write(wrapperCtx, route, openapi.MIMEApplicationJSONCharsetUTF8)
+	}
 }
 
 // ----------------------------------------	路由前的各种校验工作 ----------------------------------------
@@ -105,9 +126,7 @@ func (c *Context) beforeWorkflow(route RouteIface, stopImmediately bool) (hasErr
 	for _, link := range requestValidateLinks {
 		ves = link(c, route, stopImmediately)
 		if len(ves) > 0 { // 当任意环节校验失败时,即终止下文环节
-			c.response.Type = JsonResponseType
 			c.response.StatusCode = http.StatusUnprocessableEntity
-			c.response.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
 			c.response.Content = &openapi.HTTPValidationError{Detail: ves}
 			return true
 		}
@@ -119,15 +138,14 @@ func (c *Context) beforeWorkflow(route RouteIface, stopImmediately bool) (hasErr
 // ----------------------------------------	路由后的响应体校验工作 ----------------------------------------
 
 // 主要是对响应体是否符合tag约束的校验，
-func (c *Context) afterWorkflow(route RouteIface, stopImmediately bool) (hasError bool) {
+func (c *Context) afterWorkflow(route RouteIface, disableResponseValidate, stopImmediately bool) (hasError bool) {
 	var ves []*openapi.ValidationError
 
 	for _, link := range responseValidateLinks {
-		ves = link(c, route, stopImmediately)
+		ves = link(c, route, disableResponseValidate, stopImmediately)
 		if len(ves) > 0 { // 当任意环节校验失败时,即终止下文环节
 			// 校验不通过, 修改 Response.StatusCode 和 Response.Content
 			c.response.StatusCode = http.StatusUnprocessableEntity
-			c.response.ContentType = openapi.MIMEApplicationJSONCharsetUTF8
 			c.response.Content = &openapi.HTTPValidationError{Detail: ves}
 			return true
 		}
@@ -135,53 +153,50 @@ func (c *Context) afterWorkflow(route RouteIface, stopImmediately bool) (hasErro
 	return
 }
 
-// 写入响应体到响应字节流
-func (f *Wrapper) write(c *Context) error {
+// 写入响应体, 依据 contentType 的不同，有不同的写入行为
+func (f *Wrapper) write(c *Context, route RouteIface, contentType openapi.ContentType) error {
 	defer func() {
 		if c.routeCancel != nil {
 			c.routeCancel() // 当路由执行完毕时立刻关闭
 		}
 	}()
 
-	// 首先设置一下默认响应状态码
-	if c.response.StatusCode == 0 {
-		c.response.StatusCode = http.StatusOK
-	}
-
 	f.beforeWrite(c) // 执行钩子
 
+	// 设置状态码
 	c.muxCtx.Status(c.response.StatusCode)
 
-	switch c.response.Type {
-	case StringResponseType:
-		// 设置返回类型
-		if c.response.ContentType != "" {
-			c.muxCtx.Header(openapi.HeaderContentType, c.response.ContentType)
-		} else {
-			c.muxCtx.Header(openapi.HeaderContentType, openapi.MIMETextPlainCharsetUTF8)
-		}
+	switch contentType {
+	case openapi.MIMEApplicationJSON, openapi.MIMEApplicationJSONCharsetUTF8:
+		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
+
+	case openapi.MIMETextPlainCharsetUTF8, openapi.MIMETextPlain:
 		return c.muxCtx.SendString(c.response.Content.(string))
 
-	case HtmlResponseType: // 返回HTML页面
-		c.muxCtx.Header(openapi.HeaderContentType, openapi.MIMETextHTMLCharsetUTF8)
-		//return c.muxCtx.RenderHTML(c.response.StatusCode, bytes.NewReader(c.response.Content.(string)))
-		return c.muxCtx.SendString(c.response.Content.(string))
-
-	case FileResponseType: // 返回一个文件
-		if c.response.ContentType != "" {
-			c.muxCtx.Header(openapi.HeaderContentType, c.response.ContentType)
-		} else {
-			c.muxCtx.Header(openapi.HeaderContentType, openapi.MIMETextPlain)
+	case openapi.MIMEOctetStream: // 返回一个字节流或文件
+		if file, ok := c.response.Content.(*FileResponse); !ok {
+			c.muxCtx.Status(http.StatusInternalServerError)
+			return c.muxCtx.JSON(http.StatusInternalServerError, fmt.Sprintf("'%s' the return value type is not *FileResponse", route.Swagger().RelativePath))
+		} else { // 返回一个文件
+			switch file.mode {
+			case FileResponseModeSendFile:
+				return c.muxCtx.File(file.filepath)
+			case FileResponseModeFileAttachment: // 文件附件
+				return c.muxCtx.FileAttachment(file.filepath, file.filename)
+			case FileResponseModeReaderFile:
+				c.muxCtx.Header(openapi.HeaderContentType, string(contentType))
+				c.muxCtx.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", file.filename))
+				return c.muxCtx.SendStream(file.reader, -1)
+			case FileResponseModeStream: // 任意字节流
+				c.muxCtx.Header(openapi.HeaderContentType, string(contentType))
+				return c.muxCtx.SendStream(file.reader, -1)
+			default:
+				return c.muxCtx.JSON(http.StatusInternalServerError, fmt.Sprintf("'%s' the return value has wrong field", route.Swagger().RelativePath))
+			}
 		}
-		return c.muxCtx.File(c.response.Content.(string))
-
-	case StreamResponseType: // 返回字节流
-		if c.response.ContentType != "" {
-			c.muxCtx.Header(openapi.HeaderContentType, c.response.ContentType)
-		}
-		return c.muxCtx.SendStream(c.response.Content.(io.Reader))
 
 	default: // Json类型, any类型
+		c.muxCtx.Header(openapi.HeaderContentType, string(contentType))
 		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
 	}
 }
@@ -193,7 +208,7 @@ var requestValidateLinks = []func(c *Context, route RouteIface, stopImmediately 
 	requestBodyValidate, // 请求体自动校验
 }
 
-var responseValidateLinks = []func(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError{
+var responseValidateLinks = []func(c *Context, route RouteIface, disableResponseValidate, stopImmediately bool) []*openapi.ValidationError{
 	responseValidate, // 路由返回值校验
 }
 
@@ -211,7 +226,7 @@ func pathParamsValidate(c *Context, route RouteIface, stopImmediately bool) []*o
 			ves = append(ves, &openapi.ValidationError{
 				Loc:  []string{"path", p.SchemaTitle()},
 				Msg:  PathPsIsEmpty,
-				Type: "string", // 路径参数都是字符串类型
+				Type: string(openapi.StringType), // 路径参数都是字符串类型
 				Ctx:  whereClientError,
 			})
 			if stopImmediately {
@@ -235,8 +250,6 @@ func pathParamsValidate(c *Context, route RouteIface, stopImmediately bool) []*o
 //	对于存在多个错误的字段:
 //		如果 stopImmediately=false, 则全部校验完成后再统一返回
 //		反之则在遇到第一个错误后就立刻返回错误消息
-//
-//	@return []*openapi.ValidationError 校验结果, 若为nil则校验通过
 func queryParamsValidate(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError {
 	var ves []*openapi.ValidationError
 
@@ -269,20 +282,20 @@ func queryParamsValidate(c *Context, route RouteIface, stopImmediately bool) []*
 	// 根据数据类型转换并校验参数值，比如: 定义为int类型，但是参数值为“abc”，虽然是存在的但是不合法
 	// 转换规则按照 QModel 定义进行，只有转换成功后才进行校验
 	for _, binder := range route.QueryBinders() {
-		v, ok := c.queryFields[binder.QModel.JsonName()]
+		v, ok := c.queryFields[binder.ModelName()]
 		if !ok { // 此参数值不存在
 			continue
 		}
 
 		sv := v.(string)
-		value, err := binder.Method.Validate(c.routeCtx, sv)
+		value, err := binder.Validate(c, sv)
 		if err != nil {
 			ves = append(ves, err...)
 			if stopImmediately {
 				break
 			}
 		} else {
-			c.queryFields[binder.QModel.JsonName()] = value
+			c.queryFields[binder.ModelName()] = value
 		}
 	}
 
@@ -295,74 +308,46 @@ func structQueryValidate(c *Context, route RouteIface, stopImmediately bool) []*
 		return nil
 	}
 
-	var ves []*openapi.ValidationError
-	var instance = route.NewStructQuery()
+	c.queryStruct = route.NewStructQuery()
 
-	if !c.muxCtx.CustomBindQueryMethod() {
-		values := map[string]any{}
-		for _, q := range route.Swagger().QueryFields {
-			if q.InStruct {
-				v, ok := c.queryFields[q.JsonName()]
-				if ok {
-					values[q.JsonName()] = v
-				}
+	values := map[string]any{}
+	for _, q := range route.Swagger().QueryFields {
+		if q.InStruct {
+			v, ok := c.queryFields[q.JsonName()]
+			if ok {
+				values[q.JsonName()] = v
 			}
 		}
-
-		ves = structQueryBind.Bind(values, instance)
-	} else {
-		// 采用自定义实现
-		err := c.muxCtx.BindQuery(instance)
-		ves = ParseValidatorError(err, openapi.RouteParamQuery, "")
 	}
 
-	c.queryStruct = instance // 关联参数
-
-	return ves
+	return structQueryBind.Bind(values, c.queryStruct)
 }
 
-// 请求体校验
+// 请求体校验, 支持识别文件
 func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError {
-	if route.Swagger().RequestContentType != openapi.MIMEApplicationJSON {
-		return nil
-	}
-
-	var instance any
 	var ves []*openapi.ValidationError
-	var err error
-
-	switch route.Swagger().Method {
-	case http.MethodPost, http.MethodPut, http.MethodPatch:
-		instance = route.NewRequestModel()
-	default:
-		instance = nil
-	}
-
-	if instance != nil {
-		// 存在请求体,首先进行反序列化,之后校验参数是否合法,校验通过后绑定到 Context
-		if !c.muxCtx.CustomShouldBindMethod() { // 未重写自定义校验方法
-			err = c.muxCtx.BodyParser(instance)
-			if err != nil {
-				ve := ParseJsoniterError(err, openapi.RouteParamRequest, route.Swagger().RequestModel.SchemaTitle())
-				ve.Ctx[modelDescLabel] = route.Swagger().RequestModel.SchemaDesc()
-				ves = append(ves, ve)
-			} else {
-				// 反序列化成功,校验模型
-				c.requestModel, ves = route.RequestBinders().Method.Validate(c.routeCtx, instance)
-			}
-		} else {
-			err = c.muxCtx.ShouldBind(instance)
-			ves = ParseValidatorError(err, openapi.RouteParamRequest, route.Swagger().RequestModel.SchemaTitle())
-			if len(ves) > 0 {
-				ves[0].Ctx[modelDescLabel] = route.Swagger().RequestModel.SchemaDesc()
-			}
-		}
+	if route.Swagger().RequestModel != nil {
+		requestParam := route.NewRequestModel()
+		c.requestModel, ves = route.RequestBinders().Validate(c, requestParam)
 	}
 
 	return ves
 }
 
 // 返回值校验入口
-func responseValidate(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError {
-	return route.ResponseValidate(c, stopImmediately)
+func responseValidate(c *Context, route RouteIface, disableResponseValidate, stopImmediately bool) []*openapi.ValidationError {
+	if disableResponseValidate {
+		return nil
+	}
+
+	if c.response.StatusCode == http.StatusOK || c.response.StatusCode == 0 {
+		// TODO: 此校验浪费性能, 尝试通过某种方式绕过
+		_, ves := route.ResponseBinder().Validate(c, c.response.Content)
+		if len(ves) > 0 {
+			ves[0].Ctx[modelDescLabel] = route.Swagger().ResponseModel.SchemaDesc()
+		}
+		return ves
+	}
+
+	return nil
 }

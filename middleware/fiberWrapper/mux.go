@@ -3,6 +3,14 @@ package fiberWrapper
 import (
 	"errors"
 	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"runtime"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/Chendemo12/fastapi"
 	"github.com/Chendemo12/fastapi/openapi"
 	"github.com/Chendemo12/fastapi/utils"
@@ -11,12 +19,6 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/pelletier/go-toml/v2"
 	"gopkg.in/yaml.v3"
-	"io"
-	"net/http"
-	"runtime"
-	"strings"
-	"sync"
-	"time"
 )
 
 var pool = &sync.Pool{New: func() any { return &FiberContext{} }}
@@ -58,6 +60,7 @@ func Default(cf ...fiber.Config) *FiberMux {
 			JSONEncoder:   utils.JsonMarshal,       // json序列化器
 			JSONDecoder:   utils.JsonUnmarshal,     // json解码器
 			ErrorHandler:  customFiberErrorHandler, // 设置自定义错误处理
+			BodyLimit:     100 * 1024 * 1024,       // 设置请求体最大为 100MB
 		}
 	} else {
 		conf = cf[0]
@@ -140,7 +143,8 @@ type FiberContext struct {
 }
 
 func (c *FiberContext) Method() string { return c.ctx.Method() }
-func (c *FiberContext) Path() string   { return c.ctx.Route().Path }
+
+func (c *FiberContext) Path() string { return c.ctx.Route().Path }
 
 func (c *FiberContext) Ctx() any { return c.ctx }
 
@@ -164,6 +168,10 @@ func (c *FiberContext) Params(key string, undefined ...string) string {
 	return c.ctx.Params(key, undefined...)
 }
 
+func (c *FiberContext) MultipartForm() (*multipart.Form, error) {
+	return c.ctx.MultipartForm()
+}
+
 // GetHeader 获取请求头, 当key不存在时返回空字符串，如果存在多个时，返回逗号分隔的字符串
 func (c *FiberContext) GetHeader(key string) string {
 	headers, ok := c.ctx.GetReqHeaders()[key]
@@ -181,13 +189,10 @@ func (c *FiberContext) ContentType() string {
 	return string(c.ctx.Context().Request.Header.ContentType())
 }
 
-func (c *FiberContext) BindQuery(obj any) error     { return nil }
-func (c *FiberContext) CustomBindQueryMethod() bool { return false }
-
-func (c *FiberContext) BodyParser(obj any) error     { return c.ctx.BodyParser(obj) }
-func (c *FiberContext) Validate(obj any) error       { return nil }
-func (c *FiberContext) ShouldBind(obj any) error     { return nil }
-func (c *FiberContext) CustomShouldBindMethod() bool { return false }
+func (c *FiberContext) ShouldBind(obj any) (validated bool, err error) {
+	// fiber 没有校验方法，因此需返回 false
+	return false, c.ctx.BodyParser(obj)
+}
 
 func (c *FiberContext) SetCookie(cookie *http.Cookie) {
 	ck := &fiber.Cookie{
@@ -231,7 +236,7 @@ func (c *FiberContext) YAML(code int, obj any) error {
 	if err != nil {
 		return err
 	}
-	c.ctx.Set(openapi.HeaderContentType, openapi.MIMEApplicationYAMLCharsetUTF8)
+	c.ctx.Set(openapi.HeaderContentType, string(openapi.MIMEApplicationYAMLCharsetUTF8))
 	c.ctx.Status(code)
 	return c.ctx.Send(bytes)
 }
@@ -241,7 +246,7 @@ func (c *FiberContext) TOML(code int, obj any) error {
 	if err != nil {
 		return err
 	}
-	c.ctx.Set(openapi.HeaderContentType, openapi.MIMEApplicationTOMLCharsetUTF8)
+	c.ctx.Set(openapi.HeaderContentType, string(openapi.MIMEApplicationTOMLCharsetUTF8))
 	c.ctx.Status(code)
 	return c.ctx.Send(bytes)
 }
@@ -287,19 +292,12 @@ func (c *FiberContext) JSON(statusCode int, data any) error {
 func customRecoverHandler(c *fiber.Ctx, e any) {
 	buf := make([]byte, 1024)
 	buf = buf[:runtime.Stack(buf, true)]
-	msg := utils.CombineStrings(
-		"Request RelativePath: ", c.Path(), fmt.Sprintf(", Error: %v, \n", e), string(buf),
-	)
-	fastapi.Error(msg)
+	fastapi.Errorf("%s %s failed, Error: %s", c.Method(), c.Path(), string(buf))
 }
 
 // customFiberErrorHandler 自定义fiber接口错误处理函数
 func customFiberErrorHandler(c *fiber.Ctx, e error) error {
-	fastapi.Warn(utils.CombineStrings(
-		"error happened during: '",
-		c.Method(), ": ", c.Path(),
-		"', Msg: ", e.Error(),
-	))
+	fastapi.Warnf("%s %s, Error: %s", c.Method(), c.Path(), e.Error())
 	return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 		"code": fiber.StatusBadRequest,
 		"msg":  e.Error()},

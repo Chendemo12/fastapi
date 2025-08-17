@@ -2,10 +2,11 @@ package openapi
 
 import (
 	"fmt"
-	"github.com/Chendemo12/fastapi/utils"
 	"reflect"
 	"strings"
 	"unicode"
+
+	"github.com/Chendemo12/fastapi/utils"
 )
 
 // BaseModelMeta 所有数据模型 ModelSchema 的元信息
@@ -13,7 +14,7 @@ type BaseModelMeta struct {
 	Param          *RouteParam
 	doc            map[string]any    `description:"模型文档"`
 	itemModel      *BaseModelMeta    `description:"当此模型为数组时, 记录内部元素的模型,同样可能是个数组"`
-	Description    string            `description:"模型描述"`
+	description    string            `description:"模型描述"`
 	fields         []*BaseModelField `description:"结构体字段"`
 	innerModels    []*BaseModelField `description:"子模型, 对于未命名结构体，给其指定一个结构体名称"`
 	hasValidateTag bool              `description:"是否具有validate标签"`
@@ -166,9 +167,10 @@ func (m *BaseModelMeta) scanStructField(argsType *ArgsType, depth int) {
 
 	// ---------------------------------- 获取字段信息 ----------------------------------
 	fieldMeta := &BaseModelField{
-		Exported:  unicode.IsUpper(rune(field.Name[0])),
-		Anonymous: field.Anonymous,
-		rType:     field.Type,
+		Exported:   unicode.IsUpper(rune(field.Name[0])),
+		Anonymous:  field.Anonymous,
+		JsonIgnore: utils.QueryJsonName(field.Tag, field.Name) == "-",
+		rType:      field.Type,
 	}
 	fieldMeta.Tag = field.Tag
 	fieldMeta.Name = field.Name
@@ -320,45 +322,45 @@ func (m *BaseModelMeta) scanBaseSwagger() (err error) {
 		// 生成数字类型的最大最小值
 		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = IntMaximum
 		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = IntMinimum
-		m.Description = "有符号的数字类型" // 重写注释
+		m.description = "有符号的数字类型" // 重写注释
 	case reflect.Int8:
 		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = Int8Maximum
 		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = Int8Minimum
-		m.Description = "8位有符号的数字类型"
+		m.description = "8位有符号的数字类型"
 	case reflect.Int16:
 		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = Int16Maximum
 		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = Int16Minimum
-		m.Description = "16位有符号的数字类型"
+		m.description = "16位有符号的数字类型"
 	case reflect.Int32:
 		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = Int32Maximum
 		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = Int32Minimum
-		m.Description = "32位有符号的数字类型"
+		m.description = "32位有符号的数字类型"
 
 	case reflect.Uint, reflect.Uint64:
 		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = Uint64Maximum
 		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = Uint64Minimum
-		m.Description = "无符号的数字类型"
+		m.description = "无符号的数字类型"
 	case reflect.Uint8:
 		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = Uint8Maximum
 		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = Uint8Minimum
-		m.Description = "8位无符号的数字类型"
+		m.description = "8位无符号的数字类型"
 	case reflect.Uint16:
 		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = Uint16Maximum
 		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = Uint16Minimum
-		m.Description = "16位无符号的数字类型"
+		m.description = "16位无符号的数字类型"
 	case reflect.Uint32:
 		m.doc[ValidatorLabelToOpenapiLabel["lte"]] = Uint32Maximum
 		m.doc[ValidatorLabelToOpenapiLabel["gte"]] = Uint32Minimum
-		m.Description = "32位无符号的数字类型"
+		m.description = "32位无符号的数字类型"
 
 	case reflect.Float32:
-		m.Description = "32位的浮点类型"
+		m.description = "32位的浮点类型"
 	case reflect.Float64:
-		m.Description = "64位的浮点类型"
+		m.description = "64位的浮点类型"
 
 	case reflect.String:
 		// 生成字符串类型的最大最小长度
-		m.Description = "字符串类型"
+		m.description = "字符串类型"
 	default:
 	}
 
@@ -372,9 +374,9 @@ func (m *BaseModelMeta) scanObjectSwagger() (err error) {
 	// 判断类型是否实现了 SchemaIface 接口
 	desc := ReflectCallSchemaDesc(m.Param.CopyPrototype())
 	if desc != "" {
-		m.Description = desc
+		m.description = desc
 	} else {
-		m.Description = m.Param.Pkg
+		m.description = m.Param.Pkg
 	}
 	m.doc = map[string]any{}
 
@@ -401,6 +403,10 @@ func (m *BaseModelMeta) scanObjectSwagger() (err error) {
 		}
 
 		if !field.Exported { // 非导出字段
+			continue
+		}
+
+		if field.JsonIgnore { // json设置了忽略
 			continue
 		}
 
@@ -436,10 +442,10 @@ func (m *BaseModelMeta) scanArraySwagger() (err error) {
 	}
 
 	// 将子元素的文档作为此模型的文档，如果子元素是结构体则反射获取其文档
-	m.Description = m.itemModel.SchemaDesc()
+	m.description = m.itemModel.SchemaDesc()
 	if m.itemModel.SchemaType() == ObjectType {
 		if desc := ReflectCallSchemaDesc(m.itemModel.Param.Prototype); desc != "" {
-			m.Description = desc
+			m.description = desc
 		}
 	}
 
@@ -471,7 +477,7 @@ func (m *BaseModelMeta) JsonName() string { return m.SchemaTitle() }
 
 // SchemaDesc 模型文档注释
 func (m *BaseModelMeta) SchemaDesc() string {
-	return m.Description
+	return m.description
 }
 
 // SchemaType 模型类型
@@ -546,6 +552,7 @@ type BaseModelField struct {
 	ItemRef     string            `description:"子元素类型, 仅Type=array/object时有效"`
 	Exported    bool              `description:"是否是导出字段"`
 	Anonymous   bool              `description:"是否是嵌入字段"`
+	JsonIgnore  bool              `description:"JSON是否忽略了该字段"`
 }
 
 func (f *BaseModelField) Init() (err error) {

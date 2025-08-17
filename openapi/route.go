@@ -3,13 +3,14 @@ package openapi
 import (
 	"errors"
 	"fmt"
-	"github.com/Chendemo12/fastapi/pathschema"
-	"github.com/Chendemo12/fastapi/utils"
 	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/Chendemo12/fastapi/pathschema"
+	"github.com/Chendemo12/fastapi/utils"
 )
 
 // RouteParamType 路由参数类型
@@ -28,37 +29,36 @@ const (
 )
 
 // RouteSwagger 路由文档定义，所有类型的路由均包含此部分
+// 由于方法定义只允许有一个响应体，因此通过 ResponseModel 来区分是否是文件，还是JSON等响应
+// 对于请求体来说则可用有多个，文件和JSON表单可用同时存在，因此需通过 RequestFile 来区分是否有上传文件
 type RouteSwagger struct {
 	RequestModel        *BaseModelMeta `description:"请求体元数据"`
 	ResponseModel       *BaseModelMeta `description:"响应体元数据"`
+	RequestFile         bool           `json:"-" description:"是否存在文件"`
 	Summary             string         `json:"summary" description:"摘要描述"`
 	Url                 string         `json:"url" description:"完整请求路由"`
 	Description         string         `json:"description" description:"详细描述"`
 	Method              string         `json:"method" description:"请求方法"`
 	RelativePath        string         `json:"relative_path" description:"相对路由"`
-	RequestContentType  string         `json:"request_content_type,omitempty" description:"请求体类型, 仅在 application/json 情况下才进行请求体校验"`
-	ResponseContentType string         `json:"response_content_type,omitempty" description:"响应体类型, 仅在 application/json 情况下才进行响应体校验"`
+	RequestContentType  ContentType    `json:"requestContentType,omitempty" description:"请求体类型, 仅在 application/json 情况下才进行请求体校验"`
+	ResponseContentType ContentType    `json:"responseContentType,omitempty" description:"响应体类型, 仅在 application/json 情况下才进行响应体校验"`
 	Api                 string         `description:"用作唯一标识"`
 	Tags                []string       `json:"tags" description:"路由标签"`
 	PathFields          []*QModel      `json:"-" description:"路径参数"`
 	QueryFields         []*QModel      `json:"-" description:"查询参数"`
-	UploadFile          SchemaIface    `json:"-" description:"是否是上传文件,不能与RequestModel共存"`
 	Deprecated          bool           `json:"deprecated" description:"是否禁用"`
 }
 
 func (r *RouteSwagger) Init() (err error) {
-	r.RequestContentType = MIMEApplicationJSON
-	r.ResponseContentType = MIMEApplicationJSON
-	r.Api = CreateRouteIdentify(r.Method, r.Url)
-
 	// 由于查询参数和请求体需要从方法入参中提取, 以及响应体需要从方法出参中提取,因此在上层进行解析
 	if r.ResponseModel == nil { // 返回值不允许为nil, 此处错误为上层忘记初始化模型参数
 		return errors.New("ResponseModel is not init")
 	}
 
+	r.Api = CreateRouteIdentify(r.Method, r.Url)
+
 	// 请求体可以为nil
 	err = r.Scan()
-
 	return
 }
 
@@ -73,7 +73,7 @@ func (r *RouteSwagger) Scan() (err error) {
 	return
 }
 
-// ScanInner 解析内部模型数据
+// ScanInner 解析内部模型数据并推断请求体和响应体的类型
 func (r *RouteSwagger) ScanInner() (err error) {
 	for _, qmodel := range r.QueryFields {
 		err = qmodel.Init()
@@ -98,6 +98,25 @@ func (r *RouteSwagger) ScanInner() (err error) {
 
 	if r.ResponseModel != nil {
 		err = r.ResponseModel.Init()
+	}
+
+	// 推断请求体类型，目前只有2类型类型
+	if r.RequestFile { // 存在上传文件
+		r.RequestContentType = MIMEMultipartForm
+	} else {
+		r.RequestContentType = MIMEApplicationJSON
+	}
+
+	// 推断响应体类型
+	if r.ResponseModel.Param.IsFile {
+		r.ResponseContentType = MIMEOctetStream
+	} else {
+		switch r.ResponseModel.Param.SchemaType() {
+		case StringType:
+			r.ResponseContentType = MIMETextPlainCharsetUTF8
+		default:
+			r.ResponseContentType = MIMEApplicationJSONCharsetUTF8
+		}
 	}
 
 	return
@@ -157,6 +176,7 @@ type RouteParam struct {
 	Index          int            `description:"参数处于方法中的原始位置,可通过 method.RouteType.In(Index) 或 method.RouteType.Out(Index) 反向获得此参数"`
 	IsPtr          bool           `description:"标识 Prototype 是否是指针类型"`
 	IsTime         bool           `description:"是否是时间类型"`
+	IsFile         bool           `description:"是否是文件类型"`
 	IsGeneric      bool           `description:"是否是泛型结构体"`
 	IsNil          bool           `description:"todo"`
 }
@@ -168,6 +188,7 @@ func NewRouteParam(rt reflect.Type, index int, paramType RouteParamType) *RouteP
 	r.IsPtr = rt.Kind() == reflect.Ptr
 	r.Index = index
 	r.RouteParamType = paramType
+
 	if r.IsPtr {
 		r.IsGeneric = IsGenericModelByType(r.Prototype.Elem())
 	} else {
@@ -189,6 +210,9 @@ func (r *RouteParam) Init() (err error) {
 		r.Pkg = r.Prototype.String()
 	}
 
+	r.IsTime = r.Pkg == TimePkg
+	r.IsFile = r.Pkg == FileRequestPkg
+
 	// 对于[]object 形式，修改其模型名称
 	if r.DataType == ArrayType {
 		elem := r.Prototype.Elem()
@@ -203,10 +227,18 @@ func (r *RouteParam) Init() (err error) {
 		// 对于匿名字段, 此处无法重命名，只能由外部重命名, 通过 Rename 方法重命名
 	}
 
-	r.IsTime = r.Pkg == TimePkg
+	// 判断是否是文件类型，对于响应文件，返回值固定为 FileResponsePkg
+	if r.RouteParamType == RouteParamResponse && r.Pkg == FileResponsePkg {
+		r.IsFile = true
+	}
+	// 请求体是文件类型
+	if r.RouteParamType == RouteParamRequest && r.Pkg == FileRequestPkg {
+		r.IsFile = true
+	}
 
 	// 当其作为查询参数时，手动分配一个名称
 	r.QueryName = fmt.Sprintf("%s%s%d", r.Name, CustomQueryNameConnector, r.Index)
+
 	return nil
 }
 

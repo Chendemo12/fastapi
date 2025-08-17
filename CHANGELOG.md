@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## 0.3.1 - (2025-08-17)
+
+### Feat
+
+- 支持上传文件；
+- 支付下载文件；
+
+### BREAKING
+
+- 移除`Wrapper.ActivateHotSwitch`相关方法。
+- 移除`Wrapper.RootCtx`方法。
+- 移除`Wrapper.SetRouteErrorStatusCode`方法。
+- 移除`Wrapper.SetRouteErrorResponse`方法。
+- **不再支持非结构体参数**，请使用结构体来定义查询参数或请求体参数。
+
+## 0.3.0 - (2025-05-04)
+
+### Feat
+
+- 升级go版本`v1.23`
+
+## 0.2.12 - (2024-12-17)
+
+### Fix
+
+- 修复默认的错误处理handle`defaultRouteErrorFormatter`覆盖`Context.Status设置状态码后被重置为500`的错误；
+
 ## 0.2.11 - (2024-07-10)
 
 ### Feat

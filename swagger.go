@@ -2,11 +2,18 @@ package fastapi
 
 import (
 	"fmt"
-	"github.com/Chendemo12/fastapi/openapi"
 	"net/http"
+
+	"github.com/Chendemo12/fastapi/openapi"
 )
 
 const staticPrefix = "internal/static/"
+
+// 特殊的结构体，不能作为请求体使用
+var specialStructPkg = []string{
+	openapi.TimePkg,
+	"*" + openapi.TimePkg, // 基本不存在此情况
+}
 
 // 生成模型定义
 func (f *Wrapper) registerRouteDoc() *Wrapper {
@@ -25,7 +32,7 @@ func (f *Wrapper) registerRouteHandle() *Wrapper {
 	// =========== docs 在线调试页面
 	err := f.Mux().BindRoute(http.MethodGet, openapi.DocumentUrl,
 		func(ctx MuxContext) error {
-			ctx.Header(openapi.HeaderContentType, openapi.MIMETextHTMLCharsetUTF8)
+			ctx.Header(openapi.HeaderContentType, string(openapi.MIMETextHTMLCharsetUTF8))
 			return ctx.SendString(openapi.MakeSwaggerUiHtml(
 				f.Config().Title,
 				openapi.JsonUrl,
@@ -42,7 +49,7 @@ func (f *Wrapper) registerRouteHandle() *Wrapper {
 	// =========== openapi 获取路由定义
 	err = f.Mux().BindRoute(http.MethodGet, openapi.JsonUrl,
 		func(ctx MuxContext) error {
-			ctx.Header(openapi.HeaderContentType, openapi.MIMEApplicationJSONCharsetUTF8)
+			ctx.Header(openapi.HeaderContentType, string(openapi.MIMEApplicationJSONCharsetUTF8))
 			_, err := ctx.Write(f.openApi.Schema())
 			return err
 		},
@@ -54,7 +61,7 @@ func (f *Wrapper) registerRouteHandle() *Wrapper {
 	// =========== redoc 纯文档页面
 	err = f.Mux().BindRoute(http.MethodGet, openapi.ReDocumentUrl,
 		func(ctx MuxContext) error {
-			ctx.Header(openapi.HeaderContentType, openapi.MIMETextHTMLCharsetUTF8)
+			ctx.Header(openapi.HeaderContentType, string(openapi.MIMETextHTMLCharsetUTF8))
 			return ctx.SendString(openapi.MakeRedocUiHtml(
 				f.Config().Title,
 				openapi.JsonUrl,
@@ -108,7 +115,7 @@ func queryDocsUiCSS(c MuxContext) error {
 	}
 
 	c.Status(http.StatusOK)
-	c.Header(openapi.HeaderContentType, openapi.MIMETextCSSCharsetUTF8)
+	c.Header(openapi.HeaderContentType, string(openapi.MIMETextCSSCharsetUTF8))
 
 	_, err = c.Write(b)
 	return err
@@ -122,7 +129,7 @@ func queryDocsUiJS(c MuxContext) error {
 	}
 
 	c.Status(http.StatusOK)
-	c.Header(openapi.HeaderContentType, openapi.MIMETextJavaScriptCharsetUTF8)
+	c.Header(openapi.HeaderContentType, string(openapi.MIMETextJavaScriptCharsetUTF8))
 
 	_, err = c.Write(b)
 	return err
@@ -136,7 +143,7 @@ func queryRedocUiJS(c MuxContext) error {
 	}
 
 	c.Status(http.StatusOK)
-	c.Header(openapi.HeaderContentType, openapi.MIMETextJavaScriptCharsetUTF8)
+	c.Header(openapi.HeaderContentType, string(openapi.MIMETextJavaScriptCharsetUTF8))
 
 	_, err = c.Write(b)
 	return err

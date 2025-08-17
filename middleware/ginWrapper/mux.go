@@ -5,12 +5,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/Chendemo12/fastapi"
-	"github.com/gin-gonic/gin"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/Chendemo12/fastapi"
+	"github.com/gin-gonic/gin"
 )
 
 var pool = &sync.Pool{New: func() any { return &GinContext{} }}
@@ -185,6 +187,10 @@ func (c *GinContext) Query(key string, undefined ...string) string {
 	return value
 }
 
+func (c *GinContext) MultipartForm() (*multipart.Form, error) {
+	return c.ctx.MultipartForm()
+}
+
 func (c *GinContext) BindQuery(obj any) error {
 	return c.ctx.ShouldBindQuery(obj)
 }
@@ -192,15 +198,9 @@ func (c *GinContext) BindQuery(obj any) error {
 // CustomBindQueryMethod 无需自定义实现
 func (c *GinContext) CustomBindQueryMethod() bool { return false }
 
-func (c *GinContext) ShouldBind(obj any) error {
-	return c.ctx.ShouldBind(obj)
+func (c *GinContext) ShouldBind(obj any) (validated bool, err error) {
+	return true, c.ctx.ShouldBind(obj)
 }
-
-func (c *GinContext) BodyParser(model any) error { return nil }
-func (c *GinContext) Validate(obj any) error     { return nil }
-
-// CustomShouldBindMethod 需要自定义实现请求体解析方法
-func (c *GinContext) CustomShouldBindMethod() bool { return true }
 
 func (c *GinContext) Header(key, value string) {
 	c.ctx.Header(key, value)

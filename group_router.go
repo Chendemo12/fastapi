@@ -3,15 +3,16 @@ package fastapi
 import (
 	"errors"
 	"fmt"
-	"github.com/Chendemo12/fastapi/openapi"
-	"github.com/Chendemo12/fastapi/pathschema"
-	"github.com/Chendemo12/fastapi/utils"
 	"net/http"
 	"path"
 	"reflect"
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/Chendemo12/fastapi/openapi"
+	"github.com/Chendemo12/fastapi/pathschema"
+	"github.com/Chendemo12/fastapi/utils"
 )
 
 // GroupRouteHandler 路由组路由函数签名，其中any可以是具体的类型，但不应该是 Response
@@ -20,8 +21,7 @@ type GroupRouteHandler func(c *Context, params ...any) (any, error)
 // GroupRouter 结构体路由组定义
 // 用法：首先实现此接口，然后通过调用 Wrapper.IncludeRoute 方法进行注册绑定
 type GroupRouter interface {
-	// Prefix 路由组前缀，无需考虑是否以/开头或结尾
-	// 如果为空则通过 PathSchema 方案进行格式化
+	// Prefix 路由组前缀，无需考虑是否以/开头或结尾，如果为空则通过 PathSchema 方案进行格式化
 	Prefix() string
 	// Tags 标签，如果为空则设为结构体名称的大驼峰形式，去掉可能存在的http方法名
 	Tags() []string
@@ -37,37 +37,6 @@ type GroupRouter interface {
 	// 但是此处定义的路由不应该包含查询参数
 	// 路径参数以:开头, 查询参数以?开头
 	Path() map[string]string
-
-	// InParamsName 允许对函数入参名称进行修改，仅适用于基本类型和time.Time类型的参数
-	// 由于go在编译后无法获得函数或方法的入参名称，只能获得入参的类型和偏移量，
-	// 因此在openapi的文档生成中，作为查询参数的函数入参无法正确显示出查询参数名称，取而代之的是手动分配的一个虚假参数名，此名称会影响api的调用和查询参数的解析
-	// 对于此情况，推荐使用结构体来定义查询参数，以获得更好的使用体验
-	// 此外，对于入参较少的情况，允许通过手动的方式来分配一个名称。
-	//
-	//
-	//	对于方法：ManyGet(c *Context, age int, name string, graduate bool, source float64)
-	//
-	//	在未手动指定名称的情况下, 查询参数解析为：
-	//		age int => int_2
-	//		name string => string_3
-	//		graduate bool => bool_4
-	//		source float64 => float64_5
-	//
-	//	通过一下方式来手动指定名称：
-	//		{
-	//			"ManyGet": {
-	//				2: "age",
-	//				3: "name",
-	//				4: "graduate",
-	//				5: "source",
-	//			},
-	//		}
-	InParamsName() map[string]map[int]string
-
-	// ErrorFormatter 路由函数返回错误时的处理函数, 可用于格式化错误信息后返回给客户端
-	// 优先级高于全局的 RouteErrorFormatter, 如果未设置则采用全局的方法
-	// 240426 先隐藏此方法
-	//ErrorFormatter() RouteErrorFormatter
 }
 
 // BaseGroupRouter (面向对象式)路由组基类
@@ -117,15 +86,6 @@ func (g *BaseGroupRouter) Description() map[string]string {
 	return map[string]string{}
 }
 
-func (g *BaseGroupRouter) InParamsName() map[string]map[int]string {
-	return map[string]map[int]string{}
-}
-
-// Deprecated: 240426 隐藏此方法
-func (g *BaseGroupRouter) ErrorFormatter() RouteErrorFormatter {
-	return nil
-}
-
 // =================================== 👇 路由组元数据 ===================================
 
 const WebsocketMethod = "WS"
@@ -163,7 +123,7 @@ var IllegalLastInParamType = append(openapi.IllegalRouteParamType, reflect.Ptr)
 type GroupRouterMeta struct {
 	router         GroupRouter
 	routerValue    reflect.Value
-	pkg            string `description:"结构体.包名"`
+	pkg            string // 结构体.包名
 	routes         []*GroupRoute
 	tags           []string
 	errorFormatter RouteErrorFormatter
@@ -281,23 +241,6 @@ func (r *GroupRouterMeta) scanDescription(swagger *openapi.RouteSwagger, method 
 	return dv
 }
 
-// 获得自定义查询参数名
-func (r *GroupRouterMeta) scanQueryName(method reflect.Method, param *openapi.RouteParam) string {
-	methodName := method.Name
-
-	if len(r.router.InParamsName()) > 0 {
-		m, ok := r.router.InParamsName()[methodName]
-		if ok {
-			v, okk := m[param.Index]
-			if okk {
-				return v
-			}
-		}
-	}
-
-	return param.QueryName
-}
-
 // 反射方法
 func (r *GroupRouterMeta) scanMethod() (err error) {
 	obj := reflect.TypeOf(r.router) // 由于必须是指针接收器，因此obj应为指针类型
@@ -359,7 +302,7 @@ func (r *GroupRouterMeta) isRouteMethod(method reflect.Method) (*openapi.RouteSw
 	}
 
 	// 判断方法参数是否符合要求
-	inParamNum := method.Type.NumIn()
+	inParamNum := method.Type.NumIn() // 包含接收器，因此实际参数数量需-1
 	outParamNum := method.Type.NumOut()
 
 	if inParamNum < FirstInParamOffset || outParamNum != OutParamNum {
@@ -367,9 +310,10 @@ func (r *GroupRouterMeta) isRouteMethod(method reflect.Method) (*openapi.RouteSw
 		return nil, false
 	}
 
-	if utils.Has([]string{http.MethodPut, http.MethodPatch, http.MethodPost}, swagger.Method) {
-		// 以下方法必须有一个请求体：receiver + Context + requestBody
-		if inParamNum < FirstInParamOffset+2 {
+	// 以下方法必须有一个请求体
+	notGetOrDelete := utils.Has([]string{http.MethodPut, http.MethodPatch, http.MethodPost}, swagger.Method)
+	if notGetOrDelete {
+		if inParamNum < FirstInParamOffset+2 { // receiver + Context + requestBody
 			panic(fmt.Sprintf(
 				"method: '%s.%s' has no request body, you must specify a request body parameter, and if you really don't need one, use 'fastapi.None' instead.",
 				r.pkg, method.Name,
@@ -382,7 +326,10 @@ func (r *GroupRouterMeta) isRouteMethod(method reflect.Method) (*openapi.RouteSw
 		// 方法参数类型不符合
 		return nil, false
 	}
-	// 如果有多个入参, 判断最后一个入参是否符合要求
+
+	// 如果有多个入参:
+	//	1. 判断最后一个入参是否符合要求
+	// 	2. 判断请求体参数是否是结构体,20250816 不再支持非结构体参数
 	if inParamNum > FirstInParamOffset {
 		lastInParam := method.Type.In(inParamNum - FirstInParamOffset)
 		if lastInParam.Kind() == reflect.Pointer {
@@ -394,6 +341,34 @@ func (r *GroupRouterMeta) isRouteMethod(method reflect.Method) (*openapi.RouteSw
 				// 返回值的第一个参数不符合要求
 				return nil, false
 			}
+		}
+
+		for i := FirstInParamOffset; i < inParamNum; i++ {
+			param := method.Type.In(i)
+			if param.Kind() == reflect.Pointer {
+				// 通常情况是个结构体指针，此时获取实际的类型
+				param = param.Elem()
+			}
+			if param.Kind() != reflect.Struct && param.Kind() != reflect.Array && param.Kind() != reflect.Slice {
+				panic(fmt.Sprintf(
+					"method: '%s.%s' the %d param is not a struct.", r.pkg, method.Name, i,
+				))
+			}
+		}
+	}
+
+	// 边界检查，对于必须存在请求体的方法，如果有且仅有一个结构体参数，但该参数是以下类型的，抛出以异常
+	if notGetOrDelete && inParamNum == FirstCustomInParamOffset+1 {
+		param := method.Type.In(FirstCustomInParamOffset)
+		pPkg := param.String()
+		if param.Kind() == reflect.Pointer {
+			// 通常情况是个结构体指针，此时获取实际的类型
+			pPkg = param.Elem().String()
+		}
+		if utils.Has(specialStructPkg, pPkg) {
+			panic(fmt.Sprintf(
+				"method: '%s.%s' the onlyone request body param cannot be '%s', it should be a custom struct or *fastapi.File.", r.pkg, method.Name, pPkg,
+			))
 		}
 	}
 
@@ -419,21 +394,20 @@ func (r *GroupRouterMeta) isRouteMethod(method reflect.Method) (*openapi.RouteSw
 type GroupRoute struct {
 	swagger        *openapi.RouteSwagger
 	group          *GroupRouterMeta
-	requestBinder  *ParamBinder          // 请求题校验器，不存在请求题则为 NothingBindMethod
-	responseBinder *ParamBinder          // 响应体校验器，响应体肯定存在 ModelBindMethod
-	outParams      *openapi.RouteParam   // 不包含最后一个 error, 因此只有一个出参
+	requestBinder  ModelBinder           // 请求题校验器，不存在请求题则为 NothingModelBinder
+	responseBinder ModelBinder           // 响应体校验器，响应体肯定存在 ModelBinder
+	outParam       *openapi.RouteParam   // 不包含最后一个 error, 因此只有一个出参
 	queryParamMode QueryParamMode        // 查询参数的定义模式
 	method         reflect.Method        // 路由方法所属的结构体方法, 用于API调用
-	queryBinders   []*ParamBinder        // 查询参数，路径参数的校验器，不存在参数则为 NothingBindMethod
+	queryBinders   []ModelBinder         // 查询参数，路径参数的校验器，不存在参数则为 NothingModelBinder
 	inParams       []*openapi.RouteParam // 不包含第一个 Context 但包含最后一个“查询参数结构体”或“请求体”, 因此 handlerInNum - len(inParams) = 1
 	index          int                   // 当前方法所属的结构体方法的偏移量
 	structQuery    int                   // 结构体查询参数在 inParams 中的索引
-	handlerInNum   int                   // 路由函数入参数量, 入参数量可以不固定,但第一个必须是 Context，如果>1:则最后一个视为请求体(Post/Patch/Post)或查询参数(Get/Delete)
+	handlerInNum   int                   // 路由函数入参数量，包含 Context, 入参数量可以不固定,但第一个必须是 Context，如果>1:则最后一个视为请求体(Post/Patch/Post)或查询参数(Get/Delete)
 	handlerOutNum  int                   // 路由函数出参数量, 出参数量始终为2,最后一个必须是 error
+	fileParamIndex int                   // 文件参数索引, <1则不存在，因为入参第一个是Context，有效参数从第二个开始
 	getOrDelete    bool                  // GET 或 DELETE 方法
 }
-
-func (r *GroupRoute) Id() string { return r.swagger.Id() }
 
 func NewGroupRoute(swagger *openapi.RouteSwagger, method reflect.Method, group *GroupRouterMeta) *GroupRoute {
 	r := &GroupRoute{}
@@ -443,19 +417,31 @@ func NewGroupRoute(swagger *openapi.RouteSwagger, method reflect.Method, group *
 	r.index = method.Index
 	r.structQuery = -1 // 不存在
 
-	r.queryBinders = make([]*ParamBinder, 0)
+	r.queryBinders = make([]ModelBinder, 0)
 
 	return r
 }
 
+func (r *GroupRoute) Id() string { return r.swagger.Id() }
+
 func (r *GroupRoute) Init() (err error) {
+	r.getOrDelete = utils.Has([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method)
 	r.handlerInNum = r.method.Type.NumIn() - FirstInParamOffset // 排除接收器
 	r.handlerOutNum = OutParamNum                               // 返回值数量始终为2
-	r.getOrDelete = utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method)
 
-	r.outParams = openapi.NewRouteParam(r.method.Type.Out(FirstOutParamOffset), FirstOutParamOffset, openapi.RouteParamResponse)
+	r.outParam = openapi.NewRouteParam(r.method.Type.Out(FirstOutParamOffset), FirstOutParamOffset, openapi.RouteParamResponse)
 	for n := FirstCustomInParamOffset; n <= r.handlerInNum; n++ {
-		r.inParams = append(r.inParams, openapi.NewRouteParam(r.method.Type.In(n), n, openapi.RouteParamQuery))
+		if r.getOrDelete {
+			r.inParams = append(r.inParams, openapi.NewRouteParam(r.method.Type.In(n), n, openapi.RouteParamQuery))
+		} else {
+			//r.inParams = append(r.inParams, openapi.NewRouteParam(r.method.Type.In(n), n, openapi.RouteParamQuery))
+			if n == r.handlerInNum {
+				// 最后一个参数是请求体
+				r.inParams = append(r.inParams, openapi.NewRouteParam(r.method.Type.In(n), n, openapi.RouteParamRequest))
+			} else {
+				r.inParams = append(r.inParams, openapi.NewRouteParam(r.method.Type.In(n), n, openapi.RouteParamQuery))
+			}
+		}
 	}
 
 	err = r.Scan()
@@ -464,22 +450,25 @@ func (r *GroupRoute) Init() (err error) {
 }
 
 func (r *GroupRoute) Scan() (err error) {
-	// 首先初始化参数
+	// 首先初始化请求体参数
 	for _, in := range r.inParams {
 		err = in.Init()
 		if err != nil {
 			return err
 		}
 	}
-	// 由于以下几个scan方法续需读取内部的反射数据, swagger 层面无法读取,因此在此层面进行解析
 
+	// 初始化响应参数
+	err = r.outParam.Init()
+	if err != nil {
+		return err
+	}
+
+	// 由于以下几个scan方法需读取内部的反射数据, swagger 层面无法读取,因此在此层面进行解析
 	links := []func() error{
-		r.outParams.Init, // 解析响应体
-		r.scanInParamsBefore,
-		r.scanInParams, // 初始化模型文档
-		r.scanOutParams,
-		r.scanQueryParamMode,
-		r.ScanInner, // 递归进入下层进行解析
+		r.scanInParams,  // 初始化模型文档
+		r.scanOutParams, // 解析返回值
+		r.ScanInner,     // 递归进入下层进行解析
 		r.scanBinders,
 	}
 
@@ -499,36 +488,22 @@ func (r *GroupRoute) ScanInner() (err error) {
 	return
 }
 
-func (r *GroupRoute) scanInParamsBefore() (err error) {
-	// TODO: Future-231203.9: 限制POST/PATCH/PUT方法最多支持2个结构体参数
-	for _, param := range r.inParams {
-		switch param.SchemaType() {
-		case openapi.ArrayType:
-		case openapi.ObjectType:
-			if param.IsTime {
-				param.QueryName = r.group.scanQueryName(r.method, param)
-			}
-
-		default:
-			param.QueryName = r.group.scanQueryName(r.method, param)
-		}
-	}
-	return
-}
-
 // 从方法入参中初始化路由参数, 包含了查询参数，请求体参数
 func (r *GroupRoute) scanInParams() (err error) {
-	r.swagger.QueryFields = make([]*openapi.QModel, 0)
-	if r.handlerInNum == FirstInParamOffset { // 只有一个参数,只能是 Context
+	if r.handlerInNum == 1 { // 只有一个参数,只能是 Context
 		return nil
 	}
 
+	r.swagger.QueryFields = make([]*openapi.QModel, 0)
+
+	// 遍历处理 swagger
 	for index, param := range r.inParams {
 		isLast := index == r.handlerInNum-FirstCustomInParamOffset
 		switch param.SchemaType() {
 
 		case openapi.ArrayType:
-			if isLast && !r.getOrDelete { // // 最后一个参数, 是否可以断言为请求体
+			// 判断最后一个参数, 是否可以断言为请求体
+			if isLast && !r.getOrDelete { // 可以断言为请求体
 				r.swagger.RequestModel = openapi.NewBaseModelMeta(param)
 			} else {
 				// 方法不支持断言为请求体, 查询参数不支持数组
@@ -547,24 +522,37 @@ func (r *GroupRoute) scanInParams() (err error) {
 				if !isLast { // 不是最后一个参数
 					if r.getOrDelete {
 						// GET/DELETE方法不支持多个结构体参数, 打印出结构体方法名，参数索引出从1开始, 排除接收器参数，直接取Index即可
+						// TODO: 后面应支持多个结构体参数
 						return errors.New(fmt.Sprintf(
 							"method: '%s' param: '%s', index: %d cannot be a %s",
 							r.group.pkg+"."+r.method.Name, param.Pkg, param.Index, param.SchemaType(),
 						))
 					} else {
-						// POST/PATCH/PUT 方法，识别为结构体查询参数
-						r.structQuery = index
-						r.swagger.QueryFields = append(r.swagger.QueryFields, openapi.StructToQModels(param.CopyPrototype())...)
+						// POST/PATCH/PUT 方法
+						if param.IsFile {
+							r.fileParamIndex = index + 1
+							r.swagger.RequestFile = true
+						} else {
+							// 非 File 对象，识别为结构体查询参数
+							r.structQuery = index
+							r.swagger.QueryFields = append(r.swagger.QueryFields, openapi.StructToQModels(param.CopyPrototype())...)
+						}
 					}
 				} else {
 					// 最后一个参数, 对于GET/DELETE 视为查询参数, 结构体的每一个字段都将作为一个查询参数;
-					// 对于 POST/PATCH/PUT 接口,如果是结构体或数组则作为请求体
+					// 对于 POST/PATCH/PUT 接口, 如果是数组则作为请求体，如果是结构体则判断是否是文件，非文件则识别为请求体
 					if r.getOrDelete {
 						r.structQuery = index
 						qms := scanHelper.InferObjectQueryParam(param)
 						r.swagger.QueryFields = append(r.swagger.QueryFields, qms...)
 					} else {
-						r.swagger.RequestModel = openapi.NewBaseModelMeta(param)
+						if param.IsFile {
+							// 仅有一个文件参数，没有其他请求体
+							r.fileParamIndex = index + 1
+							r.swagger.RequestFile = true
+						} else {
+							r.swagger.RequestModel = openapi.NewBaseModelMeta(param)
+						}
 					}
 				}
 			}
@@ -574,61 +562,23 @@ func (r *GroupRoute) scanInParams() (err error) {
 			r.swagger.QueryFields = append(r.swagger.QueryFields, scanHelper.InferBaseQueryParam(param, r.RouteType()))
 		}
 	}
+
 	return nil
 }
 
-// 从方法出参中初始化路由响应体
+// 从方法出参中初始化路由响应体,并推断出 ContentType
 func (r *GroupRoute) scanOutParams() (err error) {
-	// RouteSwagger.Init -> ResponseModel.Init() 时会自行处理
-	r.swagger.ResponseModel = openapi.NewBaseModelMeta(r.outParams)
+	// r.ScanInner -> RouteSwagger.Init -> ResponseModel.Init() 时会自行处理
+	r.swagger.ResponseModel = openapi.NewBaseModelMeta(r.outParam)
 	return err
 }
 
-// 此方法需在 scanInParams 执行完成之后执行
-func (r *GroupRoute) scanQueryParamMode() (err error) {
-	if r.handlerInNum > FirstInParamOffset { // 存在自定义参数
-		r.queryParamMode = NoQueryParamMode
-		return
-	}
-
-	var end int
-	if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method) {
-		end = len(r.inParams) // 掐头
-	} else {
-		end = len(r.inParams) - 1 // 掐头去尾，最后一个为请求体
-	}
-
-	var hasBase = len(r.inParams[:end]) > 1 // 仅能存在一个 struct 查询参数
-	var hasStruct bool
-
-	for _, param := range r.inParams[:end] {
-		if param.SchemaType() == openapi.ObjectType {
-			hasStruct = true
-		} else {
-			hasBase = true
-		}
-	}
-
-	if hasBase && hasStruct {
-		r.queryParamMode = MixQueryParamMode
-	} else {
-		if hasStruct {
-			r.queryParamMode = StructQueryParamMode
-		}
-		if hasBase {
-			r.queryParamMode = SimpleQueryParamMode
-		}
-	}
-
-	return
-}
-
-// 此方法需在 scanInParams, scanOutParams, scanQueryParamMode 执行完成之后执行
+// 此方法需在 scanInParams, scanOutParams，ScanInner 执行完成之后执行
 func (r *GroupRoute) scanBinders() (err error) {
 	r.responseBinder = scanHelper.InferResponseBinder(r.swagger.ResponseModel, r.RouteType())
 
 	// 初始化请求体验证方法
-	r.requestBinder = scanHelper.InferRequestBinder(r.swagger.RequestModel, r.RouteType())
+	r.inferRequestBinder()
 
 	// 构建查询参数验证器
 	for _, qmodel := range r.swagger.QueryFields {
@@ -644,14 +594,18 @@ func (r *GroupRoute) Swagger() *openapi.RouteSwagger {
 	return r.swagger
 }
 
-func (r *GroupRoute) ResponseBinder() *ParamBinder { return r.responseBinder }
+func (r *GroupRoute) ResponseBinder() ModelBinder { return r.responseBinder }
 
-func (r *GroupRoute) RequestBinders() *ParamBinder { return r.requestBinder }
+func (r *GroupRoute) RequestBinders() ModelBinder { return r.requestBinder }
 
 // QueryBinders 查询参数校验方法
-func (r *GroupRoute) QueryBinders() []*ParamBinder { return r.queryBinders }
+func (r *GroupRoute) QueryBinders() []ModelBinder { return r.queryBinders }
 
 func (r *GroupRoute) HasStructQuery() bool { return r.structQuery != -1 }
+
+func (r *GroupRoute) HasFileRequest() bool {
+	return r.fileParamIndex > 0
+}
 
 // NewStructQuery 构造一个新的结构体查询参数实例
 func (r *GroupRoute) NewStructQuery() any {
@@ -668,7 +622,7 @@ func (r *GroupRoute) NewStructQuery() any {
 func (r *GroupRoute) NewInParams(ctx *Context) []reflect.Value {
 	params := make([]reflect.Value, len(r.inParams)+2) // 接收器 + *Context
 	params[0] = r.group.routerValue                    // 接收器
-	params[1] = reflect.ValueOf(ctx)
+	params[1] = reflect.ValueOf(ctx)                   // Context
 
 	// 处理入参
 	for i, param := range r.inParams {
@@ -686,6 +640,9 @@ func (r *GroupRoute) NewInParams(ctx *Context) []reflect.Value {
 				v := ctx.queryFields[param.QueryName] // 参数是必选的, 此时肯定存在,且已经做好了类型转换
 				tt := v.(time.Time)
 				instance = reflect.ValueOf(tt)
+			} else if param.IsFile {
+				// 识别到文件
+				instance = reflect.ValueOf(ctx.file)
 			} else {
 				if isLast && !r.getOrDelete { // 最后一个参数, 可以断言为请求体
 					instance = reflect.ValueOf(ctx.requestModel)
@@ -710,42 +667,45 @@ func (r *GroupRoute) NewInParams(ctx *Context) []reflect.Value {
 }
 
 func (r *GroupRoute) NewRequestModel() any {
-	if r.swagger.Method == http.MethodGet || r.swagger.Method == http.MethodDelete {
-		return nil
-	}
-	if r.swagger.RequestModel == nil {
-		return nil
-	}
-
+	// 仅在 r.swagger.RequestModel != nil 时才调用
 	return r.swagger.RequestModel.Param.NewNotStruct(nil).Interface()
 }
 
 // Call 调用API, 并将响应结果写入 Response 内
-func (r *GroupRoute) Call(ctx *Context) {
-	params := r.NewInParams(ctx)
-	result := r.method.Func.Call(params)
-	// 是否存在错误
-	last := result[LastOutParamOffset]
-	if !last.IsValid() || last.IsNil() {
-		// err=nil, 函数没有返回错误
-		ctx.response.Content = result[FirstOutParamOffset].Interface()
-	} else {
-		err := last.Interface().(error)
-		ctx.response.StatusCode, ctx.response.Content = r.group.errorFormatter(ctx, err)
-	}
+func (r *GroupRoute) Call(in []reflect.Value) []reflect.Value {
+	return r.method.Func.Call(in)
 }
 
-// ResponseValidate 仅校验“200的JSONResponse”
-func (r *GroupRoute) ResponseValidate(c *Context, stopImmediately bool) []*openapi.ValidationError {
-	if (c.response.StatusCode == http.StatusOK || c.response.StatusCode == 0) && c.response.Type == JsonResponseType {
-		// 内部返回的 422 也不再校验
-		var ves []*openapi.ValidationError
-		// TODO: 此校验浪费性能, 尝试通过某种方式绕过
-		_, ves = r.ResponseBinder().Method.Validate(c.routeCtx, c.response.Content)
-		if len(ves) > 0 {
-			ves[0].Ctx[modelDescLabel] = r.Swagger().ResponseModel.SchemaDesc()
-		}
-		return ves
+func (r *GroupRoute) inferRequestBinder() {
+	var nothing ModelBinder = &NothingModelBinder{modelName: "", paramType: openapi.RouteParamRequest}
+
+	if r.swagger.RequestContentType != openapi.MIMEApplicationJSON && r.swagger.RequestContentType != openapi.MIMEApplicationJSONCharsetUTF8 && r.swagger.RequestContentType != openapi.MIMEMultipartForm {
+		// 暂不支持非json和multiform-data的请求参数验证
+		r.requestBinder = nothing
+		return
 	}
-	return nil
+
+	if r.swagger.Method == http.MethodPost || r.swagger.Method == http.MethodPut || r.swagger.Method == http.MethodPatch {
+		if r.swagger.RequestFile {
+			// 存在上传文件定义，则从 multiform-data 中获取上传参数
+			if r.swagger.RequestModel != nil && r.swagger.RequestModel.SchemaPkg() != openapi.NoneRequestPkg { // file + json
+				binder := &FileWithParamModelBinder{}
+				binder.paramType = openapi.RouteParamRequest
+				binder.modelName = r.swagger.RequestModel.JsonName()
+				r.requestBinder = binder
+			} else {
+				// modelName 为固定值，固定为 openapi.MultipartFormFileName
+				r.requestBinder = &FileModelBinder{openapi.MultipartFormFileName}
+			}
+		} else {
+			// 处理特殊类型 fastapi.None
+			if r.swagger.RequestModel != nil && r.swagger.RequestModel.SchemaPkg() != openapi.NoneRequestPkg { // 此情况基本不存在
+				r.requestBinder = &RequestModelBinder{modelName: r.swagger.RequestModel.SchemaTitle()}
+			} else {
+				r.requestBinder = nothing
+			}
+		}
+	} else { // get/delete 方法没有请求体
+		r.requestBinder = nothing
+	}
 }

@@ -1,9 +1,11 @@
 package openapi
 
 import (
+	"net/http"
+	"sync"
+
 	"github.com/Chendemo12/fastapi/utils"
 	jsoniter "github.com/json-iterator/go"
-	"net/http"
 )
 
 // 序列化时进行排序
@@ -12,6 +14,223 @@ var json = jsoniter.Config{
 	TagKey:          JsonTagName,
 	OnlyTaggedField: true,
 }.Froze()
+
+// OpenApi 模型类, 移除 FastApi 中不常用的属性
+type OpenApi struct {
+	Info       *Info       `json:"info,omitempty" description:"联系信息"`
+	Components *Components `json:"components" description:"模型文档"`
+	Paths      *Paths      `json:"paths" description:"路由列表,同一路由存在多个方法文档"`
+	Version    string      `json:"openapi" description:"Open API版本号"`
+	cache      []byte
+	once       *sync.Once
+}
+
+// NewOpenApi 构造一个新的 OpenApi 文档
+func NewOpenApi(title, version, description string) *OpenApi {
+	return &OpenApi{
+		Version: ApiVersion,
+		Info: &Info{
+			Title:          title,
+			Version:        version,
+			Description:    description,
+			TermsOfService: "",
+			Contact: Contact{
+				Name:  "FastApi",
+				Url:   "https://github.com/Chendemo12/fastapi",
+				Email: "ithika@163.com",
+			},
+			License: License{
+				Name: "FastApi",
+				Url:  "https://github.com/Chendemo12/fastapi",
+			},
+		},
+		Components: &Components{Scheme: make([]*ComponentScheme, 0)},
+		Paths:      &Paths{Paths: make([]*PathItem, 0)},
+		cache:      make([]byte, 0),
+		once:       &sync.Once{},
+	}
+}
+
+// RegisterFrom 主入口
+func (o *OpenApi) RegisterFrom(swagger *RouteSwagger) *OpenApi {
+	o.modelFrom(swagger)
+	o.pathFrom(swagger)
+
+	return o
+}
+
+func (o *OpenApi) AddLicense(info License) *OpenApi {
+	o.Info.License.Url = info.Url
+	o.Info.License.Name = info.Name
+
+	return o
+}
+
+func (o *OpenApi) AddContact(info Contact) *OpenApi {
+	o.Info.Contact.Url = info.Url
+	o.Info.Contact.Name = info.Name
+	o.Info.Contact.Email = info.Email
+
+	return o
+}
+
+// AddDefinition 手动添加一个模型文档
+func (o *OpenApi) AddDefinition(meta SchemaIface) *OpenApi {
+	o.Components.AddModel(meta)
+	return o
+}
+
+// 查询路由对象, 不存在则新建
+func (o *OpenApi) getPath(path string) *PathItem {
+	// 修改路径格式为FastApi路径格式, 主要区别在于用"{}"标识路径参数,而非":"
+	path = ToFastApiRoutePath(path) // 修改路径格式
+
+	for _, item := range o.Paths.Paths {
+		if item.Path == path {
+			return item
+		}
+	}
+
+	item := &PathItem{
+		Path:   path,
+		Get:    nil,
+		Put:    nil,
+		Post:   nil,
+		Patch:  nil,
+		Delete: nil,
+		Head:   nil,
+		Trace:  nil,
+	}
+	o.Paths.Paths = append(o.Paths.Paths, item)
+
+	return item
+}
+
+func (o *OpenApi) modelFrom(swagger *RouteSwagger) {
+	if swagger.RequestModel != nil {
+		o.AddDefinition(swagger.RequestModel)
+		// 生成模型，处理嵌入类型
+		for _, inner := range swagger.RequestModel.InnerSchema() {
+			o.AddDefinition(inner)
+		}
+		// 处理数组类型
+		if swagger.RequestModel.itemModel != nil {
+			o.AddDefinition(swagger.RequestModel.itemModel)
+			for _, inner := range swagger.RequestModel.itemModel.InnerSchema() {
+				o.AddDefinition(inner)
+			}
+		}
+	}
+
+	if swagger.ResponseModel != nil {
+		o.AddDefinition(swagger.ResponseModel)
+		// 生成模型，处理嵌入类型
+		for _, inner := range swagger.ResponseModel.InnerSchema() {
+			o.AddDefinition(inner)
+		}
+		// 处理数组类型
+		if swagger.ResponseModel.itemModel != nil {
+			o.AddDefinition(swagger.ResponseModel.itemModel)
+			for _, inner := range swagger.ResponseModel.itemModel.InnerSchema() {
+				o.AddDefinition(inner)
+			}
+		}
+	}
+
+	// 处理存在文件的请求体, 需与 Operation.RequestBodyFrom 保持一致
+	if swagger.RequestFile {
+		multiPart := &MultipartForm{scopePath: swagger.RelativePath}
+		if swagger.RequestModel != nil {
+			// 同时存在 文件 + 表单
+			multiPart.requestModel = swagger.RequestModel
+		}
+		o.AddDefinition(multiPart)
+	}
+
+	// 注册错误响应体模型
+	if routeErrorOption.ResponseMode != nil {
+		o.AddDefinition(routeErrorOption.ResponseMode)
+	}
+}
+
+func (o *OpenApi) pathFrom(swagger *RouteSwagger) {
+	// 存在相同路径，不同方法的路由选项
+	item := o.getPath(swagger.Url)
+
+	// 构造路径参数
+	pathParams := make([]*Parameter, len(swagger.PathFields))
+	for no, q := range swagger.PathFields {
+		p := &Parameter{}
+		p.FromQModel(q)
+		p.Deprecated = swagger.Deprecated
+
+		pathParams[no] = p
+	}
+
+	// 构造查询参数
+	queryParams := make([]*Parameter, len(swagger.QueryFields))
+	for no, q := range swagger.QueryFields {
+		p := &Parameter{}
+		p.FromQModel(q)
+		p.Deprecated = swagger.Deprecated
+		queryParams[no] = p
+	}
+
+	// 构造操作符
+	operation := &Operation{
+		Summary:     swagger.Summary,
+		Description: swagger.Description,
+		Tags:        swagger.Tags,
+		Parameters:  append(pathParams, queryParams...),
+		Deprecated:  swagger.Deprecated,
+	}
+	if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, swagger.Method) {
+		// GET/DELETE 无请求体，不显示
+		operation.RequestBody = nil
+	} else {
+		operation.RequestBodyFrom(swagger)
+	}
+	operation.ResponseFrom(swagger)
+
+	// 绑定到操作方法
+	switch swagger.Method {
+
+	case http.MethodPost:
+		item.Post = operation
+	case http.MethodPut:
+		item.Put = operation
+	case http.MethodDelete:
+		item.Delete = operation
+	case http.MethodPatch:
+		item.Patch = operation
+	case http.MethodHead:
+		item.Head = operation
+	case http.MethodTrace:
+		item.Trace = operation
+
+	default:
+		item.Get = operation
+	}
+}
+
+// RecreateDocs 重建Swagger 文档
+func (o *OpenApi) RecreateDocs() *OpenApi {
+	bs, err := json.Marshal(o)
+	if err == nil {
+		o.cache = bs
+	}
+
+	return o
+}
+
+// Schema Swagger 文档, 并非完全符合 OpenApi 文档规范
+func (o *OpenApi) Schema() []byte {
+	o.once.Do(func() {
+		o.RecreateDocs()
+	})
+
+	return o.cache
+}
 
 // Contact 联系方式, 显示在 info 字段内部
 // 无需重写序列化方法
@@ -156,21 +375,27 @@ type RequestBody struct {
 // PathModelContent 路由中请求体 RequestBody 和 响应体中返回值 Responses 模型
 type PathModelContent struct {
 	Schema   ModelContentSchema `json:"schema" description:"模型引用文档"`
-	MIMEType string             `json:"-"`
+	MIMEType ContentType        `json:"-"`
 }
 
 // MarshalJSON 自定义序列化
 func (p *PathModelContent) MarshalJSON() ([]byte, error) {
 	m := make(map[string]any)
+
+	if p.Schema == nil {
+		// 此情况是一种异常状态，多存在于将 time.Time 等内置 struct 作为请求体，但是在扫描路由时被作为了查询参数，导致缺少请求体
+		return json.Marshal(m)
+	}
+
 	switch p.Schema.SchemaType() {
 	case ObjectType:
-		m[p.MIMEType] = map[string]any{
+		m[string(p.MIMEType)] = map[string]any{
 			"schema": map[string]string{
 				RefName: RefPrefix + p.Schema.SchemaPkg(),
 			},
 		}
 	default:
-		m[p.MIMEType] = map[string]any{"schema": p.Schema.Schema()}
+		m[string(p.MIMEType)] = map[string]any{"schema": p.Schema.Schema()}
 	}
 
 	return json.Marshal(m)
@@ -223,13 +448,28 @@ func (o *Operation) MarshalJSON() ([]byte, error) {
 }
 
 // RequestBodyFrom 从 *openapi.BaseModelMeta 转换成 openapi 的请求体 RequestBody
-func (o *Operation) RequestBodyFrom(model *BaseModelMeta) *Operation {
-	o.RequestBody = &RequestBody{}
-	if model != nil {
-		o.RequestBody.Required = model.IsRequired()
-		o.RequestBody.Content = &PathModelContent{
-			MIMEType: MIMEApplicationJSON,
-			Schema:   model,
+func (o *Operation) RequestBodyFrom(swagger *RouteSwagger) *Operation {
+	o.RequestBody = &RequestBody{
+		Required: false,
+		Content: &PathModelContent{
+			MIMEType: swagger.RequestContentType,
+			Schema:   nil,
+		},
+	}
+
+	// 处理文件+表单
+	if swagger.RequestFile {
+		multiPart := &MultipartForm{scopePath: swagger.RelativePath}
+		if swagger.RequestModel != nil {
+			// 同时存在 文件 + 表单
+			multiPart.requestModel = swagger.RequestModel
+		}
+		o.RequestBody.Required = true
+		o.RequestBody.Content.Schema = multiPart
+	} else {
+		if swagger.RequestModel != nil {
+			o.RequestBody.Required = swagger.RequestModel.IsRequired()
+			o.RequestBody.Content.Schema = swagger.RequestModel
 		}
 	}
 
@@ -237,43 +477,44 @@ func (o *Operation) RequestBodyFrom(model *BaseModelMeta) *Operation {
 }
 
 // ResponseFrom 从 *openapi.BaseModelMeta 转换成 openapi 的响应实例
-func (o *Operation) ResponseFrom(model *BaseModelMeta) *Operation {
-	if model == nil { // 若返回值为空，则设置为空
-		model = &BaseModelMeta{}
-	}
-
+func (o *Operation) ResponseFrom(swagger *RouteSwagger) *Operation {
 	m := make([]*Response, 0) // 200 + 422
 	// 200 接口处注册的返回值
-	m0 := &Response{
+	m200 := &Response{
 		StatusCode:  http.StatusOK,
 		Description: http.StatusText(http.StatusOK),
 		Content: &PathModelContent{
-			MIMEType: MIMEApplicationJSON,
-			Schema:   model,
+			MIMEType: swagger.ResponseContentType, // 支持文件等，因此需根据模型推断类型
+			Schema:   swagger.ResponseModel,
 		},
 	}
+	// 若返回值为空，则设置为空
+	if swagger.ResponseModel == nil {
+		m200.Content.Schema = &BaseModelMeta{}
+	}
+
 	// 422 所有接口默认携带的请求体校验错误返回值
-	m1 := &Response{
+	m422 := &Response{
 		StatusCode:  http.StatusUnprocessableEntity,
 		Description: http.StatusText(http.StatusUnprocessableEntity),
 		Content: &PathModelContent{
-			MIMEType: MIMEApplicationJSON,
+			MIMEType: MIMEApplicationJSONCharsetUTF8,
 			Schema:   &ValidationError{},
 		},
 	}
-	m = append(m, m0, m1)
+	m = append(m, m200, m422)
 
 	// 可选的错误返回值
-	if RouteErrorOption.ResponseMode != nil {
-		m2 := &Response{
-			StatusCode:  RouteErrorOption.StatusCode,
-			Description: RouteErrorOption.Description,
+	if routeErrorOption.ResponseMode != nil {
+		merr := &Response{
+			StatusCode:  routeErrorOption.StatusCode,
+			Description: routeErrorOption.Description,
 			Content: &PathModelContent{
-				MIMEType: MIMEApplicationJSON,
-				Schema:   RouteErrorOption.ResponseMode,
+				MIMEType: MIMEApplicationJSONCharsetUTF8,
+				Schema:   routeErrorOption.ResponseMode,
 			},
 		}
-		m = append(m, m2)
+		m = append(m, merr)
 	}
 
 	o.Responses = m
@@ -310,212 +551,4 @@ func (p *Paths) MarshalJSON() ([]byte, error) {
 	}
 
 	return json.Marshal(m)
-}
-
-// OpenApi 模型类, 移除 FastApi 中不常用的属性
-type OpenApi struct {
-	Info        *Info       `json:"info,omitempty" description:"联系信息"`
-	Components  *Components `json:"components" description:"模型文档"`
-	Paths       *Paths      `json:"paths" description:"路由列表,同一路由存在多个方法文档"`
-	Version     string      `json:"openapi" description:"Open API版本号"`
-	cache       []byte
-	initialized bool
-}
-
-// NewOpenApi 构造一个新的 OpenApi 文档
-func NewOpenApi(title, version, description string) *OpenApi {
-	return &OpenApi{
-		Version: ApiVersion,
-		Info: &Info{
-			Title:          title,
-			Version:        version,
-			Description:    description,
-			TermsOfService: "",
-			Contact: Contact{
-				Name:  "FastApi",
-				Url:   "github.com/Chendemo12/fastapi",
-				Email: "chendemo12@gmail.com",
-			},
-			License: License{
-				Name: "FastApi",
-				Url:  "github.com/Chendemo12/fastapi",
-			},
-		},
-		Components:  &Components{Scheme: make([]*ComponentScheme, 0)},
-		Paths:       &Paths{Paths: make([]*PathItem, 0)},
-		initialized: false,
-		cache:       make([]byte, 0),
-	}
-}
-
-func (o *OpenApi) AddLicense(info License) *OpenApi {
-	o.Info.License.Url = info.Url
-	o.Info.License.Name = info.Name
-
-	return o
-}
-
-func (o *OpenApi) AddContact(info Contact) *OpenApi {
-	o.Info.Contact.Url = info.Url
-	o.Info.Contact.Name = info.Name
-	o.Info.Contact.Email = info.Email
-
-	return o
-}
-
-// AddDefinition 手动添加一个模型文档
-func (o *OpenApi) AddDefinition(meta SchemaIface) *OpenApi {
-	o.Components.AddModel(meta)
-	return o
-}
-
-// 查询路由对象, 不存在则新建
-func (o *OpenApi) getPath(path string) *PathItem {
-	// 修改路径格式为FastApi路径格式, 主要区别在于用"{}"标识路径参数,而非":"
-	path = ToFastApiRoutePath(path) // 修改路径格式
-
-	for _, item := range o.Paths.Paths {
-		if item.Path == path {
-			return item
-		}
-	}
-
-	item := &PathItem{
-		Path:   path,
-		Get:    nil,
-		Put:    nil,
-		Post:   nil,
-		Patch:  nil,
-		Delete: nil,
-		Head:   nil,
-		Trace:  nil,
-	}
-	o.Paths.Paths = append(o.Paths.Paths, item)
-
-	return item
-}
-
-func (o *OpenApi) modelFrom(swagger *RouteSwagger) {
-	if swagger.RequestModel != nil {
-		o.AddDefinition(swagger.RequestModel)
-		// 生成模型，处理嵌入类型
-		for _, inner := range swagger.RequestModel.InnerSchema() {
-			o.AddDefinition(inner)
-		}
-		// 处理数组类型
-		if swagger.RequestModel.itemModel != nil {
-			o.AddDefinition(swagger.RequestModel.itemModel)
-			for _, inner := range swagger.RequestModel.itemModel.InnerSchema() {
-				o.AddDefinition(inner)
-			}
-		}
-	}
-
-	if swagger.ResponseModel != nil {
-		o.AddDefinition(swagger.ResponseModel)
-		// 生成模型，处理嵌入类型
-		for _, inner := range swagger.ResponseModel.InnerSchema() {
-			o.AddDefinition(inner)
-		}
-		// 处理数组类型
-		if swagger.ResponseModel.itemModel != nil {
-			o.AddDefinition(swagger.ResponseModel.itemModel)
-			for _, inner := range swagger.ResponseModel.itemModel.InnerSchema() {
-				o.AddDefinition(inner)
-			}
-		}
-	}
-
-	// 注册错误响应体模型
-	if RouteErrorOption.ResponseMode != nil {
-		o.AddDefinition(RouteErrorOption.ResponseMode)
-	}
-}
-
-func (o *OpenApi) pathFrom(swagger *RouteSwagger) {
-	// 存在相同路径，不同方法的路由选项
-	item := o.getPath(swagger.Url)
-
-	// 构造路径参数
-	pathParams := make([]*Parameter, len(swagger.PathFields))
-	for no, q := range swagger.PathFields {
-		p := &Parameter{}
-		p.FromQModel(q)
-		p.Deprecated = swagger.Deprecated
-
-		pathParams[no] = p
-	}
-
-	// 构造查询参数
-	queryParams := make([]*Parameter, len(swagger.QueryFields))
-	for no, q := range swagger.QueryFields {
-		p := &Parameter{}
-		p.FromQModel(q)
-		p.Deprecated = swagger.Deprecated
-		queryParams[no] = p
-	}
-
-	// 构造操作符
-	operation := &Operation{
-		Summary:     swagger.Summary,
-		Description: swagger.Description,
-		Tags:        swagger.Tags,
-		Parameters:  append(pathParams, queryParams...),
-		Deprecated:  swagger.Deprecated,
-	}
-	if utils.Has[string]([]string{http.MethodGet, http.MethodDelete}, swagger.Method) {
-		// GET/DELETE 无请求体，不显示
-		operation.RequestBody = nil
-	} else {
-		operation.RequestBodyFrom(swagger.RequestModel)
-	}
-	operation.ResponseFrom(swagger.ResponseModel)
-
-	// 绑定到操作方法
-	switch swagger.Method {
-
-	case http.MethodPost:
-		item.Post = operation
-	case http.MethodPut:
-		item.Put = operation
-	case http.MethodDelete:
-		item.Delete = operation
-	case http.MethodPatch:
-		item.Patch = operation
-	case http.MethodHead:
-		item.Head = operation
-	case http.MethodTrace:
-		item.Trace = operation
-
-	default:
-		item.Get = operation
-	}
-}
-
-// RegisterFrom home point
-func (o *OpenApi) RegisterFrom(swagger *RouteSwagger) *OpenApi {
-	o.modelFrom(swagger)
-	o.pathFrom(swagger)
-
-	return o
-}
-
-// RecreateDocs 重建Swagger 文档
-func (o *OpenApi) RecreateDocs() *OpenApi {
-	bs, err := json.Marshal(o)
-	if err == nil {
-		o.cache = bs
-	}
-
-	o.initialized = true
-	return o
-}
-
-// Schema Swagger 文档, 并非完全符合 OpenApi 文档规范
-func (o *OpenApi) Schema() []byte {
-	if !o.initialized {
-		o.RecreateDocs()
-	}
-
-	return o.cache
 }
