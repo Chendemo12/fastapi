@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 0.3.2 - (2025-08-20)
+
+### Fix
+
+- 修复设置`DisableResponseValidate`不生效的错误；
+
 ## 0.3.1 - (2025-08-17)
 
 ### Feat

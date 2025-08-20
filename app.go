@@ -373,13 +373,16 @@ func (f *Wrapper) Run(host, port string) {
 
 func cleanConfig(cs ...Config) Config {
 	conf := Config{
-		Version:                            "1.0.0",
-		Description:                        "FastAPI Application",
 		Title:                              "FastAPI",
+		Description:                        "FastAPI Application",
+		Version:                            "1.0.0",
 		ShutdownTimeout:                    5,
 		DisableSwagAutoCreate:              false,
 		StopImmediatelyWhenErrorOccurs:     false,
 		ContextAutomaticDerivationDisabled: false,
+		DisableResponseValidate:            false,
+		host:                               "",
+		port:                               "",
 	}
 	if len(cs) > 0 {
 		if cs[0].Title != "" {
@@ -395,6 +398,7 @@ func cleanConfig(cs ...Config) Config {
 		conf.DisableSwagAutoCreate = cs[0].DisableSwagAutoCreate
 		conf.StopImmediatelyWhenErrorOccurs = cs[0].StopImmediatelyWhenErrorOccurs
 		conf.ContextAutomaticDerivationDisabled = cs[0].ContextAutomaticDerivationDisabled
+		conf.DisableResponseValidate = cs[0].DisableResponseValidate
 	}
 
 	return conf
@@ -416,18 +420,6 @@ func New(c Config) *Wrapper {
 	}
 	app.ctx, app.cancel = context.WithCancel(context.Background())
 	app.beforeWrite = func(c *Context) {}
-
-	if conf.Description != "" {
-		app.SetDescription(conf.Description)
-	}
-
-	if conf.ShutdownTimeout != 0 {
-		app.SetShutdownTimeout(conf.ShutdownTimeout)
-	}
-
-	if conf.DisableSwagAutoCreate {
-		app.DisableSwagAutoCreate()
-	}
 
 	return app
 }

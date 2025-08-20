@@ -139,10 +139,14 @@ func (c *Context) beforeWorkflow(route RouteIface, stopImmediately bool) (hasErr
 
 // 主要是对响应体是否符合tag约束的校验，
 func (c *Context) afterWorkflow(route RouteIface, disableResponseValidate, stopImmediately bool) (hasError bool) {
+	if disableResponseValidate {
+		return
+	}
+
 	var ves []*openapi.ValidationError
 
 	for _, link := range responseValidateLinks {
-		ves = link(c, route, disableResponseValidate, stopImmediately)
+		ves = link(c, route, stopImmediately)
 		if len(ves) > 0 { // 当任意环节校验失败时,即终止下文环节
 			// 校验不通过, 修改 Response.StatusCode 和 Response.Content
 			c.response.StatusCode = http.StatusUnprocessableEntity
@@ -208,7 +212,7 @@ var requestValidateLinks = []func(c *Context, route RouteIface, stopImmediately 
 	requestBodyValidate, // 请求体自动校验
 }
 
-var responseValidateLinks = []func(c *Context, route RouteIface, disableResponseValidate, stopImmediately bool) []*openapi.ValidationError{
+var responseValidateLinks = []func(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError{
 	responseValidate, // 路由返回值校验
 }
 
@@ -335,11 +339,7 @@ func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) []*
 }
 
 // 返回值校验入口
-func responseValidate(c *Context, route RouteIface, disableResponseValidate, stopImmediately bool) []*openapi.ValidationError {
-	if disableResponseValidate {
-		return nil
-	}
-
+func responseValidate(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError {
 	if c.response.StatusCode == http.StatusOK || c.response.StatusCode == 0 {
 		// TODO: 此校验浪费性能, 尝试通过某种方式绕过
 		_, ves := route.ResponseBinder().Validate(c, c.response.Content)
