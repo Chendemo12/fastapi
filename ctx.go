@@ -241,6 +241,7 @@ func (c *Context) CloseNotify() <-chan bool {
 	return c.muxCtx.CloseNotify()
 }
 
+// SSE 向客户端发送SSE数据，无需设置响应头，也无需关心消息结尾的换行符
 func (c *Context) SSE(s *SSE) (err error) {
 	if len(s.Data) == 0 {
 		return errors.New("SSE data can not be empty")
