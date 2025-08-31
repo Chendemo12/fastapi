@@ -8,6 +8,7 @@ import (
 
 	"github.com/Chendemo12/fastapi"
 	"github.com/Chendemo12/fastapi/middleware/fiberWrapper"
+	"github.com/Chendemo12/fastapi/middleware/ginWrapper"
 )
 
 // ExampleRouter 创建一个结构体实现fastapi.GroupRouter接口
@@ -114,6 +115,60 @@ func (r *ExampleRouter) GetSendFile(c *fastapi.Context) (*fastapi.FileResponse, 
 	return fastapi.SendFile("../README.md"), nil
 }
 
+func (r *ExampleRouter) GetSse(c *fastapi.Context) (*fastapi.SSE, error) {
+	for i := 1; i < 11; i++ {
+		time.Sleep(time.Millisecond * 500)
+		sse := &fastapi.SSE{
+			Id: fmt.Sprintf("%d", i),
+			Data: []string{
+				fmt.Sprintf("第%d次发送", i),
+			},
+		}
+		if i == 5 {
+			sse.Retry = 5000
+		}
+		if i%2 == 0 {
+			sse.Event = "ding"
+			sse.Data = append(sse.Data, "2的整数倍")
+		}
+		err := c.SSE(sse)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &fastapi.SSE{}, nil
+}
+
+type SendTimes struct {
+	Num int `json:"num" validate:"required,lte=10,gte=1"`
+}
+
+func (r *ExampleRouter) PostSse(c *fastapi.Context, param *SendTimes) (*fastapi.SSE, error) {
+	for i := 1; i < param.Num+1; i++ {
+		time.Sleep(time.Millisecond * 500)
+		sse := &fastapi.SSE{
+			Id: fmt.Sprintf("%d", i),
+			Data: []string{
+				fmt.Sprintf("第%d次发送", i),
+			},
+		}
+		if i == 5 {
+			sse.Retry = 5000
+		}
+		if i%2 == 0 {
+			sse.Event = "ding"
+			sse.Data = append(sse.Data, "2的整数倍")
+		}
+		err := c.SSE(sse)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &fastapi.SSE{}, nil
+}
+
 func TestExampleRouter(t *testing.T) {
 	// 可选的 fastapi.Config 参数
 	app := fastapi.New(fastapi.Config{
@@ -124,7 +179,9 @@ func TestExampleRouter(t *testing.T) {
 
 	// 此处采用默认的内置Fiber实现, 必须在启动之前设置
 	mux := fiberWrapper.Default()
-	app.SetMux(mux)
+	_ = mux
+	gmux := ginWrapper.Default()
+	app.SetMux(gmux)
 
 	// 注册路由
 	app.IncludeRouter(&ExampleRouter{})

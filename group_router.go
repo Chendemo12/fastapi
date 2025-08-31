@@ -88,7 +88,6 @@ func (g *BaseGroupRouter) Description() map[string]string {
 
 // =================================== 👇 路由组元数据 ===================================
 
-const WebsocketMethod = "WS"
 const HttpMethodMinimumLength = len(http.MethodGet)
 const (
 	ReceiverParamOffset      = 0                      // 接收器参数的索引位置
@@ -148,6 +147,7 @@ func (r *GroupRouterMeta) Init() (err error) {
 
 func (r *GroupRouterMeta) String() string { return r.pkg }
 
+// Scan 扫描路由组结构体的方法，识别出符合的请求方法
 func (r *GroupRouterMeta) Scan() (err error) {
 	r.routerValue = reflect.ValueOf(r.router)
 	obj := reflect.TypeOf(r.router)
@@ -575,10 +575,11 @@ func (r *GroupRoute) scanOutParams() (err error) {
 
 // 此方法需在 scanInParams, scanOutParams，ScanInner 执行完成之后执行
 func (r *GroupRoute) scanBinders() (err error) {
+	// 构建响应体的验证方法
 	r.responseBinder = scanHelper.InferResponseBinder(r.swagger.ResponseModel, r.RouteType())
 
 	// 初始化请求体验证方法
-	r.inferRequestBinder()
+	r.requestBinder = scanHelper.InferRequestBinder(r.swagger)
 
 	// 构建查询参数验证器
 	for _, qmodel := range r.swagger.QueryFields {
@@ -674,38 +675,4 @@ func (r *GroupRoute) NewRequestModel() any {
 // Call 调用API, 并将响应结果写入 Response 内
 func (r *GroupRoute) Call(in []reflect.Value) []reflect.Value {
 	return r.method.Func.Call(in)
-}
-
-func (r *GroupRoute) inferRequestBinder() {
-	var nothing ModelBinder = &NothingModelBinder{modelName: "", paramType: openapi.RouteParamRequest}
-
-	if r.swagger.RequestContentType != openapi.MIMEApplicationJSON && r.swagger.RequestContentType != openapi.MIMEApplicationJSONCharsetUTF8 && r.swagger.RequestContentType != openapi.MIMEMultipartForm {
-		// 暂不支持非json和multiform-data的请求参数验证
-		r.requestBinder = nothing
-		return
-	}
-
-	if r.swagger.Method == http.MethodPost || r.swagger.Method == http.MethodPut || r.swagger.Method == http.MethodPatch {
-		if r.swagger.RequestFile {
-			// 存在上传文件定义，则从 multiform-data 中获取上传参数
-			if r.swagger.RequestModel != nil && r.swagger.RequestModel.SchemaPkg() != openapi.NoneRequestPkg { // file + json
-				binder := &FileWithParamModelBinder{}
-				binder.paramType = openapi.RouteParamRequest
-				binder.modelName = r.swagger.RequestModel.JsonName()
-				r.requestBinder = binder
-			} else {
-				// modelName 为固定值，固定为 openapi.MultipartFormFileName
-				r.requestBinder = &FileModelBinder{openapi.MultipartFormFileName}
-			}
-		} else {
-			// 处理特殊类型 fastapi.None
-			if r.swagger.RequestModel != nil && r.swagger.RequestModel.SchemaPkg() != openapi.NoneRequestPkg { // 此情况基本不存在
-				r.requestBinder = &RequestModelBinder{modelName: r.swagger.RequestModel.SchemaTitle()}
-			} else {
-				r.requestBinder = nothing
-			}
-		}
-	} else { // get/delete 方法没有请求体
-		r.requestBinder = nothing
-	}
 }

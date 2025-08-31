@@ -2,9 +2,12 @@ package fastapi
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
+	"github.com/Chendemo12/fastapi/openapi"
 	"github.com/Chendemo12/fastapi/utils"
 	"github.com/go-playground/validator/v10"
 )
@@ -15,6 +18,8 @@ import (
 //
 //	注意: 当一个路由被执行完毕时, 路由函数中的 Context 将被立刻释放回收, 因此在return之后对
 //	Context 的任何引用都是不对的, 若需在return之后监听 Context.Context() 则应该显式的复制或派生
+//
+//	v0.3.2 目前实现太重，后面应该进一步简化: *fasthttp.RequestCtx -> *fiber.Ctx -> fastapi.MuxContext -> fastapi.Context
 type Context struct {
 	muxCtx      MuxContext         `description:"路由器Context"`
 	appCtx      context.Context    `description:"根context"`
@@ -34,7 +39,8 @@ type Context struct {
 	file         *File
 	response     *Response `description:"返回值,以减少函数间复制的开销"`
 	// This mutex protects Keys map.
-	locker sync.RWMutex
+	locker  *sync.RWMutex
+	sseOnce *sync.Once
 	// 每个请求专有的K/V
 	Keys map[string]any
 }
@@ -53,7 +59,8 @@ func (f *Wrapper) acquireCtx(ctx MuxContext) *Context {
 	c.pathFields = map[string]string{}
 	c.queryFields = map[string]any{}
 	c.file = nil
-	c.locker = sync.RWMutex{}
+	c.locker = &sync.RWMutex{}
+	c.sseOnce = &sync.Once{}
 
 	return c
 }
@@ -72,6 +79,8 @@ func (f *Wrapper) releaseCtx(ctx *Context) {
 
 	ctx.pathFields = nil
 	ctx.queryFields = nil
+	ctx.locker = nil
+	ctx.sseOnce = nil
 	ctx.Keys = nil
 
 	f.pool.Put(ctx)
@@ -221,6 +230,74 @@ func (c *Context) GetTime(key string) (t time.Time) {
 
 // Response 响应体，配合 Wrapper.UseBeforeWrite 实现在依赖函数中读取响应体内容，以进行日志记录等 ！慎重对 Response 进行修改！
 func (c *Context) Response() *Response { return c.response }
+
+// FlushBody 立即将缓冲区中的数据发送至客户端，多用于SSE
+func (c *Context) FlushBody() {
+	c.muxCtx.FlushBody()
+}
+
+// CloseNotify 获取客户端链接关闭通知，多用于SSE
+func (c *Context) CloseNotify() <-chan bool {
+	return c.muxCtx.CloseNotify()
+}
+
+func (c *Context) SSE(s *SSE) (err error) {
+	if len(s.Data) == 0 {
+		return errors.New("SSE data can not be empty")
+	}
+
+	c.sseOnce.Do(func() {
+		// 设置消息头
+		c.muxCtx.Header(openapi.HeaderContentType, string(openapi.MIMEEventStreamCharsetUTF8))
+		c.muxCtx.Header("Cache-Control", "no-cache")
+		c.muxCtx.Header("Connection", "keep-alive")
+		c.muxCtx.Header("Access-Control-Allow-Origin", "*")
+	})
+
+	if s.Event != "" {
+		_, err = c.muxCtx.Write([]byte(fmt.Sprintf("event: %s\n", s.Event)))
+		if err != nil {
+			return
+		}
+	}
+
+	if s.Id != "" {
+		_, err = c.muxCtx.Write([]byte(fmt.Sprintf("id: %s\n", s.Id)))
+		if err != nil {
+			return
+		}
+	}
+
+	if s.Retry != 0 {
+		_, err = c.muxCtx.Write([]byte(fmt.Sprintf("retry: %d\n", s.Retry)))
+		if err != nil {
+			return
+		}
+	}
+
+	if s.Comment != "" {
+		_, err = c.muxCtx.Write([]byte(fmt.Sprintf(": %s\n", s.Comment)))
+		if err != nil {
+			return
+		}
+	}
+
+	// data 必定存在
+	for i, v := range s.Data {
+		if i == len(s.Data)-1 {
+			_, err = c.muxCtx.Write([]byte(fmt.Sprintf("data: %s\n\n", v)))
+		} else {
+			_, err = c.muxCtx.Write([]byte(fmt.Sprintf("data: %s\n", v)))
+		}
+		if err != nil {
+			return
+		}
+	}
+
+	c.muxCtx.FlushBody()
+
+	return nil
+}
 
 // ================================ 路由组路由方法 ================================
 

@@ -182,6 +182,38 @@ func (s ScanHelper) InferParamBinder(param openapi.SchemaIface, prototypeKind re
 	return binder
 }
 
+func (s ScanHelper) InferRequestBinder(swagger *openapi.RouteSwagger) ModelBinder {
+	var binder ModelBinder = &NothingModelBinder{modelName: "", paramType: openapi.RouteParamRequest}
+
+	if swagger.RequestContentType != openapi.MIMEApplicationJSON && swagger.RequestContentType != openapi.MIMEApplicationJSONCharsetUTF8 && swagger.RequestContentType != openapi.MIMEMultipartForm {
+		// 暂不支持非json和multiform-data的请求参数验证
+		return binder
+	}
+
+	if swagger.Method == http.MethodPost || swagger.Method == http.MethodPut || swagger.Method == http.MethodPatch {
+		if swagger.RequestFile {
+			// 存在上传文件定义，则从 multiform-data 中获取上传参数
+			if swagger.RequestModel != nil && swagger.RequestModel.SchemaPkg() != openapi.NoneRequestPkg { // file + json
+				b := &FileWithParamModelBinder{}
+				b.paramType = openapi.RouteParamRequest
+				b.modelName = swagger.RequestModel.JsonName()
+				binder = b
+			} else {
+				// modelName 为固定值，固定为 openapi.MultipartFormFileName
+				binder = &FileModelBinder{openapi.MultipartFormFileName}
+			}
+		} else {
+			// 处理特殊类型 fastapi.None
+			if swagger.RequestModel != nil && swagger.RequestModel.SchemaPkg() != openapi.NoneRequestPkg { // 此情况基本不存在
+				binder = &RequestModelBinder{modelName: swagger.RequestModel.SchemaTitle()}
+			}
+		}
+	}
+
+	// get/delete 方法没有请求体
+	return binder
+}
+
 // InferResponseBinder 推断响应体的校验器,
 // 当返回值为
 //
@@ -196,7 +228,7 @@ func (s ScanHelper) InferResponseBinder(model *openapi.BaseModelMeta, routeType 
 
 	// 对于非struct类型,函数签名就已经保证了类型的正确性,无需手动校验
 	if !model.SchemaType().IsBaseType() {
-		if !model.Param.IsFile {
+		if !model.Param.IsFile && !model.Param.IsSSE {
 			binder = s.InferParamBinder(model.Param, model.Param.ElemKind(), openapi.RouteParamResponse)
 		}
 	}

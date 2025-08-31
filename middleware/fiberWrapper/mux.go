@@ -12,13 +12,10 @@ import (
 	"time"
 
 	"github.com/Chendemo12/fastapi"
-	"github.com/Chendemo12/fastapi/openapi"
 	"github.com/Chendemo12/fastapi/utils"
 	"github.com/gofiber/fiber/v2"
 	echo "github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
-	"github.com/pelletier/go-toml/v2"
-	"gopkg.in/yaml.v3"
 )
 
 var pool = &sync.Pool{New: func() any { return &FiberContext{} }}
@@ -148,16 +145,6 @@ func (c *FiberContext) Path() string { return c.ctx.Route().Path }
 
 func (c *FiberContext) Ctx() any { return c.ctx }
 
-// Get fiber 未实现此方法，作为替代可以使用 Context.Get()
-func (c *FiberContext) Get(key string) (value any, exists bool) {
-	return nil, false
-}
-
-// Set fiber 未实现此方法，作为替代可以使用 Context.Set()
-func (c *FiberContext) Set(key string, value any) {
-	panic("Method Not Supported, please use 'Context.Set' instead.")
-}
-
 func (c *FiberContext) ClientIP() string { return c.ctx.IP() }
 
 func (c *FiberContext) Query(key string, undefined ...string) string {
@@ -226,40 +213,10 @@ func (c *FiberContext) SendStream(stream io.Reader, size ...int) error {
 	return c.ctx.SendStream(stream, size...)
 }
 
-// RenderHTML 返回HTML模板
-func (c *FiberContext) RenderHTML(name string, bind interface{}, layouts ...string) error {
-	return c.ctx.Render(name, bind, layouts...)
-}
-
-func (c *FiberContext) YAML(code int, obj any) error {
-	bytes, err := yaml.Marshal(obj)
-	if err != nil {
-		return err
-	}
-	c.ctx.Set(openapi.HeaderContentType, string(openapi.MIMEApplicationYAMLCharsetUTF8))
-	c.ctx.Status(code)
-	return c.ctx.Send(bytes)
-}
-
-func (c *FiberContext) TOML(code int, obj any) error {
-	bytes, err := toml.Marshal(obj)
-	if err != nil {
-		return err
-	}
-	c.ctx.Set(openapi.HeaderContentType, string(openapi.MIMEApplicationTOMLCharsetUTF8))
-	c.ctx.Status(code)
-	return c.ctx.Send(bytes)
-}
-
 func (c *FiberContext) Header(key, value string) { c.ctx.Set(key, value) }
 
 func (c *FiberContext) Redirect(code int, location string) error {
 	return c.ctx.Redirect(location, code)
-}
-
-func (c *FiberContext) JSONP(code int, data any) error {
-	c.Status(code)
-	return c.ctx.JSONP(data)
 }
 
 func (c *FiberContext) File(filepath string) error {
@@ -269,11 +226,6 @@ func (c *FiberContext) File(filepath string) error {
 func (c *FiberContext) FileAttachment(filepath, filename string) error {
 	c.ctx.Attachment(filename)
 	return c.ctx.SendFile(filepath)
-}
-
-func (c *FiberContext) XML(code int, content any) error {
-	c.Status(code)
-	return c.ctx.XML(content)
 }
 
 func (c *FiberContext) SendString(s string) error {
@@ -286,6 +238,13 @@ func (c *FiberContext) Write(p []byte) (int, error) {
 
 func (c *FiberContext) JSON(statusCode int, data any) error {
 	return c.ctx.Status(statusCode).JSON(data)
+}
+
+func (c *FiberContext) FlushBody() {
+}
+
+func (c *FiberContext) CloseNotify() <-chan bool {
+	return nil
 }
 
 // customRecoverHandler fiber自定义错误处理函数

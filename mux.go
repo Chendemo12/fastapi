@@ -25,16 +25,13 @@ type MuxWrapper interface {
 //
 //  1. Method 和 Path 方法必须实现且不可返回空值，否则将导致 panic
 //  2. 对于 MuxContext 缺少的方法，可通过直接调用 Ctx 来实现
-//  3. 对于 Set / Get 方法，如果实际的Context未提供，则通过 Context.Get/Context.Set 代替
-//  4. GetHeader, Cookie, Query, Params 是必须实现的方法
-//  5. ShouldBind 和 BodyParser + Validate 必须实现一个，如果请求体不是JSON时则重写此方法，同时 CustomShouldBindMethod 需要返回 true
+//  3. GetHeader, Cookie, Query, Params 是必须实现的方法
+//  4. ShouldBind 和 BodyParser + Validate 必须实现一个，如果请求体不是JSON时则重写此方法，同时 CustomShouldBindMethod 需要返回 true
 type MuxContext interface {
 	Method() string // [重要方法]获得当前请求方法，取值为 http.MethodGet, http.MethodPost 等
 	Path() string   // [重要方法]获的当前请求的路由模式，而非请求Url
 
-	Ctx() any                                // 原始的 Context
-	Set(key string, value any)               // Set用于存储专门用于此上下文的新键/值对，如果以前没有使用c.Keys，它也会延迟初始化它
-	Get(key string) (value any, exists bool) // 从上下文中读取键/值对
+	Ctx() any // 原始的 Context
 
 	// === 与请求体有关方法
 
@@ -60,4 +57,7 @@ type MuxContext interface {
 	File(filepath string) error                     // 返回文件
 	FileAttachment(filepath, filename string) error // 将指定的文件以有效的方式写入主体流, 在客户端，文件通常会以给定的文件名下载
 	Write(p []byte) (int, error)                    // 写入响应字节流,当此方法执行完毕时应中断后续流程
+
+	FlushBody()               // 立即将缓冲区中的数据发送至客户端，多用于SSE
+	CloseNotify() <-chan bool // 获取客户端链接关闭通知，多用于SSE
 }

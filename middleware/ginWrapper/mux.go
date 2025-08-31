@@ -191,13 +191,6 @@ func (c *GinContext) MultipartForm() (*multipart.Form, error) {
 	return c.ctx.MultipartForm()
 }
 
-func (c *GinContext) BindQuery(obj any) error {
-	return c.ctx.ShouldBindQuery(obj)
-}
-
-// CustomBindQueryMethod 无需自定义实现
-func (c *GinContext) CustomBindQueryMethod() bool { return false }
-
 func (c *GinContext) ShouldBind(obj any) (validated bool, err error) {
 	return true, c.ctx.ShouldBind(obj)
 }
@@ -260,31 +253,6 @@ func (c *GinContext) SendStream(stream io.Reader, size ...int) error {
 	return nil
 }
 
-func (c *GinContext) JSONP(code int, data any) error {
-	c.ctx.JSONP(code, data)
-	return nil
-}
-
-func (c *GinContext) RenderHTML(name string, bind interface{}, layouts ...string) error {
-	c.ctx.HTML(http.StatusOK, name, bind)
-	return nil
-}
-
-func (c *GinContext) XML(code int, obj any) error {
-	c.ctx.XML(code, obj)
-	return nil
-}
-
-func (c *GinContext) YAML(code int, obj any) error {
-	c.ctx.YAML(code, obj)
-	return nil
-}
-
-func (c *GinContext) TOML(code int, obj any) error {
-	c.ctx.TOML(code, obj)
-	return nil
-}
-
 func (c *GinContext) File(filepath string) error {
 	c.ctx.File(filepath)
 	return nil
@@ -298,4 +266,12 @@ func (c *GinContext) FileAttachment(filepath, filename string) error {
 func (c *GinContext) JSON(statusCode int, data any) error {
 	c.ctx.JSON(statusCode, data)
 	return nil
+}
+
+func (c *GinContext) FlushBody() {
+	c.ctx.Writer.Flush()
+}
+
+func (c *GinContext) CloseNotify() <-chan bool {
+	return c.ctx.Writer.CloseNotify()
 }

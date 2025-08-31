@@ -199,6 +199,11 @@ func (f *Wrapper) write(c *Context, route RouteIface, contentType openapi.Conten
 			}
 		}
 
+	case openapi.MIMEEventStreamCharsetUTF8, openapi.MIMEEventStream:
+		// sse 推流没有明确的结束信息
+		c.muxCtx.FlushBody()
+		return nil
+
 	default: // Json类型, any类型
 		c.muxCtx.Header(openapi.HeaderContentType, string(contentType))
 		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
@@ -341,7 +346,7 @@ func requestBodyValidate(c *Context, route RouteIface, stopImmediately bool) []*
 // 返回值校验入口
 func responseValidate(c *Context, route RouteIface, stopImmediately bool) []*openapi.ValidationError {
 	if c.response.StatusCode == http.StatusOK || c.response.StatusCode == 0 {
-		// TODO: 此校验浪费性能, 尝试通过某种方式绕过
+		// TODO: 对于JSON类型，此校验浪费性能, 尝试通过某种方式绕过
 		_, ves := route.ResponseBinder().Validate(c, c.response.Content)
 		if len(ves) > 0 {
 			ves[0].Ctx[modelDescLabel] = route.Swagger().ResponseModel.SchemaDesc()

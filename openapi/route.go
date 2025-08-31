@@ -110,6 +110,8 @@ func (r *RouteSwagger) ScanInner() (err error) {
 	// 推断响应体类型
 	if r.ResponseModel.Param.IsFile {
 		r.ResponseContentType = MIMEOctetStream
+	} else if r.ResponseModel.Param.IsSSE {
+		r.ResponseContentType = MIMEEventStreamCharsetUTF8
 	} else {
 		switch r.ResponseModel.Param.SchemaType() {
 		case StringType:
@@ -177,6 +179,7 @@ type RouteParam struct {
 	IsPtr          bool           `description:"标识 Prototype 是否是指针类型"`
 	IsTime         bool           `description:"是否是时间类型"`
 	IsFile         bool           `description:"是否是文件类型"`
+	IsSSE          bool           `description:"是否是SSE"`
 	IsGeneric      bool           `description:"是否是泛型结构体"`
 	IsNil          bool           `description:"todo"`
 }
@@ -211,7 +214,6 @@ func (r *RouteParam) Init() (err error) {
 	}
 
 	r.IsTime = r.Pkg == TimePkg
-	r.IsFile = r.Pkg == FileRequestPkg
 
 	// 对于[]object 形式，修改其模型名称
 	if r.DataType == ArrayType {
@@ -227,13 +229,18 @@ func (r *RouteParam) Init() (err error) {
 		// 对于匿名字段, 此处无法重命名，只能由外部重命名, 通过 Rename 方法重命名
 	}
 
-	// 判断是否是文件类型，对于响应文件，返回值固定为 FileResponsePkg
+	// 判断是否是文件类型，对于响应文件，返回值固定为 *FileResponse
 	if r.RouteParamType == RouteParamResponse && r.Pkg == FileResponsePkg {
 		r.IsFile = true
 	}
 	// 请求体是文件类型
 	if r.RouteParamType == RouteParamRequest && r.Pkg == FileRequestPkg {
 		r.IsFile = true
+	}
+
+	// 判断是否是SSE类型，返回值固定为 *SSE
+	if r.RouteParamType == RouteParamResponse && r.Pkg == SSEResponsePkg {
+		r.IsSSE = true
 	}
 
 	// 当其作为查询参数时，手动分配一个名称

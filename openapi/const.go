@@ -1,8 +1,13 @@
 package openapi
 
-import "reflect"
+import (
+	"reflect"
+)
 
 const ApiVersion = "3.1.0"
+
+const MethodSse = "SSE"
+const MethodWebsocket = "WS"
 
 var (
 	ValidateTagName    = "validate"
@@ -98,6 +103,8 @@ const (
 	FileRequestPkg = "fastapi.File"
 	// FileResponsePkg 文件响应
 	FileResponsePkg = "fastapi.FileResponse"
+	// SSEResponsePkg SSE响应
+	SSEResponsePkg = "fastapi.SSE"
 	// NoneRequestPkg 无请求体时的参数类型
 	NoneRequestPkg = "fastapi.None"
 )
@@ -157,6 +164,8 @@ const (
 	MIMETextCSS                    ContentType = "text/css"
 	MIMETextCSSCharsetUTF8         ContentType = "text/css; charset=utf-8"
 	MIMETextJavaScriptCharsetUTF8  ContentType = "text/javascript; charset=utf-8"
+	MIMEEventStream                ContentType = "text/event-stream"
+	MIMEEventStreamCharsetUTF8     ContentType = "text/event-stream; charset=utf-8"
 	MIMEApplicationXML             ContentType = "application/xml"
 	MIMEApplicationXMLCharsetUTF8  ContentType = "application/xml; charset=utf-8"
 	MIMEApplicationTOML            ContentType = "application/toml"

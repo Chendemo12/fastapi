@@ -10,16 +10,13 @@
       基于[`validator`](https://github.com/go-playground/validator)
 - `包装器`，不限制底层的`HTTP框架`，支持`gin`、`fiber`等框架，并可轻松的集成到任何框架中;
 
-# Usage 使用说明:
+## （一）快速实现
 
-- 参考[`group_router_test.go`](./test/group_router_test.go)
-- 参考[`group_router_example_test.go`](./test/group_router_example_test.go)
+### 安装依赖
 
 ```bash
 go get https://github.com/Chendemo12/fastapi
 ```
-
-## 快速实现
 
 ```
 // 创建一个结构体实现fastapi.GroupRouter接口
@@ -45,9 +42,9 @@ app.IncludeRouter(&ExampleRouter{})
 app.Run("0.0.0.0", "8090")
 ```
 
-## 具体解释
+## （二）逐步创建完整的API服务
 
-- 创建一个`Wrapper`对象：
+### 1. 创建一个`Wrapper`对象：
 
 ```
 import "github.com/Chendemo12/fastapi"
@@ -64,7 +61,7 @@ app := fastapi.New(fastapi.Config{
 ![显示效果](./docs/pic/new-app.png "显示效果")
 <div style="text-align: center;">显示效果</div>
 
-- 指定底层HTTP路由器，也称为`Mux`, 为兼容不同的`Mux`，还需要对`Mux`进行包装，其定义为`MuxWrapper`：
+### 2. 指定底层HTTP路由器，也称为`Mux`, 为兼容不同的`Mux`，还需要对`Mux`进行包装，其定义为`MuxWrapper`：
 
 ```
 import "github.com/Chendemo12/fastapi/middleware/fiberWrapper"
@@ -88,8 +85,9 @@ mux := fiberWrapper.NewWrapper(fiberEngine) // 创建fiber包装器
 app.SetMux(mux)
 ```
 
-- 创建路由：
-  实现`fastapi.GroupRouter`接口，并创建方法以定义路由：
+### 3. 创建路由：
+
+实现`fastapi.GroupRouter`接口，并创建方法以定义路由：
 
 ```
 // 创建一个结构体实现fastapi.GroupRouter接口
@@ -118,7 +116,7 @@ app.IncludeRouter(&ExampleRouter{})
 ![显示效果](./docs/pic/router-1.png "显示效果")
 <div style="text-align: center;">显示效果</div>
 
-- 启动：
+### 4. 启动：
 
 ```
 // 阻塞运行
@@ -130,9 +128,9 @@ app.Run("0.0.0.0", "8090")
 ![显示效果](./docs/pic/example-1.png "显示效果")
 <div style="text-align: center;">显示效果</div>
 
-## 方法说明
+## （三）详细说明
 
-### 路由方法定义
+### 1. 路由方法定义
 
 - 路由定义的关键在于实现[`GroupRouter`](./group_router.go) 接口:
 
@@ -159,21 +157,55 @@ app.Run("0.0.0.0", "8090")
     - 对于`Post`, `Patch`,  `Put`  **至少有一个**自定义参数作为请求体，如果不需要请求体参数则用`fastapi.None`代替
     - 对于`Get`, `Delete` 则**只能有一个**自定义结构体参数作为查询参数、cookies、header等参数
 
-### 有关方法入参的解析规则：
+### 2. 方法示例
 
-- 对于`Get`，`Delete`：
-    - 有且只有一个结构体入参，被解释为查询/路径等参数
-- 对于`Post`, `Patch`, `Put`:
-    - 最后一个入参被解释为请求体，其他入参除`fastapi.File`外被解释为查询/路径等参数
+#### Get 方法
 
-#### 参数定义
+```
+// 返回一个字符串的Get方法
+func (r *ExampleRouter) GetAppTitle(c *fastapi.Context) (string, error) {}
 
-- 建议用`结构体`来定义所有参数：
-- 参数的校验和文档的生成遵循`Validator`的标签要求
-- 任何情况下`json`标签都会被解释为参数名，对于查询参数则优先采用`query`标签名
-- 任何模型都可以通过`SchemaDesc() string`方法来添加模型说明，作用等同于`python.__doc__`属性
+type UserInfoReq struct {
+    // 查询参数名为 userId
+	UserId int64 `json:"user_id" query:"userId" validate:"required" description:"用户ID"`
+}
 
-### 文件上传
+type UserInfoResp struct {
+	UserInfoReq
+	Name   string `json:"name" validate:"required" description:"用户名称"`
+	Age    int64  `json:"age" validate:"required" description:"用户年龄"`
+}
+
+// param 作为查询参数
+func (r *ExampleRouter) GetUserInfo(c *fastapi.Context, param *UserInfoReq) (*UserInfoResp, error) {}
+
+```
+
+#### Post 方法
+
+```go
+// param 作为请求体参数
+func (r *ExampleRouter) PostUserInfo(c *fastapi.Context, param *UserInfoReq) (*UserInfoResp, error) {}
+
+```
+
+#### Put 方法
+
+```go
+// param 作为请求体参数
+func (r *ExampleRouter) PutUserInfo(c *fastapi.Context, param *UserInfoReq) (*UserInfoResp, error) {}
+
+```
+
+#### Patch 方法
+
+```go
+// param 作为请求体参数
+func (r *ExampleRouter) PatchUserInfo(c *fastapi.Context, param *UserInfoReq) (*UserInfoResp, error) {}
+
+```
+
+### 3. 文件上传
 
 - 通过在`Post`, `Put`, `Patch` 方法中添加`*fastapi.File`参数，即可实现文件上传;
 - 请求体类型固定为`multipart/form-data`
@@ -206,12 +238,12 @@ func (r *ExampleRouter) PostUploadFileWithForm(c *fastapi.Context, file *fastapi
 
 由于反射过程中无法获得参数的名称，所以文件和json部分的字段名默认为`file`和`param`, 但可通过以下方法进行修改（必须在启动前设置）：
 
-```go
+```
 fastapi.SetMultiFormFileName("files")
 fastapi.SetMultiFormParamName("data")
 ```
 
-### 文件下载
+### 4. 文件下载
 
 - 通过返回`*fastapi.FileResponse`对象来向客户端发送文件；
 
@@ -237,7 +269,56 @@ func (r *ExampleRouter) GetSendFile(c *fastapi.Context) (*fastapi.FileResponse, 
 | FileFromReader | 从io.Reader中读取文件并返回给客户端                           |
 | Stream         | 发送字节流到客户端，Content-Type为application/octet-stream  |
 
-### 路由url解析 [RoutePathSchema](./pathschema/pathschema.go)
+### 5. SSE 推流
+
+- SSE 推流与具体的httpMethod无关，既可以是GET请求也可以是POST请求等
+- 通过返回`*fastapi.SSE`对象来定义一个SSE路由
+- 并通过`Context.SSE`向客户端发送SSE数据，无需设置响应头，也无需关心消息结尾的换行符；
+
+```
+// 返回值必须是 *fastapi.SSE 否则将无法正确的返回SSE数据
+func (r *ExampleRouter) GetSse(c *fastapi.Context) (*fastapi.SSE, error) {
+	for i := 1; i < 11; i++ {
+		time.Sleep(time.Millisecond * 500)
+		sse := &fastapi.SSE{
+			Id: fmt.Sprintf("%d", i),
+			Data: []string{
+				fmt.Sprintf("第%d次发送", i),
+			},
+		}
+		if i == 5 {
+			sse.Retry = 5000
+		}
+		if i%2 == 0 {
+			sse.Event = "ding"
+			sse.Data = append(sse.Data, "2的整数倍")
+		}
+		err := c.SSE(sse)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &fastapi.SSE{}, nil
+}
+
+```
+
+### 2. 有关方法入参的解析规则：
+
+- 对于`Get`，`Delete`：
+    - 有且只有一个结构体入参，被解释为查询/路径等参数
+- 对于`Post`, `Patch`, `Put`:
+    - 最后一个入参被解释为请求体，其他入参除`fastapi.File`外被解释为查询/路径等参数
+
+#### 参数定义
+
+- 建议用`结构体`来定义所有参数：
+- 参数的校验和文档的生成遵循`Validator`的标签要求
+- 任何情况下`json`标签都会被解释为参数名，对于查询参数则优先采用`query`标签名
+- 任何模型都可以通过`SchemaDesc() string`方法来添加模型说明，作用等同于`python.__doc__`属性
+
+### 5. 路由url解析 [RoutePathSchema](./pathschema/pathschema.go)
 
 - 方法开头或结尾中包含的http方法名会被忽略，对于方法中包含多个关键字的仅第一个会被采用：
     - `PostDelet` - > 路由为`delte`， 方法为`Post`
