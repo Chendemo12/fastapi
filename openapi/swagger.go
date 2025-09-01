@@ -5,15 +5,7 @@ import (
 	"sync"
 
 	"github.com/Chendemo12/fastapi/utils"
-	jsoniter "github.com/json-iterator/go"
 )
-
-// 序列化时进行排序
-var json = jsoniter.Config{
-	SortMapKeys:     true,
-	TagKey:          JsonTagName,
-	OnlyTaggedField: true,
-}.Froze()
 
 // OpenApi 模型类, 移除 FastApi 中不常用的属性
 type OpenApi struct {
@@ -215,7 +207,7 @@ func (o *OpenApi) pathFrom(swagger *RouteSwagger) {
 
 // RecreateDocs 重建Swagger 文档
 func (o *OpenApi) RecreateDocs() *OpenApi {
-	bs, err := json.Marshal(o)
+	bs, err := utils.JsonMarshal(o)
 	if err == nil {
 		o.cache = bs
 	}
@@ -268,7 +260,7 @@ func (r *Reference) MarshalJSON() ([]byte, error) {
 	m := make(map[string]any)
 	m[RefName] = RefPrefix + r.Name
 
-	return json.Marshal(m)
+	return utils.JsonMarshal(m)
 }
 
 // ComponentScheme openapi 的模型文档部分
@@ -294,7 +286,7 @@ func (c *Components) MarshalJSON() ([]byte, error) {
 	m[ValidationErrorDefinition.SchemaPkg()] = ValidationErrorDefinition.Schema()
 	m[ValidationErrorResponseDefinition.SchemaPkg()] = ValidationErrorResponseDefinition.Schema()
 
-	return json.Marshal(map[string]any{"schemas": m})
+	return utils.JsonMarshal(map[string]any{"schemas": m})
 }
 
 // AddModel 添加一个模型文档
@@ -384,7 +376,7 @@ func (p *PathModelContent) MarshalJSON() ([]byte, error) {
 
 	if p.Schema == nil {
 		// 此情况是一种异常状态，多存在于将 time.Time 等内置 struct 作为请求体，但是在扫描路由时被作为了查询参数，导致缺少请求体
-		return json.Marshal(m)
+		return utils.JsonMarshal(m)
 	}
 
 	switch p.Schema.SchemaType() {
@@ -398,7 +390,7 @@ func (p *PathModelContent) MarshalJSON() ([]byte, error) {
 		m[string(p.MIMEType)] = map[string]any{"schema": p.Schema.Schema()}
 	}
 
-	return json.Marshal(m)
+	return utils.JsonMarshal(m)
 }
 
 // Response 路由返回体，包含了返回状态码，状态码说明和返回值模型
@@ -444,7 +436,7 @@ func (o *Operation) MarshalJSON() ([]byte, error) {
 		orm.Responses[r.StatusCode] = r
 	}
 
-	return json.Marshal(orm)
+	return utils.JsonMarshal(orm)
 }
 
 // RequestBodyFrom 从 *openapi.BaseModelMeta 转换成 openapi 的请求体 RequestBody
@@ -550,5 +542,5 @@ func (p *Paths) MarshalJSON() ([]byte, error) {
 		m[v.Path] = v
 	}
 
-	return json.Marshal(m)
+	return utils.JsonMarshal(m)
 }

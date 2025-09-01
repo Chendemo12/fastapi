@@ -1,6 +1,7 @@
 package fiberWrapper
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -145,6 +146,10 @@ func (c *FiberContext) Path() string { return c.ctx.Route().Path }
 
 func (c *FiberContext) Ctx() any { return c.ctx }
 
+func (c *FiberContext) Done() <-chan struct{} {
+	return c.ctx.Context().Done()
+}
+
 func (c *FiberContext) ClientIP() string { return c.ctx.IP() }
 
 func (c *FiberContext) Query(key string, undefined ...string) string {
@@ -240,11 +245,20 @@ func (c *FiberContext) JSON(statusCode int, data any) error {
 	return c.ctx.Status(statusCode).JSON(data)
 }
 
-func (c *FiberContext) FlushBody() {
-}
+func (c *FiberContext) SSE(ch <-chan string) error {
+	var err error
 
-func (c *FiberContext) CloseNotify() <-chan bool {
-	return nil
+	c.ctx.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		for str := range ch {
+			_, err = w.WriteString(str)
+			if err != nil {
+				return
+			}
+			err = w.Flush()
+		}
+	})
+
+	return err
 }
 
 // customRecoverHandler fiber自定义错误处理函数

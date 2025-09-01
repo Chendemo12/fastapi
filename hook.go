@@ -201,7 +201,6 @@ func (f *Wrapper) write(c *Context, route RouteIface, contentType openapi.Conten
 
 	case openapi.MIMEEventStreamCharsetUTF8, openapi.MIMEEventStream:
 		// sse 推流没有明确的结束信息
-		c.muxCtx.FlushBody()
 		return nil
 
 	default: // Json类型, any类型

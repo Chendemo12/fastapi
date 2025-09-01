@@ -9,32 +9,22 @@ import (
 	"encoding/base64"
 	"unsafe"
 
-	jsoniter "github.com/json-iterator/go"
+	"github.com/bytedance/sonic"
 )
 
 const hexTable = "0123456789abcdef"
 
 //goland:noinspection GoUnusedGlobalVariable
 var ( // 替换json标准库，提供更好的性能
-	// 与标准库 100%兼容的配置
-	json = jsoniter.ConfigCompatibleWithStandardLibrary
-	// FasterJson 更快的配置，浮点数仅能保留6位小数, 且不能序列化HTML
-	FasterJson          = jsoniter.ConfigFastest
+	// FasterJson 更快的配置
+	FasterJson          = sonic.ConfigFastest
 	FasterJsonMarshal   = FasterJson.Marshal
 	FasterJsonUnmarshal = FasterJson.Unmarshal
 	// DefaultJson 默认配置
-	DefaultJson       = FasterJson
-	JsonMarshal       = DefaultJson.Marshal
-	JsonUnmarshal     = DefaultJson.Unmarshal
-	JsonMarshalIndent = DefaultJson.MarshalIndent
-	JsonNewDecoder    = DefaultJson.NewDecoder
-	JsonNewEncoder    = DefaultJson.NewEncoder
+	DefaultJson   = FasterJson
+	JsonMarshal   = DefaultJson.Marshal
+	JsonUnmarshal = DefaultJson.Unmarshal
 )
-
-// SetJsonEngine 修改默认的JSON配置
-func SetJsonEngine(api jsoniter.API) {
-	DefaultJson = api
-}
 
 //goland:noinspection GoUnusedGlobalVariable
 var (

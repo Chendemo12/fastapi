@@ -146,6 +146,8 @@ func (c *GinContext) Path() string   { return c.ctx.FullPath() }
 
 func (c *GinContext) Ctx() any { return c.ctx }
 
+func (c *GinContext) Done() <-chan struct{} { return c.ctx.Done() }
+
 func (c *GinContext) Set(key string, value any) {
 	c.ctx.Set(key, value)
 }
@@ -268,10 +270,13 @@ func (c *GinContext) JSON(statusCode int, data any) error {
 	return nil
 }
 
-func (c *GinContext) FlushBody() {
-	c.ctx.Writer.Flush()
-}
-
-func (c *GinContext) CloseNotify() <-chan bool {
-	return c.ctx.Writer.CloseNotify()
+func (c *GinContext) SSE(ch <-chan string) error {
+	for str := range ch {
+		_, err := c.ctx.Writer.WriteString(str)
+		if err != nil {
+			return err
+		}
+		c.ctx.Writer.Flush()
+	}
+	return nil
 }

@@ -11,7 +11,6 @@ import (
 	"github.com/Chendemo12/fastapi/openapi"
 	"github.com/Chendemo12/fastapi/utils"
 	"github.com/go-playground/validator/v10"
-	jsoniter "github.com/json-iterator/go"
 	"golang.org/x/exp/constraints"
 )
 
@@ -636,17 +635,15 @@ func (m *FileWithParamModelBinder) Validate(c *Context, requestParam any) (any, 
 }
 
 // StructQueryBind 结构体查询参数验证器
-type StructQueryBind struct {
-	json jsoniter.API
-}
+type StructQueryBind struct{}
 
 // Unmarshal todo 性能损耗过大了
 func (m *StructQueryBind) Unmarshal(params map[string]any, obj any) *openapi.ValidationError {
-	s, err := m.json.Marshal(params)
+	s, err := utils.JsonMarshal(params)
 	if err != nil {
 		return ParseJsoniterError(err, openapi.RouteParamQuery, "")
 	}
-	err = m.json.Unmarshal(s, obj)
+	err = utils.JsonUnmarshal(s, obj)
 	if err != nil {
 		return ParseJsoniterError(err, openapi.RouteParamQuery, "")
 	}
@@ -884,19 +881,5 @@ func LazyInit() {
 	defaultValidator = validator.New()
 	defaultValidator.SetTagName(openapi.ValidateTagName)
 
-	// 初始化结构体查询参数方法
-	var queryStructJsonConf = jsoniter.Config{
-		IndentionStep:                 0,                    // 指定格式化序列化输出时的空格缩进数量
-		EscapeHTML:                    false,                // 转义输出HTML
-		MarshalFloatWith6Digits:       true,                 // 指定浮点数序列化输出时最多保留6位小数
-		ObjectFieldMustBeSimpleString: true,                 // 开启该选项后，反序列化过程中不会对你的json串中对象的字段字符串可能包含的转义进行处理，因此你应该保证你的待解析json串中对象的字段应该是简单的字符串(不包含转义)
-		SortMapKeys:                   false,                // 指定map类型序列化输出时按照其key排序
-		UseNumber:                     false,                // 指定反序列化时将数字(整数、浮点数)解析成json.Number类型
-		DisallowUnknownFields:         false,                // 当开启该选项时，反序列化过程如果解析到未知字段，即在结构体的schema定义中找不到的字段时，不会跳过然后继续解析，而会返回错误
-		TagKey:                        openapi.QueryTagName, // 指定tag字符串，默认情况为"json"
-		OnlyTaggedField:               false,                // 当开启该选项时，只有带上tag的结构体字段才会被序列化输出
-		ValidateJsonRawMessage:        false,                // json.RawMessage类型的字段在序列化时会原封不动地进行输出。开启这个选项后，json-iterator会校验这种类型的字段包含的是否一个合法的json串，如果合法，原样输出；否则会输出"null"
-		CaseSensitive:                 false,                // 开启该选项后，你的待解析json串中的对象的字段必须与你的schema定义的字段大小写严格一致
-	}
-	structQueryBind = &StructQueryBind{json: queryStructJsonConf.Froze()}
+	structQueryBind = &StructQueryBind{}
 }

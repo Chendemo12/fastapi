@@ -2,8 +2,6 @@ package fastapi
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -41,6 +39,7 @@ type Context struct {
 	// This mutex protects Keys map.
 	locker  *sync.RWMutex
 	sseOnce *sync.Once
+	sseChan chan string // 延迟初始化
 	// 每个请求专有的K/V
 	Keys map[string]any
 }
@@ -81,6 +80,8 @@ func (f *Wrapper) releaseCtx(ctx *Context) {
 	ctx.queryFields = nil
 	ctx.locker = nil
 	ctx.sseOnce = nil
+	ctx.sseChan = nil
+
 	ctx.Keys = nil
 
 	f.pool.Put(ctx)
@@ -231,73 +232,60 @@ func (c *Context) GetTime(key string) (t time.Time) {
 // Response 响应体，配合 Wrapper.UseBeforeWrite 实现在依赖函数中读取响应体内容，以进行日志记录等 ！慎重对 Response 进行修改！
 func (c *Context) Response() *Response { return c.response }
 
-// FlushBody 立即将缓冲区中的数据发送至客户端，多用于SSE
-func (c *Context) FlushBody() {
-	c.muxCtx.FlushBody()
-}
-
-// CloseNotify 获取客户端链接关闭通知，多用于SSE
-func (c *Context) CloseNotify() <-chan bool {
-	return c.muxCtx.CloseNotify()
-}
-
 // SSE 向客户端发送SSE数据，无需设置响应头，也无需关心消息结尾的换行符
 func (c *Context) SSE(s *SSE) (err error) {
-	if len(s.Data) == 0 {
-		return errors.New("SSE data can not be empty")
-	}
-
 	c.sseOnce.Do(func() {
 		// 设置消息头
 		c.muxCtx.Header(openapi.HeaderContentType, string(openapi.MIMEEventStreamCharsetUTF8))
 		c.muxCtx.Header("Cache-Control", "no-cache")
 		c.muxCtx.Header("Connection", "keep-alive")
-		c.muxCtx.Header("Access-Control-Allow-Origin", "*")
+		c.muxCtx.Header("Transfer-Encoding", "chunked")
+		c.sseChan = make(chan string, 1)
+
+		go func() {
+			<-c.routeCtx.Done()
+			close(c.sseChan)
+		}()
+
+		go func() {
+			// 当 chan 关闭时，以下方法会退出
+			_ = c.muxCtx.SSE(c.sseChan)
+		}()
 	})
 
-	if s.Event != "" {
-		_, err = c.muxCtx.Write([]byte(fmt.Sprintf("event: %s\n", s.Event)))
-		if err != nil {
-			return
-		}
-	}
-
-	if s.Id != "" {
-		_, err = c.muxCtx.Write([]byte(fmt.Sprintf("id: %s\n", s.Id)))
-		if err != nil {
-			return
-		}
-	}
-
-	if s.Retry != 0 {
-		_, err = c.muxCtx.Write([]byte(fmt.Sprintf("retry: %d\n", s.Retry)))
-		if err != nil {
-			return
-		}
-	}
-
-	if s.Comment != "" {
-		_, err = c.muxCtx.Write([]byte(fmt.Sprintf(": %s\n", s.Comment)))
-		if err != nil {
-			return
-		}
-	}
-
-	// data 必定存在
-	for i, v := range s.Data {
-		if i == len(s.Data)-1 {
-			_, err = c.muxCtx.Write([]byte(fmt.Sprintf("data: %s\n\n", v)))
-		} else {
-			_, err = c.muxCtx.Write([]byte(fmt.Sprintf("data: %s\n", v)))
-		}
-		if err != nil {
-			return
-		}
-	}
-
-	c.muxCtx.FlushBody()
-
+	c.sseChan <- s.ToBuilder().String()
 	return nil
+}
+
+// SSEKeepAlive 启动SSE保活, 通过周期性的向客户端发送注释消息，从而实现保活效果
+func (c *Context) SSEKeepAlive(ctx context.Context, interval time.Duration) error {
+	c.sseOnce.Do(func() {
+		// 设置消息头
+		c.muxCtx.Header(openapi.HeaderContentType, string(openapi.MIMEEventStreamCharsetUTF8))
+		c.muxCtx.Header("Cache-Control", "no-cache")
+		c.muxCtx.Header("Connection", "keep-alive")
+		c.muxCtx.Header("Transfer-Encoding", "chunked")
+	})
+
+	ticker := time.NewTicker(interval)
+	var err error
+	var msg = &SSE{Comment: "keep-alive"}
+
+	for {
+		select {
+		case <-c.routeCtx.Done():
+			// 检测到路由结束
+			return nil
+		case <-ctx.Done():
+			return nil
+			// 到达结束时间了
+		case <-ticker.C:
+			err = c.SSE(msg)
+			if err != nil {
+				return err
+			}
+		}
+	}
 }
 
 // ================================ 路由组路由方法 ================================

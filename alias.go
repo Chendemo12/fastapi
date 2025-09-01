@@ -22,12 +22,6 @@ type None struct{}
 func (*None) SchemaDesc() string { return "Empty Request Content" }
 
 //goland:noinspection GoUnusedGlobalVariable
-var (
-	ReflectObjectType = utils.ReflectObjectType
-	SetJsonEngine     = utils.SetJsonEngine
-)
-
-//goland:noinspection GoUnusedGlobalVariable
 var F = utils.CombineStrings
 
 func Iter[T any, S any](seq []S, fc func(elem S) T) []T {

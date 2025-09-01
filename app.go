@@ -2,15 +2,16 @@ package fastapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
 	"time"
 
 	"github.com/Chendemo12/fastapi/openapi"
-	jsoniter "github.com/json-iterator/go"
 )
 
 var one = &sync.Once{}
@@ -174,7 +175,6 @@ func (f *Wrapper) initialize() *Wrapper {
 		return c
 	}}
 
-	SetJsonEngine(jsoniter.ConfigCompatibleWithStandardLibrary)
 	LazyInit()
 
 	f.initRoutes()
@@ -358,7 +358,7 @@ func (f *Wrapper) Run(host, port string) {
 
 	go func() {
 		err := f.mux.Listen(addr)
-		if err != nil {
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			panic(err)
 		}
 	}()
