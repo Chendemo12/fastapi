@@ -4,6 +4,8 @@
 package fastapi
 
 import (
+	"errors"
+
 	"github.com/Chendemo12/fastapi/openapi"
 	"github.com/Chendemo12/fastapi/utils"
 )
@@ -42,3 +44,7 @@ func SetMultiFormFileName(name string) {
 func SetMultiFormParamName(name string) {
 	openapi.MultipartFormParamName = name
 }
+
+var (
+	ErrSSEMessageEmpty = errors.New("sse message cannot be empty")
+)

@@ -270,13 +270,12 @@ func (c *GinContext) JSON(statusCode int, data any) error {
 	return nil
 }
 
-func (c *GinContext) SSE(ch <-chan string) error {
-	for str := range ch {
-		_, err := c.ctx.Writer.WriteString(str)
-		if err != nil {
-			return err
-		}
-		c.ctx.Writer.Flush()
+func (c *GinContext) SSE(message *fastapi.SSE) (err error) {
+	_, err = c.ctx.Writer.WriteString(message.ToBuilder().String())
+	if err != nil {
+		return
 	}
-	return nil
+	c.ctx.Writer.Flush()
+
+	return
 }

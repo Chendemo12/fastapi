@@ -33,7 +33,7 @@ type MuxContext interface {
 
 	Ctx() any // 原始的 Context
 	Done() <-chan struct{}
-	
+
 	// === 与请求体有关方法
 
 	ClientIP() string                              // 获得客户端IP
@@ -58,5 +58,5 @@ type MuxContext interface {
 	File(filepath string) error                     // 返回文件
 	FileAttachment(filepath, filename string) error // 将指定的文件以有效的方式写入主体流, 在客户端，文件通常会以给定的文件名下载
 	Write(p []byte) (int, error)                    // 写入响应字节流,当此方法执行完毕时应中断后续流程
-	SSE(ch <-chan string) error                     // 发送SSE消息，只需要写入消息流即可，内部不需要处理响应头
+	SSE(message *SSE) (err error)                   // 发送SSE消息，只需要写入消息流即可，内部不需要处理响应头
 }

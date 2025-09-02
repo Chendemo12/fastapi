@@ -39,7 +39,6 @@ type Context struct {
 	// This mutex protects Keys map.
 	locker  *sync.RWMutex
 	sseOnce *sync.Once
-	sseChan chan string // 延迟初始化
 	// 每个请求专有的K/V
 	Keys map[string]any
 }
@@ -80,7 +79,6 @@ func (f *Wrapper) releaseCtx(ctx *Context) {
 	ctx.queryFields = nil
 	ctx.locker = nil
 	ctx.sseOnce = nil
-	ctx.sseChan = nil
 
 	ctx.Keys = nil
 
@@ -233,28 +231,19 @@ func (c *Context) GetTime(key string) (t time.Time) {
 func (c *Context) Response() *Response { return c.response }
 
 // SSE 向客户端发送SSE数据，无需设置响应头，也无需关心消息结尾的换行符
-func (c *Context) SSE(s *SSE) (err error) {
+func (c *Context) SSE(message *SSE) (err error) {
+	if !(message != nil && len(message.Data) > 0) {
+		return ErrSSEMessageEmpty
+	}
+
 	c.sseOnce.Do(func() {
 		// 设置消息头
 		c.muxCtx.Header(openapi.HeaderContentType, string(openapi.MIMEEventStreamCharsetUTF8))
 		c.muxCtx.Header("Cache-Control", "no-cache")
 		c.muxCtx.Header("Connection", "keep-alive")
-		c.muxCtx.Header("Transfer-Encoding", "chunked")
-		c.sseChan = make(chan string, 1)
-
-		go func() {
-			<-c.routeCtx.Done()
-			close(c.sseChan)
-		}()
-
-		go func() {
-			// 当 chan 关闭时，以下方法会退出
-			_ = c.muxCtx.SSE(c.sseChan)
-		}()
 	})
 
-	c.sseChan <- s.ToBuilder().String()
-	return nil
+	return c.muxCtx.SSE(message)
 }
 
 // SSEKeepAlive 启动SSE保活, 通过周期性的向客户端发送注释消息，从而实现保活效果
@@ -264,7 +253,6 @@ func (c *Context) SSEKeepAlive(ctx context.Context, interval time.Duration) erro
 		c.muxCtx.Header(openapi.HeaderContentType, string(openapi.MIMEEventStreamCharsetUTF8))
 		c.muxCtx.Header("Cache-Control", "no-cache")
 		c.muxCtx.Header("Connection", "keep-alive")
-		c.muxCtx.Header("Transfer-Encoding", "chunked")
 	})
 
 	ticker := time.NewTicker(interval)
@@ -273,14 +261,13 @@ func (c *Context) SSEKeepAlive(ctx context.Context, interval time.Duration) erro
 
 	for {
 		select {
-		case <-c.routeCtx.Done():
+		case <-c.muxCtx.Done():
 			// 检测到路由结束
 			return nil
 		case <-ctx.Done():
 			return nil
-			// 到达结束时间了
 		case <-ticker.C:
-			err = c.SSE(msg)
+			err = c.muxCtx.SSE(msg)
 			if err != nil {
 				return err
 			}

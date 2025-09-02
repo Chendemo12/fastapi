@@ -17,6 +17,7 @@ func (m *SSE) SchemaDesc() string {
 	return `SSE消息格式说明`
 }
 
+// ToBuilder 构造出一条完整的SSE消息
 func (m *SSE) ToBuilder() *strings.Builder {
 	var builder = &strings.Builder{}
 

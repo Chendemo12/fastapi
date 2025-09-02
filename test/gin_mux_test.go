@@ -25,7 +25,6 @@ func CreateApp(mux fastapi.MuxWrapper) *fastapi.Wrapper {
 		Description:  "此状态代表服务器处理中遇上了错误",
 	})
 	app.UsePrevious(BeforeValidate)
-	//app.Use(returnErrorDeps)
 	app.UseBeforeWrite(PrintRequestLog)
 
 	return app

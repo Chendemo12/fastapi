@@ -24,6 +24,7 @@ var pool = &sync.Pool{New: func() any { return &FiberContext{} }}
 func AcquireCtx(c *fiber.Ctx) *FiberContext {
 	obj := pool.Get().(*FiberContext)
 	obj.ctx = c
+	obj.once = sync.Once{}
 
 	return obj
 }
@@ -137,7 +138,9 @@ func (m *FiberMux) BindRoute(method, path string, handler fastapi.MuxHandler) er
 }
 
 type FiberContext struct {
-	ctx *fiber.Ctx
+	ctx     *fiber.Ctx
+	once    sync.Once
+	sseChan chan *fastapi.SSE // 由于 fiber 没有明确的 flush 方法，所以曲线救国
 }
 
 func (c *FiberContext) Method() string { return c.ctx.Method() }
@@ -245,20 +248,39 @@ func (c *FiberContext) JSON(statusCode int, data any) error {
 	return c.ctx.Status(statusCode).JSON(data)
 }
 
-func (c *FiberContext) SSE(ch <-chan string) error {
-	var err error
+func (c *FiberContext) SSE(message *fastapi.SSE) (err error) {
+	c.once.Do(func() {
+		c.sseChan = make(chan *fastapi.SSE, 1)
 
-	c.ctx.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
-		for str := range ch {
-			_, err = w.WriteString(str)
-			if err != nil {
-				return
-			}
-			err = w.Flush()
-		}
+		go func() {
+			c.ctx.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+				// 立即刷新头部 (Flush the headers first)
+				_ = w.Flush()
+
+				for {
+					select {
+					case <-c.Done():
+						return
+					case sse := <-c.sseChan:
+						fastapi.Warnf("receive message")
+						_, err = w.Write([]byte(sse.ToBuilder().String()))
+						if err != nil {
+							fastapi.Errorf("[sse] write stream failed, %s", err)
+						} else {
+							err = w.Flush() // todo: not work
+							if err != nil {
+								fastapi.Errorf("[sse] flush stream failed, %s", err)
+							}
+						}
+					}
+				}
+			})
+		}()
 	})
 
-	return err
+	c.sseChan <- message
+
+	return nil
 }
 
 // customRecoverHandler fiber自定义错误处理函数
