@@ -42,7 +42,6 @@ type RouteSwagger struct {
 	RelativePath        string         `json:"relative_path" description:"相对路由"`
 	RequestContentType  ContentType    `json:"requestContentType,omitempty" description:"请求体类型, 仅在 application/json 情况下才进行请求体校验"`
 	ResponseContentType ContentType    `json:"responseContentType,omitempty" description:"响应体类型, 仅在 application/json 情况下才进行响应体校验"`
-	Api                 string         `description:"用作唯一标识"`
 	Tags                []string       `json:"tags" description:"路由标签"`
 	PathFields          []*QModel      `json:"-" description:"路径参数"`
 	QueryFields         []*QModel      `json:"-" description:"查询参数"`
@@ -54,8 +53,6 @@ func (r *RouteSwagger) Init() (err error) {
 	if r.ResponseModel == nil { // 返回值不允许为nil, 此处错误为上层忘记初始化模型参数
 		return errors.New("ResponseModel is not init")
 	}
-
-	r.Api = CreateRouteIdentify(r.Method, r.Url)
 
 	// 请求体可以为nil
 	err = r.Scan()
@@ -162,8 +159,6 @@ func (r *RouteSwagger) scanPath() (err error) {
 
 	return
 }
-
-func (r *RouteSwagger) Id() string { return r.Api }
 
 // RouteParam 路由参数的原始类型信息（由反射获得）
 // 具体包含查询参数,路径参数,请求体参数和响应体参数
@@ -352,11 +347,6 @@ func ReflectCallSchemaDesc(re reflect.Type) string {
 	} else {
 		return ""
 	}
-}
-
-// CreateRouteIdentify 获得一个路由对象的唯一标识
-func CreateRouteIdentify(method, url string) string {
-	return utils.CombineStrings(method, RouteMethodSeparator, url)
 }
 
 // ToFastApiRoutePath 将 fiber.App 格式的路径转换成 FastApi 格式的路径
@@ -556,10 +546,11 @@ func IsGenericModelByType(rt reflect.Type) bool {
 	return IsGenericModel(input)
 }
 
+var genericModelRe = regexp.MustCompile(`\[\*?(.*?)]`) // 匹配 "[]" 内的子字符串
+
 // IsGenericModel 从 reflect.Type.String() 中判断是不是泛型结构体
 func IsGenericModel(name string) bool {
-	re := regexp.MustCompile(`\[\*?(.*?)]`) // 匹配 "[]" 内的子字符串
-	match := re.FindStringSubmatch(name)
+	match := genericModelRe.FindStringSubmatch(name)
 	containsBrackets := len(match) > 1
 	insideBrackets := ""
 	if containsBrackets {

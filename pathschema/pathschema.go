@@ -4,8 +4,6 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
-
-	"github.com/Chendemo12/fastapi/utils"
 )
 
 const (
@@ -262,21 +260,18 @@ func SplitWords(s string) []string {
 	var upperZ int32 = 90
 
 	var spans []string
-	// 处理数字，和下划线等
 	start := 0
 	for index, c := range s {
 		if c >= upperA && c <= upperZ { // 识别到大写字符
-			spans = append(spans, s[start:index])
+			if start < index {
+				spans = append(spans, s[start:index])
+			}
 			start = index
 		}
-		if index == len(s)-1 { // 到达字符串结尾, 如果不包含大写字符，等同于 []string{s}
+		if index == len(s)-1 && start < len(s) { // 到达字符串结尾
 			spans = append(spans, s[start:])
 		}
 	}
-
-	spans = utils.SliceFilter(spans, func(span string) bool {
-		return span != ""
-	})
 
 	return spans
 }

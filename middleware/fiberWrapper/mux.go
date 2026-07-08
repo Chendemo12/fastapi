@@ -2,13 +2,11 @@ package fiberWrapper
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"runtime"
-	"strings"
 	"sync"
 	"time"
 
@@ -19,18 +17,22 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 )
 
-var pool = &sync.Pool{New: func() any { return &FiberContext{} }}
+var pool = &sync.Pool{New: func() any {
+	return &FiberContext{Context: *fastapi.NewContext()}
+}}
 
 func AcquireCtx(c *fiber.Ctx) *FiberContext {
 	obj := pool.Get().(*FiberContext)
-	obj.ctx = c
+	obj.fiberCtx = c
 	obj.once = sync.Once{}
+	obj.Context.InitContext(obj, nil, false) // mux = self, autoCtx handled by fastapi.Wrapper
 
 	return obj
 }
 
 func ReleaseCtx(c *FiberContext) {
-	c.ctx = nil
+	c.Context.ResetContext()
+	c.fiberCtx = nil
 	pool.Put(c)
 }
 
@@ -94,99 +96,79 @@ func (m *FiberMux) ShutdownWithTimeout(timeout time.Duration) error {
 }
 
 func (m *FiberMux) BindRoute(method, path string, handler fastapi.MuxHandler) error {
+	wrapper := func(ctx *fiber.Ctx) error {
+		mCtx := AcquireCtx(ctx)
+		defer ReleaseCtx(mCtx)
+		return handler(mCtx)
+	}
+
 	switch method {
 	case http.MethodGet:
-		m.app.Get(path, func(ctx *fiber.Ctx) error {
-			mCtx := AcquireCtx(ctx)
-			defer ReleaseCtx(mCtx)
-
-			return handler(mCtx)
-		})
+		m.app.Get(path, wrapper)
 	case http.MethodPost:
-		m.app.Post(path, func(ctx *fiber.Ctx) error {
-			mCtx := AcquireCtx(ctx)
-			defer ReleaseCtx(mCtx)
-
-			return handler(mCtx)
-		})
+		m.app.Post(path, wrapper)
 	case http.MethodDelete:
-		m.app.Delete(path, func(ctx *fiber.Ctx) error {
-			mCtx := AcquireCtx(ctx)
-			defer ReleaseCtx(mCtx)
-
-			return handler(mCtx)
-		})
+		m.app.Delete(path, wrapper)
 	case http.MethodPatch:
-		m.app.Patch(path, func(ctx *fiber.Ctx) error {
-			mCtx := AcquireCtx(ctx)
-			defer ReleaseCtx(mCtx)
-
-			return handler(mCtx)
-		})
+		m.app.Patch(path, wrapper)
 	case http.MethodPut:
-		m.app.Put(path, func(ctx *fiber.Ctx) error {
-			mCtx := AcquireCtx(ctx)
-			defer ReleaseCtx(mCtx)
-
-			return handler(mCtx)
-		})
+		m.app.Put(path, wrapper)
 	default:
-		return errors.New(fmt.Sprintf("unknow method:'%s' for path: '%s'", method, path))
+		return fmt.Errorf("unknown method: '%s' for path: '%s'", method, path)
 	}
 
 	return nil
 }
 
 type FiberContext struct {
-	ctx     *fiber.Ctx
-	once    sync.Once
-	sseChan chan *fastapi.SSE // 由于 fiber 没有明确的 flush 方法，所以曲线救国
+	fastapi.Context             // 嵌入，共用内存
+	fiberCtx       *fiber.Ctx   // 原始 fiber 上下文
+	once           sync.Once
+	sseChan        chan *fastapi.SSE
 }
 
-func (c *FiberContext) Method() string { return c.ctx.Method() }
+func (c *FiberContext) FastApiContext() *fastapi.Context { return &c.Context }
 
-func (c *FiberContext) Path() string { return c.ctx.Route().Path }
+func (c *FiberContext) Method() string { return c.fiberCtx.Method() }
 
-func (c *FiberContext) Ctx() any { return c.ctx }
+func (c *FiberContext) Path() string { return c.fiberCtx.Route().Path }
+
+func (c *FiberContext) Ctx() any { return c.fiberCtx }
 
 func (c *FiberContext) Done() <-chan struct{} {
-	return c.ctx.Context().Done()
+	return c.fiberCtx.Context().Done()
 }
 
-func (c *FiberContext) ClientIP() string { return c.ctx.IP() }
+func (c *FiberContext) ClientIP() string { return c.fiberCtx.IP() }
 
 func (c *FiberContext) Query(key string, undefined ...string) string {
-	return c.ctx.Query(key, undefined...)
+	return c.fiberCtx.Query(key, undefined...)
 }
 
 func (c *FiberContext) Params(key string, undefined ...string) string {
-	return c.ctx.Params(key, undefined...)
+	return c.fiberCtx.Params(key, undefined...)
 }
 
 func (c *FiberContext) MultipartForm() (*multipart.Form, error) {
-	return c.ctx.MultipartForm()
+	return c.fiberCtx.MultipartForm()
 }
 
-// GetHeader 获取请求头, 当key不存在时返回空字符串，如果存在多个时，返回逗号分隔的字符串
+// GetHeader 获取请求头, 当key不存在时返回空字符串
 func (c *FiberContext) GetHeader(key string) string {
-	headers, ok := c.ctx.GetReqHeaders()[key]
-	if !ok {
-		return ""
-	}
-	return strings.Join(headers, ",")
+	return c.fiberCtx.Get(key)
 }
 
 func (c *FiberContext) Cookie(name string) (string, error) {
-	return c.ctx.Cookies(name, ""), nil
+	return c.fiberCtx.Cookies(name, ""), nil
 }
 
 func (c *FiberContext) ContentType() string {
-	return string(c.ctx.Context().Request.Header.ContentType())
+	return string(c.fiberCtx.Context().Request.Header.ContentType())
 }
 
 func (c *FiberContext) ShouldBind(obj any) (validated bool, err error) {
 	// fiber 没有校验方法，因此需返回 false
-	return false, c.ctx.BodyParser(obj)
+	return false, c.fiberCtx.BodyParser(obj)
 }
 
 func (c *FiberContext) SetCookie(cookie *http.Cookie) {
@@ -212,56 +194,59 @@ func (c *FiberContext) SetCookie(cookie *http.Cookie) {
 	case http.SameSiteNoneMode:
 		ck.SameSite = fiber.CookieSameSiteNoneMode
 	}
-	c.ctx.Cookie(ck)
+	c.fiberCtx.Cookie(ck)
 }
 
-func (c *FiberContext) Status(statusCode int) { c.ctx.Status(statusCode) }
+func (c *FiberContext) Status(statusCode int) { c.fiberCtx.Status(statusCode) }
 
 func (c *FiberContext) SendStream(stream io.Reader, size ...int) error {
-	return c.ctx.SendStream(stream, size...)
+	return c.fiberCtx.SendStream(stream, size...)
 }
 
-func (c *FiberContext) Header(key, value string) { c.ctx.Set(key, value) }
+func (c *FiberContext) Header(key, value string) { c.fiberCtx.Set(key, value) }
 
 func (c *FiberContext) Redirect(code int, location string) error {
-	return c.ctx.Redirect(location, code)
+	return c.fiberCtx.Redirect(location, code)
 }
 
 func (c *FiberContext) File(filepath string) error {
-	return c.ctx.SendFile(filepath)
+	return c.fiberCtx.SendFile(filepath)
 }
 
 func (c *FiberContext) FileAttachment(filepath, filename string) error {
-	c.ctx.Attachment(filename)
-	return c.ctx.SendFile(filepath)
+	c.fiberCtx.Attachment(filename)
+	return c.fiberCtx.SendFile(filepath)
 }
 
 func (c *FiberContext) SendString(s string) error {
-	return c.ctx.SendString(s)
+	return c.fiberCtx.SendString(s)
 }
 
 func (c *FiberContext) Write(p []byte) (int, error) {
-	return c.ctx.Write(p)
+	return c.fiberCtx.Write(p)
 }
 
 func (c *FiberContext) JSON(statusCode int, data any) error {
-	return c.ctx.Status(statusCode).JSON(data)
+	return c.fiberCtx.Status(statusCode).JSON(data)
 }
 
 func (c *FiberContext) SSE(message *fastapi.SSE) (err error) {
 	c.once.Do(func() {
 		c.sseChan = make(chan *fastapi.SSE, 1)
+		ctx := c.fiberCtx  // 在 goroutine 启动前捕获，防止 ReleaseCtx 置 nil
+		done := c.Done()   // 在 goroutine 启动前捕获 channel
+		sseChan := c.sseChan // 捕获 channel 引用，防止池复用后被覆盖
 
 		go func() {
-			c.ctx.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+			ctx.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 				// 立即刷新头部 (Flush the headers first)
 				_ = w.Flush()
 
 				for {
 					select {
-					case <-c.Done():
+					case <-done:
 						return
-					case sse := <-c.sseChan:
+					case sse := <-sseChan:
 						fastapi.Warnf("receive message")
 						_, err = w.Write([]byte(sse.ToBuilder().String()))
 						if err != nil {

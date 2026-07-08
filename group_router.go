@@ -422,8 +422,6 @@ func NewGroupRoute(swagger *openapi.RouteSwagger, method reflect.Method, group *
 	return r
 }
 
-func (r *GroupRoute) Id() string { return r.swagger.Id() }
-
 func (r *GroupRoute) Init() (err error) {
 	r.getOrDelete = utils.Has([]string{http.MethodGet, http.MethodDelete}, r.swagger.Method)
 	r.handlerInNum = r.method.Type.NumIn() - FirstInParamOffset // 排除接收器

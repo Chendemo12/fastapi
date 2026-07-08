@@ -3,7 +3,6 @@ package ginWrapper
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -15,17 +14,21 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var pool = &sync.Pool{New: func() any { return &GinContext{} }}
+var pool = &sync.Pool{New: func() any {
+	return &GinContext{Context: *fastapi.NewContext()}
+}}
 
 func AcquireCtx(c *gin.Context) *GinContext {
 	obj := pool.Get().(*GinContext)
-	obj.ctx = c
+	obj.ginCtx = c
+	obj.Context.InitContext(obj, nil, false)
 
 	return obj
 }
 
 func ReleaseCtx(c *GinContext) {
-	c.ctx = nil
+	c.Context.ResetContext()
+	c.ginCtx = nil
 	pool.Put(c)
 }
 
@@ -73,108 +76,76 @@ func (m *GinMux) ShutdownWithTimeout(timeout time.Duration) error {
 }
 
 func (m *GinMux) BindRoute(method, path string, handler fastapi.MuxHandler) error {
+	wrapper := func(c *gin.Context) {
+		mCtx := AcquireCtx(c)
+		defer ReleaseCtx(mCtx)
+
+		err := handler(mCtx)
+		if err != nil {
+			_ = c.Error(err)
+			c.Abort()
+		}
+	}
+
 	switch method {
 	case http.MethodGet:
-		m.app.GET(path, func(c *gin.Context) {
-			mCtx := AcquireCtx(c)
-			defer ReleaseCtx(mCtx)
-
-			err := handler(mCtx)
-			if err != nil {
-				// 通常情况下此方法不会返回错误，如果发生错误，错误通常为写流错误
-				_ = c.Error(err)
-				c.Abort()
-			}
-		})
+		m.app.GET(path, wrapper)
 	case http.MethodPost:
-		m.app.POST(path, func(c *gin.Context) {
-			mCtx := AcquireCtx(c)
-			defer ReleaseCtx(mCtx)
-
-			err := handler(mCtx)
-			if err != nil {
-				_ = c.Error(err)
-				c.Abort()
-			}
-		})
+		m.app.POST(path, wrapper)
 	case http.MethodPatch:
-		m.app.PATCH(path, func(c *gin.Context) {
-			mCtx := AcquireCtx(c)
-			defer ReleaseCtx(mCtx)
-
-			err := handler(mCtx)
-			if err != nil {
-				_ = c.Error(err)
-				c.Abort()
-			}
-		})
+		m.app.PATCH(path, wrapper)
 	case http.MethodPut:
-		m.app.PUT(path, func(c *gin.Context) {
-			mCtx := AcquireCtx(c)
-			defer ReleaseCtx(mCtx)
-
-			err := handler(mCtx)
-			if err != nil {
-				_ = c.Error(err)
-				c.Abort()
-			}
-		})
+		m.app.PUT(path, wrapper)
 	case http.MethodDelete:
-		m.app.DELETE(path, func(c *gin.Context) {
-			mCtx := AcquireCtx(c)
-			defer ReleaseCtx(mCtx)
-
-			err := handler(mCtx)
-			if err != nil {
-				_ = c.Error(err)
-				c.Abort()
-			}
-		})
+		m.app.DELETE(path, wrapper)
 	default:
-		return errors.New(fmt.Sprintf("unknow method:'%s' for path: '%s'", method, path))
+		return fmt.Errorf("unknown method: '%s' for path: '%s'", method, path)
 	}
 
 	return nil
 }
 
 type GinContext struct {
-	ctx *gin.Context
+	fastapi.Context           // 嵌入，共用内存
+	ginCtx *gin.Context       // 原始 gin 上下文
 }
 
-func (c *GinContext) Method() string { return c.ctx.Request.Method }
-func (c *GinContext) Path() string   { return c.ctx.FullPath() }
+func (c *GinContext) FastApiContext() *fastapi.Context { return &c.Context }
 
-func (c *GinContext) Ctx() any { return c.ctx }
+func (c *GinContext) Method() string { return c.ginCtx.Request.Method }
+func (c *GinContext) Path() string   { return c.ginCtx.FullPath() }
 
-func (c *GinContext) Done() <-chan struct{} { return c.ctx.Done() }
+func (c *GinContext) Ctx() any { return c.ginCtx }
+
+func (c *GinContext) Done() <-chan struct{} { return c.ginCtx.Done() }
 
 func (c *GinContext) Set(key string, value any) {
-	c.ctx.Set(key, value)
+	c.ginCtx.Set(key, value)
 }
 
 func (c *GinContext) Get(key string) (value any, exists bool) {
-	return c.ctx.Get(key)
+	return c.ginCtx.Get(key)
 }
 
-func (c *GinContext) ClientIP() string { return c.ctx.RemoteIP() }
+func (c *GinContext) ClientIP() string { return c.ginCtx.RemoteIP() }
 
 func (c *GinContext) ContentType() string {
-	return c.ctx.ContentType()
+	return c.ginCtx.ContentType()
 }
 
 // GetHeader 解析请求头参数
 func (c *GinContext) GetHeader(key string) string {
-	return c.ctx.GetHeader(key)
+	return c.ginCtx.GetHeader(key)
 }
 
 // Cookie 解析cookies参数
 func (c *GinContext) Cookie(name string) (string, error) {
-	return c.ctx.Cookie(name)
+	return c.ginCtx.Cookie(name)
 }
 
 // Params 解析路径参数
 func (c *GinContext) Params(key string, undefined ...string) string {
-	value := c.ctx.Param(key)
+	value := c.ginCtx.Param(key)
 	if value == "" && len(undefined) > 0 {
 		return undefined[0]
 	}
@@ -182,7 +153,7 @@ func (c *GinContext) Params(key string, undefined ...string) string {
 }
 
 func (c *GinContext) Query(key string, undefined ...string) string {
-	value := c.ctx.Query(key)
+	value := c.ginCtx.Query(key)
 	if value == "" && len(undefined) > 0 {
 		return undefined[0]
 	}
@@ -190,36 +161,36 @@ func (c *GinContext) Query(key string, undefined ...string) string {
 }
 
 func (c *GinContext) MultipartForm() (*multipart.Form, error) {
-	return c.ctx.MultipartForm()
+	return c.ginCtx.MultipartForm()
 }
 
 func (c *GinContext) ShouldBind(obj any) (validated bool, err error) {
-	return true, c.ctx.ShouldBind(obj)
+	return true, c.ginCtx.ShouldBind(obj)
 }
 
 func (c *GinContext) Header(key, value string) {
-	c.ctx.Header(key, value)
+	c.ginCtx.Header(key, value)
 }
 
 func (c *GinContext) SetCookie(cookie *http.Cookie) {
-	c.ctx.SetCookie(cookie.Name, cookie.Value, cookie.MaxAge, cookie.Path, cookie.Domain, cookie.Secure, cookie.HttpOnly)
+	c.ginCtx.SetCookie(cookie.Name, cookie.Value, cookie.MaxAge, cookie.Path, cookie.Domain, cookie.Secure, cookie.HttpOnly)
 }
 
 func (c *GinContext) Redirect(code int, location string) error {
-	c.ctx.Redirect(code, location)
+	c.ginCtx.Redirect(code, location)
 	return nil
 }
 
 func (c *GinContext) Status(statusCode int) {
-	c.ctx.Status(statusCode)
+	c.ginCtx.Status(statusCode)
 }
 
 func (c *GinContext) Write(p []byte) (int, error) {
-	return c.ctx.Writer.Write(p)
+	return c.ginCtx.Writer.Write(p)
 }
 
 func (c *GinContext) SendString(s string) error {
-	c.ctx.String(http.StatusOK, "%s", s)
+	c.ginCtx.String(http.StatusOK, "%s", s)
 	return nil
 }
 
@@ -235,7 +206,7 @@ func (c *GinContext) SendStream(stream io.Reader, size ...int) error {
 				}
 				return err
 			}
-			_, err = c.ctx.Writer.Write(buf[:n])
+			_, err = c.ginCtx.Writer.Write(buf[:n])
 			if err != nil {
 				return err
 			}
@@ -247,7 +218,7 @@ func (c *GinContext) SendStream(stream io.Reader, size ...int) error {
 		if err != nil && err != io.EOF {
 			return err
 		}
-		_, err = c.ctx.Writer.Write(buf.Bytes())
+		_, err = c.ginCtx.Writer.Write(buf.Bytes())
 		if err != nil {
 			return err
 		}
@@ -256,26 +227,26 @@ func (c *GinContext) SendStream(stream io.Reader, size ...int) error {
 }
 
 func (c *GinContext) File(filepath string) error {
-	c.ctx.File(filepath)
+	c.ginCtx.File(filepath)
 	return nil
 }
 
 func (c *GinContext) FileAttachment(filepath, filename string) error {
-	c.ctx.FileAttachment(filepath, filename)
+	c.ginCtx.FileAttachment(filepath, filename)
 	return nil
 }
 
 func (c *GinContext) JSON(statusCode int, data any) error {
-	c.ctx.JSON(statusCode, data)
+	c.ginCtx.JSON(statusCode, data)
 	return nil
 }
 
 func (c *GinContext) SSE(message *fastapi.SSE) (err error) {
-	_, err = c.ctx.Writer.WriteString(message.ToBuilder().String())
+	_, err = c.ginCtx.Writer.WriteString(message.ToBuilder().String())
 	if err != nil {
 		return
 	}
-	c.ctx.Writer.Flush()
+	c.ginCtx.Writer.Flush()
 
 	return
 }

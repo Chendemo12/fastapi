@@ -51,7 +51,7 @@ var defaultRouteErrorFormatter RouteErrorFormatter = func(c *Context, err error)
 //  3. 校验通过后会调用 RouteIface.Call 并将返回值绑定在 Context 内的 Response 上
 //  4. 校验返回值，并返回422或将返回值写入到实际的 response
 func (f *Wrapper) Handler(ctx MuxContext) error {
-	route, exist := f.finder.Get(openapi.CreateRouteIdentify(ctx.Method(), ctx.Path()))
+	route, exist := f.finder.Get(ctx.Method(), ctx.Path())
 	if !exist {
 		// 正常来说，通过 Wrapper 注册的路由，不会走到这个分支
 		return nil
@@ -168,34 +168,34 @@ func (f *Wrapper) write(c *Context, route RouteIface, contentType openapi.Conten
 	f.beforeWrite(c) // 执行钩子
 
 	// 设置状态码
-	c.muxCtx.Status(c.response.StatusCode)
+	c.mux.Status(c.response.StatusCode)
 
 	switch contentType {
 	case openapi.MIMEApplicationJSON, openapi.MIMEApplicationJSONCharsetUTF8:
-		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
+		return c.mux.JSON(c.response.StatusCode, c.response.Content)
 
 	case openapi.MIMETextPlainCharsetUTF8, openapi.MIMETextPlain:
-		return c.muxCtx.SendString(c.response.Content.(string))
+		return c.mux.SendString(c.response.Content.(string))
 
 	case openapi.MIMEOctetStream: // 返回一个字节流或文件
 		if file, ok := c.response.Content.(*FileResponse); !ok {
-			c.muxCtx.Status(http.StatusInternalServerError)
-			return c.muxCtx.JSON(http.StatusInternalServerError, fmt.Sprintf("'%s' the return value type is not *FileResponse", route.Swagger().RelativePath))
+			c.mux.Status(http.StatusInternalServerError)
+			return c.mux.JSON(http.StatusInternalServerError, fmt.Sprintf("'%s' the return value type is not *FileResponse", route.Swagger().RelativePath))
 		} else { // 返回一个文件
 			switch file.mode {
 			case FileResponseModeSendFile:
-				return c.muxCtx.File(file.filepath)
+				return c.mux.File(file.filepath)
 			case FileResponseModeFileAttachment: // 文件附件
-				return c.muxCtx.FileAttachment(file.filepath, file.filename)
+				return c.mux.FileAttachment(file.filepath, file.filename)
 			case FileResponseModeReaderFile:
-				c.muxCtx.Header(openapi.HeaderContentType, string(contentType))
-				c.muxCtx.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", file.filename))
-				return c.muxCtx.SendStream(file.reader, -1)
+				c.mux.Header(openapi.HeaderContentType, string(contentType))
+				c.mux.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", file.filename))
+				return c.mux.SendStream(file.reader, -1)
 			case FileResponseModeStream: // 任意字节流
-				c.muxCtx.Header(openapi.HeaderContentType, string(contentType))
-				return c.muxCtx.SendStream(file.reader, -1)
+				c.mux.Header(openapi.HeaderContentType, string(contentType))
+				return c.mux.SendStream(file.reader, -1)
 			default:
-				return c.muxCtx.JSON(http.StatusInternalServerError, fmt.Sprintf("'%s' the return value has wrong field", route.Swagger().RelativePath))
+				return c.mux.JSON(http.StatusInternalServerError, fmt.Sprintf("'%s' the return value has wrong field", route.Swagger().RelativePath))
 			}
 		}
 
@@ -204,8 +204,8 @@ func (f *Wrapper) write(c *Context, route RouteIface, contentType openapi.Conten
 		return nil
 
 	default: // Json类型, any类型
-		c.muxCtx.Header(openapi.HeaderContentType, string(contentType))
-		return c.muxCtx.JSON(c.response.StatusCode, c.response.Content)
+		c.mux.Header(openapi.HeaderContentType, string(contentType))
+		return c.mux.JSON(c.response.StatusCode, c.response.Content)
 	}
 }
 
@@ -227,7 +227,7 @@ func pathParamsValidate(c *Context, route RouteIface, stopImmediately bool) []*o
 	// 路径参数校验
 	for _, p := range route.Swagger().PathFields {
 		// 对于路径参数，JsonName 和 SchemaTitle 一致
-		value := c.muxCtx.Params(p.JsonName(), "")
+		value := c.mux.Params(p.JsonName(), "")
 		c.pathFields[p.JsonName()] = value // 存储路径参数，即便是空字符串
 
 		if value == "" { // 路径参数都是必须的
@@ -263,7 +263,7 @@ func queryParamsValidate(c *Context, route RouteIface, stopImmediately bool) []*
 
 	// 验证是否缺少必选参数
 	for _, q := range route.Swagger().QueryFields {
-		value := c.muxCtx.Query(q.JsonName(), "")
+		value := c.mux.Query(q.JsonName(), "")
 		if value != "" {
 			// 记录传入参数值，如果是空字符串则不记录，否则会影响 Query 方法的使用
 			c.queryFields[q.JsonName()] = value

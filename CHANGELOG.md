@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## 0.3.4 - (2026-07-09)
+
+### Fix
+
+- 修复 `StringsToFloats` 因错误预分配导致返回结果包含前导零值的问题;
+- 修复 SSE 推流时 goroutine 在 FiberContext 回收后访问空指针导致 panic 的问题;
+- 修复递归结构体 (如 `type Node struct { Next *Node }`) 作为 API 模型时栈溢出的问题;
+- 修复 `ParseJsoniterError` 对 sonic 错误消息格式的脆弱索引，增加 bounds check;
+- 修复 Swagger/Redoc UI 全局模板变量多协程并发写导致的 data race;
+- `releaseCtx` 补充遗漏的 `queryStruct = nil` 清理;
+
+### Perf
+
+- `fastapi.Context` 结构体重排：删死代码 `appCtx`，`sseOnce` 指针改值类型，热点字段前置，体积缩小 8% (144→132 bytes);
+- `acquireCtx`/`releaseCtx` 优化：locker 预分配复用、pathFields/queryFields map 清空替换 nil 重置，每请求省 3 次堆分配;
+- `DateTimeModelBinder`/`TimeModelBinder`/`DateModelBinder` 的 layout 切片提升为包级变量，省每请求切片分配;
+- `ParseJsoniterError`/`ParseValidatorError` 移除死 map 分配;
+- `DefaultLogger.Errorf`/`Warnf`/`Debugf` 改为 `fmt.Sprintf` 替代 `fmt.Errorf`，省 error 包装分配;
+- `IsGenericModel` 正则编译从函数内提升为包级变量，消除启动期重复编译;
+- `SplitWords` 内联空串过滤，省 `SliceFilter` 二次切片分配;
+- `scanObjectSwagger` 移除死 map 分配;
+- Fiber/Gin 的 `BindRoute` 5 个相同闭包提取为 1 个;
+- `FiberContext.GetHeader` 用 `c.ctx.Get(key)` 替代 `GetReqHeaders()[key]`，省全量 header map 分配;
+
+### Refactor
+
+- `fastapi.Context` 与 `MuxContext` 所有权反转：`FiberContext`/`GinContext` 嵌入 `fastapi.Context`，消除双 pool，每请求 pool 操作从 4 次降为 2 次;
+- `MuxContext` 接口新增 `FastApiContext() *Context` 方法，由适配器返回嵌入的 Context;
+- `fastapi.Context` 新增 `NewContext()`/`InitContext()`/`ResetContext()`，由中间件 pool 管理生命周期;
+- `Wrapper` 移除 Context pool，委托给各 mux 适配器;
+- `Finder.Get` 方法签名从 `Get(id string)` 改为 `Get(method, path string)`，内部改用 `map[routeKey]T` 实现 O(1) 精确匹配;
+- `openapi/metadata.go` `BaseModelMeta` 新增 `visited` 字段用于循环引用检测;
+
 ## 0.3.3 - (2025-08-31)
 
 ### Feat

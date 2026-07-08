@@ -145,7 +145,7 @@ func StringsToInts(strs []string) []int {
 //	@param	strs		[]string	输入字符串数组
 //	@return	[]float64 	输出float64数组
 func StringsToFloats(strs []string) []float64 {
-	floats := make([]float64, len(strs))
+	floats := make([]float64, 0, len(strs))
 
 	for _, s := range strs {
 		i, err := strconv.ParseFloat(s, 10)

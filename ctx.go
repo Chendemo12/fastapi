@@ -16,82 +16,87 @@ import (
 //
 //	注意: 当一个路由被执行完毕时, 路由函数中的 Context 将被立刻释放回收, 因此在return之后对
 //	Context 的任何引用都是不对的, 若需在return之后监听 Context.Context() 则应该显式的复制或派生
-//
-//	v0.3.2 目前实现太重，后面应该进一步简化: *fasthttp.RequestCtx -> *fiber.Ctx -> fastapi.MuxContext -> fastapi.Context
 type Context struct {
-	muxCtx      MuxContext         `description:"路由器Context"`
-	appCtx      context.Context    `description:"根context"`
-	routeCtx    context.Context    `description:"获取针对此次请求的唯一context"`
-	routeCancel context.CancelFunc `description:"获取针对此次请求的唯一取消函数"`
-	// 存储路径参数, 路径参数类型全部为字符串类型, 路径参数都是肯定存在的
-	pathFields map[string]string `description:"路径参数"`
-	// 对于查询参数，参数类型会按照以下规则进行转换：
-	// 	int 	=> int64
-	// 	uint 	=> uint64
-	// 	float 	=> float64
-	//	string 	=> string
-	// 	bool 	=> bool
-	queryFields  map[string]any `description:"查询参数, 仅记录存在值的查询参数"`
-	queryStruct  any            `description:"结构体查询参数"`
+	// 热点字段 — 每次请求频繁访问
+	mux         MuxContext        `description:"适配器自身, 实现 MuxContext"`
+	response    *Response         `description:"返回值,以减少函数间复制的开销"`
+	pathFields  map[string]string `description:"路径参数"`
+	queryFields map[string]any    `description:"查询参数"`
+	queryStruct any               `description:"结构体查询参数"`
+
+	// 温点字段 — 部分请求访问
 	requestModel any            `description:"请求体"`
-	file         *File
-	response     *Response `description:"返回值,以减少函数间复制的开销"`
-	// This mutex protects Keys map.
-	locker  *sync.RWMutex
-	sseOnce *sync.Once
-	// 每个请求专有的K/V
-	Keys map[string]any
+	file         *File          `description:"文件"`
+	locker       *sync.RWMutex  `description:"保护 Keys map"`
+	sseOnce      sync.Once      `description:"SSE 初始化, 值类型零分配重置"`
+	Keys         map[string]any `description:"每个请求专有的K/V"`
+
+	// 冷点字段 — route context 派生
+	routeCtx    context.Context    `description:"针对此次请求的独立context"`
+	routeCancel context.CancelFunc `description:"取消函数"`
+}
+
+// NewContext 创建一个预分配好内部字段的 Context，供中间件 pool 使用
+func NewContext() *Context {
+	return &Context{
+		pathFields:  make(map[string]string),
+		queryFields: make(map[string]any),
+		locker:      &sync.RWMutex{},
+	}
+}
+
+// InitContext 重置 Context 的可变字段，由中间件 AcquireCtx 调用
+func (c *Context) InitContext(mux MuxContext, appCtx context.Context, autoCtx bool) {
+	c.mux = mux
+	c.response = AcquireResponse()
+	if autoCtx {
+		c.routeCtx, c.routeCancel = context.WithCancel(appCtx)
+	}
+	c.file = nil
+	c.sseOnce = sync.Once{}
+}
+
+// ResetContext 清理 Context 字段，由中间件 ReleaseCtx 调用
+func (c *Context) ResetContext() {
+	ReleaseResponse(c.response)
+
+	c.mux = nil
+	c.routeCtx = nil
+	c.routeCancel = nil
+	c.requestModel = nil
+	c.queryStruct = nil
+	c.file = nil
+	c.response = nil
+
+	for k := range c.pathFields {
+		delete(c.pathFields, k)
+	}
+	for k := range c.queryFields {
+		delete(c.queryFields, k)
+	}
+
+	c.Keys = nil
 }
 
 // 申请一个 Context 并初始化
 func (f *Wrapper) acquireCtx(ctx MuxContext) *Context {
-	c := f.pool.Get().(*Context)
-	// 初始化各种参数
-	c.muxCtx = ctx
-	c.response = AcquireResponse()
-	// 为每一个路由创建一个独立的ctx, 允许不启用此功能
-	if !f.conf.ContextAutomaticDerivationDisabled {
-		c.routeCtx, c.routeCancel = context.WithCancel(f.ctx)
-	}
-	c.appCtx = f.ctx
-	c.pathFields = map[string]string{}
-	c.queryFields = map[string]any{}
-	c.file = nil
-	c.locker = &sync.RWMutex{}
-	c.sseOnce = &sync.Once{}
-
+	c := ctx.FastApiContext()
+	c.InitContext(ctx, f.ctx, !f.conf.ContextAutomaticDerivationDisabled)
 	return c
 }
 
 // 释放并归还 Context
 func (f *Wrapper) releaseCtx(ctx *Context) {
-	ReleaseResponse(ctx.response)
-
-	ctx.muxCtx = nil
-	ctx.appCtx = nil
-	ctx.routeCtx = nil
-	ctx.routeCancel = nil
-	ctx.requestModel = nil
-	ctx.file = nil
-	ctx.response = nil // 释放内存
-
-	ctx.pathFields = nil
-	ctx.queryFields = nil
-	ctx.locker = nil
-	ctx.sseOnce = nil
-
-	ctx.Keys = nil
-
-	f.pool.Put(ctx)
+	ctx.ResetContext()
 }
 
 // ================================ 公共方法 ================================
 
 // MuxContext 获取web引擎的上下文
-func (c *Context) MuxContext() MuxContext { return c.muxCtx }
+func (c *Context) MuxContext() MuxContext { return c.mux }
 
 // MX shortcut web引擎的上下文
-func (c *Context) MX() any { return c.muxCtx.Ctx() }
+func (c *Context) MX() any { return c.mux.Ctx() }
 
 // Context 针对此次请求的唯一context, 当路由执行完毕返回时,将会自动关闭
 // <如果 ContextAutomaticDerivationDisabled = true 则异常>
@@ -100,10 +105,6 @@ func (c *Context) MX() any { return c.muxCtx.Ctx() }
 //
 //	@return	context.Context 当前请求的唯一context
 func (c *Context) Context() context.Context { return c.routeCtx }
-
-// RootContext 根context
-// 当禁用了context自动派生功能 <ContextAutomaticDerivationDisabled = true>，但又需要一个context时，可获得路由器Wrapper的context
-func (c *Context) RootContext() context.Context { return c.appCtx }
 
 // Done 监听 Context 是否完成退出
 // <如果 ContextAutomaticDerivationDisabled = true 则异常>
@@ -134,7 +135,7 @@ func (c *Context) Query(name string, undefined ...string) any {
 		return v
 	}
 
-	return c.muxCtx.Query(name, undefined...)
+	return c.mux.Query(name, undefined...)
 }
 
 // PathField 获取路径参数
@@ -146,7 +147,7 @@ func (c *Context) PathField(name string, undefined ...string) string {
 		return v
 	}
 
-	return c.muxCtx.Params(name, undefined...)
+	return c.mux.Params(name, undefined...)
 }
 
 // Set 存储一个键值对，延迟初始化 ！仅当 MuxContext 未实现此类方法时采用！
@@ -238,21 +239,21 @@ func (c *Context) SSE(message *SSE) (err error) {
 
 	c.sseOnce.Do(func() {
 		// 设置消息头
-		c.muxCtx.Header(openapi.HeaderContentType, string(openapi.MIMEEventStreamCharsetUTF8))
-		c.muxCtx.Header("Cache-Control", "no-cache")
-		c.muxCtx.Header("Connection", "keep-alive")
+		c.mux.Header(openapi.HeaderContentType, string(openapi.MIMEEventStreamCharsetUTF8))
+		c.mux.Header("Cache-Control", "no-cache")
+		c.mux.Header("Connection", "keep-alive")
 	})
 
-	return c.muxCtx.SSE(message)
+	return c.mux.SSE(message)
 }
 
 // SSEKeepAlive 启动SSE保活, 通过周期性的向客户端发送注释消息，从而实现保活效果
 func (c *Context) SSEKeepAlive(ctx context.Context, interval time.Duration) error {
 	c.sseOnce.Do(func() {
 		// 设置消息头
-		c.muxCtx.Header(openapi.HeaderContentType, string(openapi.MIMEEventStreamCharsetUTF8))
-		c.muxCtx.Header("Cache-Control", "no-cache")
-		c.muxCtx.Header("Connection", "keep-alive")
+		c.mux.Header(openapi.HeaderContentType, string(openapi.MIMEEventStreamCharsetUTF8))
+		c.mux.Header("Cache-Control", "no-cache")
+		c.mux.Header("Connection", "keep-alive")
 	})
 
 	ticker := time.NewTicker(interval)
@@ -261,13 +262,13 @@ func (c *Context) SSEKeepAlive(ctx context.Context, interval time.Duration) erro
 
 	for {
 		select {
-		case <-c.muxCtx.Done():
+		case <-c.mux.Done():
 			// 检测到路由结束
 			return nil
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			err = c.muxCtx.SSE(msg)
+			err = c.mux.SSE(msg)
 			if err != nil {
 				return err
 			}

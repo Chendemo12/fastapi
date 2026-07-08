@@ -1,6 +1,9 @@
 package openapi
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 var swaggerUiDefaultParameters = map[string]string{
 	"dom_id":               `"#swagger-ui"`,
@@ -11,8 +14,13 @@ var swaggerUiDefaultParameters = map[string]string{
 }
 
 var swaggerUiHtml = ""
+var swaggerUiOnce sync.Once
+
 var redocUiHtml = ""
+var redocUiOnce sync.Once
+
 var oauthUiHtml = ""
+var oauthUiOnce sync.Once
 
 // ====
 
@@ -47,20 +55,20 @@ var docsTailTemplate = `
 // ====
 
 func MakeSwaggerUiHtml(title, openapiUrl, jsUrl, cssUrl, faviconUrl string) string {
-	if len(swaggerUiHtml) < 1 {
+	swaggerUiOnce.Do(func() {
 		headerHtml := fmt.Sprintf(docsHeaderTemplate, cssUrl, faviconUrl, title, jsUrl, openapiUrl)
 		for k, v := range swaggerUiDefaultParameters {
 			headerHtml = headerHtml + fmt.Sprintf(`"%s":%s, `, k, v)
 		}
 
 		swaggerUiHtml = headerHtml + docsTailTemplate
-	}
+	})
 
 	return swaggerUiHtml
 }
 
 func MakeRedocUiHtml(title, openapiUrl, jsUrl, faviconUrl string) string {
-	if len(redocUiHtml) < 1 {
+	redocUiOnce.Do(func() {
 		indexPage := `
 	<!DOCTYPE html>
 	<html>
@@ -83,14 +91,13 @@ func MakeRedocUiHtml(title, openapiUrl, jsUrl, faviconUrl string) string {
 	</html>`
 
 		redocUiHtml = indexPage
-	}
-
+		})
 	return redocUiHtml
 }
 
 func MakeOauth2RedirectHtml() string {
 	// copied from https://github.com/swagger-api/swagger-ui/blob/v4.14.0/dist/oauth2-redirect.html
-	if len(oauthUiHtml) < 1 {
+	oauthUiOnce.Do(func() {
 		oauthUiHtml = `
     <!doctype html>
     <html lang="en-US">
@@ -171,7 +178,7 @@ func MakeOauth2RedirectHtml() string {
     </script>
     </body>
     </html>`
-	}
+	})
 
 	return oauthUiHtml
 }

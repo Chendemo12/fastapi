@@ -38,7 +38,6 @@ type Event struct {
 type Wrapper struct {
 	conf                *Config             `description:"配置项"`
 	openApi             *openapi.OpenApi    `description:"模型文档"`
-	pool                *sync.Pool          `description:"Wrapper.Context资源池"`
 	ctx                 context.Context     `description:"根Context"`
 	cancel              context.CancelFunc  `description:"取消函数"`
 	mux                 MuxWrapper          `description:"后端路由器"`
@@ -169,11 +168,6 @@ func (f *Wrapper) initialize() *Wrapper {
 	if f.conf.Version == "" {
 		f.conf.Version = "1.0.0"
 	}
-
-	f.pool = &sync.Pool{New: func() interface{} {
-		c := new(Context)
-		return c
-	}}
 
 	LazyInit()
 

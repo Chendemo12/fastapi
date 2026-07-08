@@ -45,7 +45,6 @@ type Scanner interface {
 // 路由组接口定义或泛型接口定义都需实现此接口
 type RouteIface interface {
 	Scanner
-	Id() string
 	RouteType() RouteType
 	Swagger() *openapi.RouteSwagger           // 路由文档
 	QueryBinders() []ModelBinder              // 查询参数的处理接口(查询参数名:处理接口)，每一个查询参数都必须绑定一个 ParamBinder

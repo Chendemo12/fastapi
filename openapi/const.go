@@ -62,9 +62,6 @@ const (
 	Uint64Minimum uint64 = 0
 )
 
-// RouteMethodSeparator 路由分隔符，用于分割路由方法和路径
-const RouteMethodSeparator = "=|_0#0_|="
-
 // 用于swagger的一些静态文件，来自FastApi
 const (
 	SwaggerCssName    = "swagger-ui.css"

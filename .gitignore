@@ -1,5 +1,7 @@
 # Persional Files
 
+**/*.local.json
+
 **/logs/
 main
 main.go

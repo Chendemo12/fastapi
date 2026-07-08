@@ -60,15 +60,15 @@ func (l *DefaultLogger) Error(args ...any) {
 }
 
 func (l *DefaultLogger) Errorf(format string, v ...any) {
-	_ = l.error.Output(l.calldepth, fmt.Errorf(format, v...).Error())
+	_ = l.error.Output(l.calldepth, fmt.Sprintf(format, v...))
 }
 
 func (l *DefaultLogger) Warnf(format string, v ...any) {
-	_ = l.warn.Output(l.calldepth, fmt.Errorf(format, v...).Error())
+	_ = l.warn.Output(l.calldepth, fmt.Sprintf(format, v...))
 }
 
 func (l *DefaultLogger) Debugf(format string, v ...any) {
-	_ = l.debug.Output(l.calldepth, fmt.Errorf(format, v...).Error())
+	_ = l.debug.Output(l.calldepth, fmt.Sprintf(format, v...))
 }
 
 func NewLogger(out io.Writer, prefix string, flag int) *DefaultLogger {

@@ -18,6 +18,7 @@ type BaseModelMeta struct {
 	fields         []*BaseModelField `description:"结构体字段"`
 	innerModels    []*BaseModelField `description:"子模型, 对于未命名结构体，给其指定一个结构体名称"`
 	hasValidateTag bool              `description:"是否具有validate标签"`
+	visited        map[reflect.Type]bool `description:"循环引用检测"`
 }
 
 func NewBaseModelMeta(param *RouteParam) *BaseModelMeta {
@@ -259,6 +260,15 @@ func (m *BaseModelMeta) scanFieldWhichIsArray(fieldMeta *BaseModelField, elemTyp
 
 // 处理字段是结构体的元素
 func (m *BaseModelMeta) scanFieldWhichIsStruct(fieldMeta *BaseModelField, fieldType reflect.Type, depth int) {
+	if m.visited == nil {
+		m.visited = make(map[reflect.Type]bool)
+	}
+	// 自引用结构体检测，避免无限递归栈溢出
+	if m.visited[fieldType] {
+		return
+	}
+	m.visited[fieldType] = true
+
 	pkg, name := assignModelNames(fieldMeta, fieldType)
 
 	// 首先记录一下结构体自身, 不设置为 BaseModelMeta 原因在于，避免递归处理，将模型展平
@@ -378,8 +388,6 @@ func (m *BaseModelMeta) scanObjectSwagger() (err error) {
 	} else {
 		m.description = m.Param.Pkg
 	}
-	m.doc = map[string]any{}
-
 	// 组合出模型文档
 	m.doc = dict{
 		"title":       m.SchemaTitle(), // 模型标题排除包名

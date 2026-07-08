@@ -368,6 +368,13 @@ func (m *TimeModelBinder) RouteParamType() openapi.RouteParamType {
 	return m.paramType
 }
 
+var timeLayouts = []string{time.TimeOnly, time.Kitchen}
+var dateLayouts = []string{time.DateOnly}
+var dateTimeLayouts = []string{time.DateTime, time.RFC3339, time.DateOnly, time.TimeOnly, time.Kitchen, time.RFC3339Nano,
+	time.RFC822, time.ANSIC, time.UnixDate, time.RubyDate, time.RFC822Z, time.RFC850,
+	time.RFC1123, time.RFC1123Z, time.Stamp, time.StampMilli, time.StampMicro, time.StampNano,
+}
+
 // Validate 验证一个字符串是否是一个有效的时间字符串
 // @return time.Time
 func (m *TimeModelBinder) Validate(c *Context, requestParam any) (any, []*openapi.ValidationError) {
@@ -375,8 +382,7 @@ func (m *TimeModelBinder) Validate(c *Context, requestParam any) (any, []*openap
 
 	var err error
 	var t time.Time
-	layouts := []string{time.TimeOnly, time.Kitchen}
-	for _, layout := range layouts {
+	for _, layout := range timeLayouts {
 		t, err = time.Parse(layout, sv)
 		if err == nil {
 			return t, nil
@@ -414,8 +420,7 @@ func (m *DateModelBinder) Validate(c *Context, requestParam any) (any, []*openap
 
 	var err error
 	var t time.Time
-	layouts := []string{time.DateOnly}
-	for _, layout := range layouts {
+	for _, layout := range dateLayouts {
 		t, err = time.Parse(layout, sv)
 		if err == nil {
 			return t, nil
@@ -453,12 +458,7 @@ func (m *DateTimeModelBinder) Validate(c *Context, requestParam any) (any, []*op
 
 	var err error
 	var t time.Time
-	// 按照常用频率排序
-	layouts := []string{time.DateTime, time.RFC3339, time.DateOnly, time.TimeOnly, time.Kitchen, time.RFC3339Nano,
-		time.RFC822, time.ANSIC, time.UnixDate, time.RubyDate, time.RFC822Z, time.RFC850,
-		time.RFC1123, time.RFC1123Z, time.Stamp, time.StampMilli, time.StampMicro, time.StampNano,
-	}
-	for _, layout := range layouts {
+	for _, layout := range dateTimeLayouts {
 		t, err = time.Parse(layout, sv)
 		if err == nil {
 			return t, nil
@@ -466,9 +466,8 @@ func (m *DateTimeModelBinder) Validate(c *Context, requestParam any) (any, []*op
 	}
 
 	var ves []*openapi.ValidationError
-	var timeErr *time.ParseError
 
-	if errors.As(err, &timeErr) {
+	if timeErr, ok := errors.AsType[*time.ParseError](err); ok {
 		ves = append(ves, &openapi.ValidationError{
 			Loc:  []string{"query", m.modelName},
 			Msg:  fmt.Sprintf("value: '%s' is not a datetime, err:%s", sv, err.Error()),
@@ -511,7 +510,7 @@ func (m *RequestModelBinder) Validate(c *Context, requestParam any) (any, []*ope
 	// 存在请求体,首先进行反序列化,之后校验参数是否合法,校验通过后绑定到 Context
 	var ves []*openapi.ValidationError
 
-	validated, err := c.muxCtx.ShouldBind(requestParam)
+	validated, err := c.mux.ShouldBind(requestParam)
 	if err != nil {
 		// 转换错误
 		if validated {
@@ -560,7 +559,7 @@ func (m *FileModelBinder) RouteParamType() openapi.RouteParamType {
 
 func (m *FileModelBinder) Validate(c *Context, requestParam any) (any, []*openapi.ValidationError) {
 	// 存在上传文件定义，则从 multiform-data 中获取上传参数
-	forms, err := c.muxCtx.MultipartForm()
+	forms, err := c.mux.MultipartForm()
 	if err != nil {
 		return requestParam, []*openapi.ValidationError{{
 			Loc:  []string{"requestBody", "multiform-data"},
@@ -803,7 +802,7 @@ func ParseJsoniterError(err error, loc openapi.RouteParamType, objName string) *
 	//		"sex": "F"
 	// 	}|...
 	msg := err.Error()
-	var where = make(map[string]any)
+	var where map[string]any
 	if loc == openapi.RouteParamResponse {
 		where = whereServerError
 	} else {
@@ -820,10 +819,12 @@ func ParseJsoniterError(err error, loc openapi.RouteParamType, objName string) *
 			break
 		}
 	}
-	if msgs := strings.Split(msg, jsoniterUnmarshalErrorSeparator); len(msgs) > 0 {
+	if msgs := strings.Split(msg, jsoniterUnmarshalErrorSeparator); len(msgs) >= jsonErrorFieldMsgIndex+1 {
 		err = utils.JsonUnmarshal([]byte(msgs[jsonErrorFormIndex]), &ve.Ctx)
 		if err == nil {
-			ve.Msg = msgs[jsonErrorFieldMsgIndex][len(ve.Loc[1])+2:]
+			if len(ve.Loc) >= 2 {
+				ve.Msg = msgs[jsonErrorFieldMsgIndex][len(ve.Loc[1])+2:]
+			}
 			if s := strings.Split(ve.Msg, ":"); len(s) > 0 {
 				ve.Type = s[0]
 			}
@@ -842,7 +843,7 @@ func ParseValidatorError(err error, loc openapi.RouteParamType, objName string) 
 
 	var vErr validator.ValidationErrors // validator的校验错误信息
 	var ves []*openapi.ValidationError
-	var where = make(map[string]any)
+	var where map[string]any
 
 	if loc == openapi.RouteParamResponse {
 		where = whereServerError
