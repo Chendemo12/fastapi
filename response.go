@@ -23,6 +23,9 @@ func AcquireResponse() *Response {
 }
 
 func ReleaseResponse(resp *Response) {
+	if resp == nil {
+		return
+	}
 	resp.StatusCode = 0
 	resp.Content = nil
 

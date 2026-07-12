@@ -30,10 +30,6 @@ type Context struct {
 	locker       *sync.RWMutex  `description:"保护 Keys map"`
 	sseOnce      sync.Once      `description:"SSE 初始化, 值类型零分配重置"`
 	Keys         map[string]any `description:"每个请求专有的K/V"`
-
-	// 冷点字段 — route context 派生
-	routeCtx    context.Context    `description:"针对此次请求的独立context"`
-	routeCancel context.CancelFunc `description:"取消函数"`
 }
 
 // NewContext 创建一个预分配好内部字段的 Context，供中间件 pool 使用
@@ -45,24 +41,19 @@ func NewContext() *Context {
 	}
 }
 
-// InitContext 重置 Context 的可变字段，由中间件 AcquireCtx 调用
-func (c *Context) InitContext(mux MuxContext, appCtx context.Context, autoCtx bool) {
+// initContext 重置 Context 的可变字段，由 Wrapper.Handler 调用
+func (c *Context) initContext(mux MuxContext) {
 	c.mux = mux
 	c.response = AcquireResponse()
-	if autoCtx {
-		c.routeCtx, c.routeCancel = context.WithCancel(appCtx)
-	}
 	c.file = nil
 	c.sseOnce = sync.Once{}
 }
 
-// ResetContext 清理 Context 字段，由中间件 ReleaseCtx 调用
-func (c *Context) ResetContext() {
+// resetContext 清理 Context 字段，由 Wrapper.Handler 通过 defer 调用
+func (c *Context) resetContext() {
 	ReleaseResponse(c.response)
 
 	c.mux = nil
-	c.routeCtx = nil
-	c.routeCancel = nil
 	c.requestModel = nil
 	c.queryStruct = nil
 	c.file = nil
@@ -78,18 +69,6 @@ func (c *Context) ResetContext() {
 	c.Keys = nil
 }
 
-// 申请一个 Context 并初始化
-func (f *Wrapper) acquireCtx(ctx MuxContext) *Context {
-	c := ctx.FastApiContext()
-	c.InitContext(ctx, f.ctx, !f.conf.ContextAutomaticDerivationDisabled)
-	return c
-}
-
-// 释放并归还 Context
-func (f *Wrapper) releaseCtx(ctx *Context) {
-	ctx.ResetContext()
-}
-
 // ================================ 公共方法 ================================
 
 // MuxContext 获取web引擎的上下文
@@ -98,24 +77,21 @@ func (c *Context) MuxContext() MuxContext { return c.mux }
 // MX shortcut web引擎的上下文
 func (c *Context) MX() any { return c.mux.Ctx() }
 
-// Context 针对此次请求的唯一context, 当路由执行完毕返回时,将会自动关闭
-// <如果 ContextAutomaticDerivationDisabled = true 则异常>
-//
-// 为每一个请求创建一个新的 context.Context 其代价是非常高的，因此允许通过设置关闭此功能
-//
-//	@return	context.Context 当前请求的唯一context
-func (c *Context) Context() context.Context { return c.routeCtx }
-
-// Done 监听 Context 是否完成退出
-// <如果 ContextAutomaticDerivationDisabled = true 则异常>
-//
-//	@return	chan struct{} 是否退出
-func (c *Context) Done() <-chan struct{} {
-	if c.routeCtx != nil {
-		return c.routeCtx.Done()
-	} else {
-		return nil
+// Context 获取当前请求的 context.Context，由底层 HTTP 引擎提供，
+// 随请求结束自动取消。
+func (c *Context) Context() context.Context {
+	if c.mux != nil {
+		return c.mux.RequestContext()
 	}
+	return nil
+}
+
+// Done 监听请求 Context 是否完成退出
+func (c *Context) Done() <-chan struct{} {
+	if c.mux != nil {
+		return c.mux.Done()
+	}
+	return nil
 }
 
 // Query 获取查询参数

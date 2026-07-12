@@ -2,6 +2,7 @@ package fiberWrapper
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -25,13 +26,11 @@ func AcquireCtx(c *fiber.Ctx) *FiberContext {
 	obj := pool.Get().(*FiberContext)
 	obj.fiberCtx = c
 	obj.once = sync.Once{}
-	obj.Context.InitContext(obj, nil, false) // mux = self, autoCtx handled by fastapi.Wrapper
 
 	return obj
 }
 
 func ReleaseCtx(c *FiberContext) {
-	c.Context.ResetContext()
 	c.fiberCtx = nil
 	pool.Put(c)
 }
@@ -121,10 +120,10 @@ func (m *FiberMux) BindRoute(method, path string, handler fastapi.MuxHandler) er
 }
 
 type FiberContext struct {
-	fastapi.Context             // 嵌入，共用内存
-	fiberCtx       *fiber.Ctx   // 原始 fiber 上下文
-	once           sync.Once
-	sseChan        chan *fastapi.SSE
+	fastapi.Context            // 嵌入，共用内存
+	fiberCtx        *fiber.Ctx // 原始 fiber 上下文
+	once            sync.Once
+	sseChan         chan *fastapi.SSE
 }
 
 func (c *FiberContext) FastApiContext() *fastapi.Context { return &c.Context }
@@ -137,6 +136,10 @@ func (c *FiberContext) Ctx() any { return c.fiberCtx }
 
 func (c *FiberContext) Done() <-chan struct{} {
 	return c.fiberCtx.Context().Done()
+}
+
+func (c *FiberContext) RequestContext() context.Context {
+	return c.fiberCtx.Context()
 }
 
 func (c *FiberContext) ClientIP() string { return c.fiberCtx.IP() }
@@ -233,8 +236,8 @@ func (c *FiberContext) JSON(statusCode int, data any) error {
 func (c *FiberContext) SSE(message *fastapi.SSE) (err error) {
 	c.once.Do(func() {
 		c.sseChan = make(chan *fastapi.SSE, 1)
-		ctx := c.fiberCtx  // 在 goroutine 启动前捕获，防止 ReleaseCtx 置 nil
-		done := c.Done()   // 在 goroutine 启动前捕获 channel
+		ctx := c.fiberCtx    // 在 goroutine 启动前捕获，防止 ReleaseCtx 置 nil
+		done := c.Done()     // 在 goroutine 启动前捕获 channel
 		sseChan := c.sseChan // 捕获 channel 引用，防止池复用后被覆盖
 
 		go func() {

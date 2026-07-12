@@ -46,10 +46,33 @@ var defaultRouteErrorFormatter RouteErrorFormatter = func(c *Context, err error)
 // 方法首先会查找路由元信息，如果找不到则直接跳过验证环节，由路由器返回404
 // 反之：
 //
-//  1. 申请一个 Context, 并初始化请求体、路由参数等
-//  2. 之后会校验并绑定路由参数（包含路径参数和查询参数）是否正确，如果错误则直接返回422错误，反之会继续序列化并绑定请求体（如果存在）序列化成功之后会校验请求参数的正确性，
-//  3. 校验通过后会调用 RouteIface.Call 并将返回值绑定在 Context 内的 Response 上
-//  4. 校验返回值，并返回422或将返回值写入到实际的 response
+// 1. 申请一个 Context, 并初始化请求体、路由参数等
+// 2. 之后会校验并绑定路由参数（包含路径参数和查询参数）是否正确，如果错误则直接返回422错误，反之会继续序列化并绑定请求体（如果存在）序列化成功之后会校验请求参数的正确性，
+// 3. 校验通过后会调用 RouteIface.Call 并将返回值绑定在 Context 内的 Response 上
+// 4. 校验返回值，并返回422或将返回值写入到实际的 response
+//
+//	请求进入
+//	   │
+//	   v
+//	路由查找 ── 未命中 ──→ return nil
+//	   │
+//	   v
+//	initContext  ——  Context 初始化
+//	   │
+//	   v
+//	UsePrevious 校验前依赖钩子 ── 失败 ──→ 错误响应
+//	   │
+//	   v
+//	路径参数 → 查询参数 → 结构体查询 → 请求体
+//	   │                 校验失败 ──→ 422
+//	   v
+//	UseAfter 校验后依赖钩子 ── 失败 ──→ 错误响应
+//	   │
+//	   v
+//	route.Call()
+//	   │
+//	   ├── err != nil ──→ 错误格式化 ──→ UseBeforeWrite 错误响应
+//	   └── err == nil ──→ [返回值校验] ──→ UseBeforeWrite 写入响应
 func (f *Wrapper) Handler(ctx MuxContext) error {
 	route, exist := f.finder.Get(ctx.Method(), ctx.Path())
 	if !exist {
@@ -58,8 +81,9 @@ func (f *Wrapper) Handler(ctx MuxContext) error {
 	}
 
 	// 找到定义的路由信息
-	wrapperCtx := f.acquireCtx(ctx)
-	defer f.releaseCtx(wrapperCtx)
+	wrapperCtx := ctx.FastApiContext()
+	wrapperCtx.initContext(ctx)
+	defer wrapperCtx.resetContext()
 
 	// 校验前依赖函数
 	var err error
@@ -104,13 +128,13 @@ func (f *Wrapper) Handler(ctx MuxContext) error {
 		if hasError {
 			// 校验工作流不通过, 中断执行
 			return f.write(wrapperCtx, route, openapi.MIMEApplicationJSONCharsetUTF8)
-		} else {
-			// 路由正常响应
-			return f.write(wrapperCtx, route, route.Swagger().ResponseContentType) // 返回消息流
 		}
+
+		// 路由正常响应
+		return f.write(wrapperCtx, route, route.Swagger().ResponseContentType) // 返回消息流
 	} else {
 		// 存在错误，则返回错误信息
-		err := last.Interface().(error)
+		err = last.Interface().(error)
 		wrapperCtx.response.StatusCode, wrapperCtx.response.Content = f.routeErrorFormatter(wrapperCtx, err)
 
 		return f.write(wrapperCtx, route, openapi.MIMEApplicationJSONCharsetUTF8)
@@ -159,12 +183,6 @@ func (c *Context) afterWorkflow(route RouteIface, disableResponseValidate, stopI
 
 // 写入响应体, 依据 contentType 的不同，有不同的写入行为
 func (f *Wrapper) write(c *Context, route RouteIface, contentType openapi.ContentType) error {
-	defer func() {
-		if c.routeCancel != nil {
-			c.routeCancel() // 当路由执行完毕时立刻关闭
-		}
-	}()
-
 	f.beforeWrite(c) // 执行钩子
 
 	// 设置状态码

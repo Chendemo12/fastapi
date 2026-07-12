@@ -21,13 +21,11 @@ var pool = &sync.Pool{New: func() any {
 func AcquireCtx(c *gin.Context) *GinContext {
 	obj := pool.Get().(*GinContext)
 	obj.ginCtx = c
-	obj.Context.InitContext(obj, nil, false)
 
 	return obj
 }
 
 func ReleaseCtx(c *GinContext) {
-	c.Context.ResetContext()
 	c.ginCtx = nil
 	pool.Put(c)
 }
@@ -106,8 +104,8 @@ func (m *GinMux) BindRoute(method, path string, handler fastapi.MuxHandler) erro
 }
 
 type GinContext struct {
-	fastapi.Context           // 嵌入，共用内存
-	ginCtx *gin.Context       // 原始 gin 上下文
+	fastapi.Context              // 嵌入，共用内存
+	ginCtx          *gin.Context // 原始 gin 上下文
 }
 
 func (c *GinContext) FastApiContext() *fastapi.Context { return &c.Context }
@@ -118,6 +116,10 @@ func (c *GinContext) Path() string   { return c.ginCtx.FullPath() }
 func (c *GinContext) Ctx() any { return c.ginCtx }
 
 func (c *GinContext) Done() <-chan struct{} { return c.ginCtx.Done() }
+
+func (c *GinContext) RequestContext() context.Context {
+	return c.ginCtx.Request.Context()
+}
 
 func (c *GinContext) Set(key string, value any) {
 	c.ginCtx.Set(key, value)

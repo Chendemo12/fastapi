@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## 0.3.5-beta1 - (2026-07-12s)
+
+### Feat
+
+- **MCP (Model Context Protocol) 支持**：内置 MCP 能力，采用 Streamable HTTP 传输协议，单端点 `POST /mcp`；
+  - 通过结构体反射方式定义 MCP Provider，嵌入 `BaseMCPProvider` 并遵循 `Tool*`/`Resource*`/`Prompt*` 方法名前缀即可自动发现；
+  - 自实现 JSON-RPC 2.0 协议层，无外部 SDK 依赖，通过反射直接调用 Go 方法；
+  - 支持 Tool（工具调用）、Resource（资源读取）、Prompt（提示模板）三种 MCP 原语；
+  - `MCPProvider` 接口支持 `Prefix`、`Tags`、`PathSchema`、`Summary`、`Description`、`ResourceURI`、`AuthFunc` 七个扩展点；
+  - 默认命名规则采用 `pathschema.LowerCaseUnderline`（snake_case），可通过重写 `PathSchema()` 自定义；
+  - `AuthFunc(c *Context) error` 支持按 Provider 粒度的认证，返回非 nil error 即拒绝请求；
+  - MCP 与 HTTP 路由（GroupRouter）可并存，互不干扰；
+  - 新增完整示例 `test/mcp_server_example.go`（含公开和认证两类 Provider）；
+  - 新增文档 `docs/mcp.md`，RESTful API 文档独立为 `docs/restful-api.md`；
+
+### BREAKING
+
+- **移除 `Config.ContextAutomaticDerivationDisabled` 配置项**：改为直接使用底层 HTTP 引擎（Fiber/Gin）的请求级 `context.Context`，不再额外创建 `context.WithCancel`，`c.Context()` 和 `c.Done()` 公开 API 不变；
+- **`MuxContext` 接口新增 `RequestContext() context.Context` 方法**：自定义 `MuxContext` 实现者需添加此方法，当前框架已为 Fiber、Gin 适配器完成实现；
+
 ## 0.3.4 - (2026-07-09)
 
 ### Fix

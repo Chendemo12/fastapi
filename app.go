@@ -43,6 +43,8 @@ type Wrapper struct {
 	mux                 MuxWrapper          `description:"后端路由器"`
 	isStarted           chan struct{}       `description:"标记程序是否完成启动"`
 	groupRouters        []*GroupRouterMeta  `description:"路由组对象"`
+	mcpProviders        []*MCPProviderMeta  `description:"MCP提供者对象"`
+	mcpHandler          *MCPHandler         `description:"MCP JSON-RPC 处理器"`
 	events              []*Event            `description:"启动和关闭事件"`
 	finder              Finder[RouteIface]  `description:"路由对象查找器"`
 	previousDeps        []DependenceHandle  `description:"在接口参数校验前执行的依赖函数"`
@@ -71,9 +73,8 @@ type Config struct {
 	DisableSwagAutoCreate bool   `json:"disable_swag_auto_create,omitempty" description:"禁用OpenApi文档，但是不禁用参数校验"`
 	// 默认情况下当请求校验过程遇到错误字段时，仍会继续向下校验其他字段，并最终将所有的错误消息一次性返回给调用方-
 	// 当此设置被开启后，在遇到一个错误的参数时，会立刻停止终止流程，直接返回错误消息
-	StopImmediatelyWhenErrorOccurs     bool `json:"stopImmediatelyWhenErrorOccurs" description:"是否在遇到错误字段时立刻停止校验"`
-	ContextAutomaticDerivationDisabled bool `json:"contextAutomaticDerivationDisabled,omitempty" description:"禁止为每一个请求创建单独的Context"`
-	DisableResponseValidate            bool `json:"disableResponseValidate" description:"是否禁用响应参数校验，仅JSON类型有效"`
+	StopImmediatelyWhenErrorOccurs  bool `json:"stopImmediatelyWhenErrorOccurs" description:"是否在遇到错误字段时立刻停止校验"`
+	DisableResponseValidate         bool `json:"disableResponseValidate" description:"是否禁用响应参数校验，仅JSON类型有效"`
 
 	host string
 	port string
@@ -86,7 +87,6 @@ func (c *Config) Copy() *Config {
 		Version:                            c.Version,
 		ShutdownTimeout:                    c.ShutdownTimeout,
 		DisableSwagAutoCreate:              c.DisableSwagAutoCreate,
-		ContextAutomaticDerivationDisabled: c.ContextAutomaticDerivationDisabled,
 		StopImmediatelyWhenErrorOccurs:     c.StopImmediatelyWhenErrorOccurs,
 		DisableResponseValidate:            c.DisableResponseValidate,
 		host:                               c.host,
@@ -109,6 +109,36 @@ func (f *Wrapper) initRoutes() *Wrapper {
 			panic(fmt.Errorf("group-router: '%s' created failld, %v", group.String(), err))
 		}
 	}
+
+	return f
+}
+
+// 初始化MCP提供者, 扫描所有 MCPProvider 的方法
+func (f *Wrapper) initMCPProvider() *Wrapper {
+	for _, mp := range f.mcpProviders {
+		err := mp.Init()
+		if err != nil {
+			panic(fmt.Errorf("mcp-provider: '%s' init failed, %v", mp.String(), err))
+		}
+	}
+	return f
+}
+
+// 注册 MCP JSON-RPC 端点
+func (f *Wrapper) initMCPServer() *Wrapper {
+	if len(f.mcpProviders) == 0 {
+		return f
+	}
+
+	f.mcpHandler = NewMCPHandler(f.mcpProviders, f.conf.Title, f.conf.Version)
+
+	err := f.mux.BindRoute(http.MethodPost, "/mcp", f.mcpHandler.ServeMCP)
+	if err != nil {
+		panic(fmt.Sprintf("bind mcp endpoint failed, %v", err))
+	}
+
+	// 注册session清理
+	f.OnEvent(ShutdownEvent, f.mcpHandler.Shutdown)
 
 	return f
 }
@@ -172,8 +202,10 @@ func (f *Wrapper) initialize() *Wrapper {
 	LazyInit()
 
 	f.initRoutes()
+	f.initMCPProvider()
 	f.initFinder()
 	f.initMux()
+	f.initMCPServer()
 	f.initSwagger() // === 必须最后调用
 
 	return f
@@ -226,6 +258,17 @@ func (f *Wrapper) SetDescription(description string) *Wrapper {
 func (f *Wrapper) IncludeRouter(router GroupRouter) *Wrapper {
 	f.groupRouters = append(f.groupRouters, NewGroupRouteMeta(router, f.routeErrorFormatter))
 	return f
+}
+
+// IncludeMCP 注册一个MCP提供者，将其 Tool/Resource/Prompt 方法暴露为MCP能力
+func (f *Wrapper) IncludeMCP(provider MCPProvider) *Wrapper {
+	f.mcpProviders = append(f.mcpProviders, NewMCPProviderMeta(provider))
+	return f
+}
+
+// UseMCP IncludeMCP 的别名
+func (f *Wrapper) UseMCP(provider MCPProvider) *Wrapper {
+	return f.IncludeMCP(provider)
 }
 
 // UsePrevious 添加一个校验前依赖函数，此依赖函数会在：请求参数校验前调用
@@ -373,7 +416,6 @@ func cleanConfig(cs ...Config) Config {
 		ShutdownTimeout:                    5,
 		DisableSwagAutoCreate:              false,
 		StopImmediatelyWhenErrorOccurs:     false,
-		ContextAutomaticDerivationDisabled: false,
 		DisableResponseValidate:            false,
 		host:                               "",
 		port:                               "",
@@ -391,7 +433,6 @@ func cleanConfig(cs ...Config) Config {
 		conf.ShutdownTimeout = cs[0].ShutdownTimeout
 		conf.DisableSwagAutoCreate = cs[0].DisableSwagAutoCreate
 		conf.StopImmediatelyWhenErrorOccurs = cs[0].StopImmediatelyWhenErrorOccurs
-		conf.ContextAutomaticDerivationDisabled = cs[0].ContextAutomaticDerivationDisabled
 		conf.DisableResponseValidate = cs[0].DisableResponseValidate
 	}
 
@@ -406,6 +447,7 @@ func New(c Config) *Wrapper {
 	app := &Wrapper{
 		conf:                conf.Copy(),
 		groupRouters:        make([]*GroupRouterMeta, 0),
+		mcpProviders:        make([]*MCPProviderMeta, 0),
 		isStarted:           make(chan struct{}, 1),
 		previousDeps:        make([]DependenceHandle, 0),
 		afterDeps:           make([]DependenceHandle, 0),

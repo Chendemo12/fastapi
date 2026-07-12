@@ -299,3 +299,11 @@ func UppercaseFirstLetter(s string) string {
 
 	return string(r)
 }
+
+// LowerCaseUnderline 全小写+下划线连接，常用于 MCP Tool/Resource/Prompt 命名
+//
+//	示例：
+//	GetClipboardContent()	=> clipboard_content
+func LowerCaseUnderline() RoutePathSchema {
+	return NewComposition(&LowerCase{}, &Underline{})
+}
