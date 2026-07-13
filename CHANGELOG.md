@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 0.3.5-beta3 - (2026-07-14)
+
+### Fix
+
+- 修复`v0.3.5:r.RouteParamType == RouteParamRequest && r.Pkg == FileRequestPkg`引发的文件上传的错误；
+
 ## 0.3.5-beta2 - (2026-07-13)
 
 ### BREAKING

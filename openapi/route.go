@@ -228,8 +228,9 @@ func (r *RouteParam) Init() (err error) {
 	if r.RouteParamType == RouteParamResponse && r.Pkg == FileResponsePkg {
 		r.IsFile = true
 	}
-	// 请求体是文件类型
-	if r.RouteParamType == RouteParamRequest && r.Pkg == FileRequestPkg {
+	// 请求参数是文件类型 — 不限制 RouteParamType，因为 *fastapi.File 可以出现在非末尾参数位置
+	// （例如: PostXxx(c *Context, file *File, param *SomeStruct)），此时它会被标记为 RouteParamQuery
+	if r.Pkg == FileRequestPkg {
 		r.IsFile = true
 	}
 
