@@ -81,7 +81,7 @@ func (f *Wrapper) Handler(ctx MuxContext) error {
 	}
 
 	// 找到定义的路由信息
-	wrapperCtx := ctx.FastApiContext()
+	wrapperCtx := ctx.WrapperContext()
 	wrapperCtx.initContext(ctx)
 	defer wrapperCtx.resetContext()
 

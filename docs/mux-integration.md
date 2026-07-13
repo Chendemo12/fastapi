@@ -59,7 +59,7 @@ BindRoute(method, path string, handler MuxHandler) error
 | 读取请求 | `Params()`, `Query()`, `GetHeader()`, `Cookie()` | 路径参数、查询参数、请求头、Cookie            |
 | 请求体  | `ShouldBind(obj)`                                | 反序列化请求体到结构体                     |
 | 写入响应 | `JSON()`, `SendString()`, `Status()`, `Header()` | 写 JSON、纯文本、状态码、响应头              |
-| 内部   | `FastApiContext() *Context`                      | 返回内嵌的 `fastapi.Context` 见`生命周期` |
+| 内部   | `WrapperContext() *Context`                      | 返回内嵌的 `fastapi.Context` 见`生命周期` |
 
 ## 3. Context 生命周期（关键）
 
@@ -78,7 +78,7 @@ type EchoContext struct {
     echoCtx echo.Context // 原生引擎的 context 引用
 }
 
-func (c *EchoContext) FastApiContext() *fastapi.Context { return &c.Context }
+func (c *EchoContext) WrapperContext() *fastapi.Context { return &c.Context }
 
 var pool = &sync.Pool{New: func () any {
     return &EchoContext{Context: *fastapi.NewContext()}
@@ -117,7 +117,7 @@ AcquireCtx(nativeCtx)
     v
 handler(mCtx) → Wrapper.Handler
     │
-    ├─ FastApiContext().initContext(mux, appCtx, autoCtx)
+    ├─ WrapperContext().initContext(mux, appCtx, autoCtx)
     │     └─ response = AcquireResponse()  ← 唯一分配点
     │
     ├─ 校验 (路径参数、查询参数、请求体)
@@ -283,7 +283,7 @@ type EchoContext struct {
 	echoCtx echo.Context
 }
 
-func (c *EchoContext) FastApiContext() *fastapi.Context { return &c.Context }
+func (c *EchoContext) WrapperContext() *fastapi.Context { return &c.Context }
 
 func (c *EchoContext) Method() string { return c.echoCtx.Request().Method }
 func (c *EchoContext) Path() string   { return c.echoCtx.Path() }

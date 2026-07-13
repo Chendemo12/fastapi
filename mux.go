@@ -40,7 +40,7 @@ type MuxWrapper interface {
 //	    // 其他框架特有字段（如 sync.Once, sse channel 等）
 //	}
 //
-//	func (c *XxxContext) FastApiContext() *fastapi.Context { return &c.Context }
+//	func (c *XxxContext) WrapperContext() *fastapi.Context { return &c.Context }
 //
 //	var pool = &sync.Pool{New: func() any {
 //	    return &XxxContext{Context: *fastapi.NewContext()}
@@ -78,7 +78,7 @@ type MuxWrapper interface {
 type MuxContext interface {
 	Method() string           // [重要方法]获得当前请求方法，取值为 http.Method*, 如 http.MethodPost 等
 	Path() string             // [重要方法]获的当前请求的路由模式，而非请求Url
-	FastApiContext() *Context // 获取内嵌的 *Context，用于框架内部获取请求上下文
+	WrapperContext() *Context // 获取内嵌的 *Context，用于框架内部获取请求上下文
 
 	Ctx() any                        // 原始的 Context
 	Done() <-chan struct{}           // 请求结束信号

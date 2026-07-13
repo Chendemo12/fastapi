@@ -126,7 +126,7 @@ type FiberContext struct {
 	sseChan         chan *fastapi.SSE
 }
 
-func (c *FiberContext) FastApiContext() *fastapi.Context { return &c.Context }
+func (c *FiberContext) WrapperContext() *fastapi.Context { return &c.Context }
 
 func (c *FiberContext) Method() string { return c.fiberCtx.Method() }
 

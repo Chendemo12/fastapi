@@ -108,7 +108,7 @@ type GinContext struct {
 	ginCtx          *gin.Context // 原始 gin 上下文
 }
 
-func (c *GinContext) FastApiContext() *fastapi.Context { return &c.Context }
+func (c *GinContext) WrapperContext() *fastapi.Context { return &c.Context }
 
 func (c *GinContext) Method() string { return c.ginCtx.Request.Method }
 func (c *GinContext) Path() string   { return c.ginCtx.FullPath() }
