@@ -73,8 +73,8 @@ type Config struct {
 	DisableSwagAutoCreate bool   `json:"disable_swag_auto_create,omitempty" description:"禁用OpenApi文档，但是不禁用参数校验"`
 	// 默认情况下当请求校验过程遇到错误字段时，仍会继续向下校验其他字段，并最终将所有的错误消息一次性返回给调用方-
 	// 当此设置被开启后，在遇到一个错误的参数时，会立刻停止终止流程，直接返回错误消息
-	StopImmediatelyWhenErrorOccurs  bool `json:"stopImmediatelyWhenErrorOccurs" description:"是否在遇到错误字段时立刻停止校验"`
-	DisableResponseValidate         bool `json:"disableResponseValidate" description:"是否禁用响应参数校验，仅JSON类型有效"`
+	StopImmediatelyWhenErrorOccurs bool `json:"stopImmediatelyWhenErrorOccurs" description:"是否在遇到错误字段时立刻停止校验"`
+	DisableResponseValidate        bool `json:"disableResponseValidate" description:"是否禁用响应参数校验，仅JSON类型有效"`
 
 	host string
 	port string
@@ -82,15 +82,15 @@ type Config struct {
 
 func (c *Config) Copy() *Config {
 	return &Config{
-		Title:                              c.Title,
-		Description:                        c.Description,
-		Version:                            c.Version,
-		ShutdownTimeout:                    c.ShutdownTimeout,
-		DisableSwagAutoCreate:              c.DisableSwagAutoCreate,
-		StopImmediatelyWhenErrorOccurs:     c.StopImmediatelyWhenErrorOccurs,
-		DisableResponseValidate:            c.DisableResponseValidate,
-		host:                               c.host,
-		port:                               c.port,
+		Title:                          c.Title,
+		Description:                    c.Description,
+		Version:                        c.Version,
+		ShutdownTimeout:                c.ShutdownTimeout,
+		DisableSwagAutoCreate:          c.DisableSwagAutoCreate,
+		StopImmediatelyWhenErrorOccurs: c.StopImmediatelyWhenErrorOccurs,
+		DisableResponseValidate:        c.DisableResponseValidate,
+		host:                           c.host,
+		port:                           c.port,
 	}
 }
 
@@ -410,15 +410,15 @@ func (f *Wrapper) Run(host, port string) {
 
 func cleanConfig(cs ...Config) Config {
 	conf := Config{
-		Title:                              "FastAPI",
-		Description:                        "FastAPI Application",
-		Version:                            "1.0.0",
-		ShutdownTimeout:                    5,
-		DisableSwagAutoCreate:              false,
-		StopImmediatelyWhenErrorOccurs:     false,
-		DisableResponseValidate:            false,
-		host:                               "",
-		port:                               "",
+		Title:                          "FastAPI",
+		Description:                    "FastAPI Application",
+		Version:                        "1.0.0",
+		ShutdownTimeout:                5,
+		DisableSwagAutoCreate:          false,
+		StopImmediatelyWhenErrorOccurs: false,
+		DisableResponseValidate:        false,
+		host:                           "",
+		port:                           "",
 	}
 	if len(cs) > 0 {
 		if cs[0].Title != "" {

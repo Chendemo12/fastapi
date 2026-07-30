@@ -111,6 +111,11 @@ func (m *BaseModelMeta) scanObject() (err error) {
 		return
 	}
 
+	if rt.Kind() != reflect.Struct {
+		// 具名非结构体类型（如 type JsonData []*BenefitItem），无需解析字段
+		return
+	}
+
 	// 此时肯定是结构体了
 	if m.Param.IsGeneric {
 		// 识别到泛型结构体
@@ -200,7 +205,13 @@ func (m *BaseModelMeta) scanStructField(argsType *ArgsType, depth int) {
 		}
 
 		elemType := utils.GetElementType(field.Type)
-		m.scanFieldWhichIsStruct(fieldMeta, elemType, depth+1)
+		// 处理具名非结构体类型（如 type JsonData []*BenefitItem）
+		// GetElementType 解引用指针后可能得到切片/数组等非结构体类型
+		if elemType.Kind() == reflect.Struct {
+			m.scanFieldWhichIsStruct(fieldMeta, elemType, depth+1)
+		} else if elemType.Kind() == reflect.Slice || elemType.Kind() == reflect.Array {
+			m.scanFieldWhichIsArray(fieldMeta, elemType.Elem(), depth+1)
+		}
 
 	case ArrayType: // 字段为数组
 		elemType := utils.GetElementType(field.Type) // 子元素类型

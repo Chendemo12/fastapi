@@ -20,10 +20,10 @@ type MCPToolMeta struct {
 	Description string         `json:"description,omitempty"`
 	InputSchema map[string]any `json:"inputSchema"`
 
-	inParams    []*openapi.RouteParam // all params after *Context
-	outParam    *openapi.RouteParam   // first return value
-	index       int                   // method.Index for calling
-	handlerInNum int                  // num input params (excl. receiver)
+	inParams     []*openapi.RouteParam // all params after *Context
+	outParam     *openapi.RouteParam   // first return value
+	index        int                   // method.Index for calling
+	handlerInNum int                   // num input params (excl. receiver)
 }
 
 // NewMCPToolMeta creates a new tool metadata instance.

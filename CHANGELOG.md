@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 0.3.5-beta4 - (2026-07-30)
+
+### Fix
+
+- 修复具名非结构体类型（如 `type JsonData []*BenefitItem`）作为结构体字段时，OpenAPI 元数据扫描器
+  将解引用后的切片类型误当结构体处理（`reflect.NumField()`） 导致 panic 的问题；
+
 ## 0.3.5-beta3 - (2026-07-14)
 
 ### Fix
