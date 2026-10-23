@@ -1,6 +1,15 @@
 # CHANGELOG
 
+## 0.3.5-beta5 - (2026-10-24)
+
+### Fix
+
+- 修复 MCP Tool `inputSchema` 生成时把 `json:"field,omitempty"` 的逗号选项一并当作属性名，导致属性名形如 `field,omitempty` 的问题；
+- 修复 MCP Tool `inputSchema` 缺少 `[]string`/`[]int`/`[]struct` 数组字段的问题（原 `StructToQModels` 会跳过切片/数组类型）；
+- `MCPToolMeta.Call` 在调用 Tool 方法前接入结构体入参校验，新增 `SetMCPValidateLang("zh"|"en")` 以配置中英文校验错误提示（默认英文）；
+
 ## 0.3.5-beta4 - (2026-07-30)
+
 
 ### Fix
 

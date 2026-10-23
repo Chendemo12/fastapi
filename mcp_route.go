@@ -131,42 +131,98 @@ func (t *MCPToolMeta) paramToJSONSchema(param *openapi.RouteParam) map[string]an
 }
 
 // expandStructParam flattens a struct parameter's fields into JSON Schema properties.
-// Reuses openapi.StructToQModels.
+// It uses reflection directly instead of StructToQModels so that json tag options
+// (e.g. ",omitempty") are stripped and slice/array fields are included correctly.
 func (t *MCPToolMeta) expandStructParam(param *openapi.RouteParam) map[string]any {
-	qms := openapi.StructToQModels(param.CopyPrototype())
+	rt := param.CopyPrototype()
+	if rt.Kind() == reflect.Ptr {
+		rt = rt.Elem()
+	}
 
+	properties, required := buildMCPProperties(rt)
 	schema := map[string]any{
 		"type":       "object",
-		"properties": make(map[string]any),
+		"properties": properties,
 	}
-
-	required := make([]string, 0)
-	properties := schema["properties"].(map[string]any)
-
-	for _, qm := range qms {
-		// Init must be called to parse json/query tags and set JsonName
-		_ = qm.Init()
-		prop := map[string]any{
-			"title": qm.Name,
-			"type":  string(qm.SchemaType()),
-		}
-		if qm.IsTime {
-			prop["type"] = "string"
-			prop["format"] = "date-time"
-		}
-		if qm.SchemaDesc() != "" {
-			prop["description"] = qm.SchemaDesc()
-		}
-		properties[qm.JsonName()] = prop
-		if qm.IsRequired() {
-			required = append(required, qm.JsonName())
-		}
-	}
-
 	if len(required) > 0 {
 		schema["required"] = required
 	}
 	return schema
+}
+
+// buildMCPProperties builds JSON Schema properties and the required list for a struct.
+func buildMCPProperties(rt reflect.Type) (map[string]any, []string) {
+	properties := make(map[string]any)
+	required := make([]string, 0)
+	if rt.Kind() == reflect.Ptr {
+		rt = rt.Elem()
+	}
+	if rt.Kind() != reflect.Struct {
+		return properties, required
+	}
+
+	for i := 0; i < rt.NumField(); i++ {
+		field := rt.Field(i)
+		if field.PkgPath != "" {
+			continue
+		}
+		if field.Anonymous && field.Tag.Get("json") == "" {
+			subProps, subRequired := buildMCPProperties(field.Type)
+			for key, value := range subProps {
+				properties[key] = value
+			}
+			required = append(required, subRequired...)
+			continue
+		}
+
+		if field.Tag.Get("json") == "-" {
+			continue
+		}
+		name := utils.QueryJsonName(field.Tag, field.Name)
+		if name == "" || name == "-" {
+			continue
+		}
+
+		prop := buildMCPSchemaType(field.Type)
+		prop["title"] = field.Name
+		if desc := utils.QueryFieldTag(field.Tag, "description", ""); desc != "" {
+			prop["description"] = desc
+		}
+		properties[name] = prop
+		if openapi.IsFieldRequired(field.Tag) {
+			required = append(required, name)
+		}
+	}
+	return properties, required
+}
+
+// buildMCPSchemaType converts a Go type to a JSON Schema fragment.
+func buildMCPSchemaType(ft reflect.Type) map[string]any {
+	if ft.Kind() == reflect.Ptr {
+		ft = ft.Elem()
+	}
+	if ft.String() == openapi.TimePkg {
+		return map[string]any{"type": "string", "format": "date-time"}
+	}
+
+	switch ft.Kind() {
+	case reflect.Slice, reflect.Array:
+		return map[string]any{
+			"type":  "array",
+			"items": buildMCPSchemaType(ft.Elem()),
+		}
+	case reflect.Struct:
+		props, required := buildMCPProperties(ft)
+		schema := map[string]any{"type": "object", "properties": props}
+		if len(required) > 0 {
+			schema["required"] = required
+		}
+		return schema
+	case reflect.Map:
+		return map[string]any{"type": "object"}
+	default:
+		return map[string]any{"type": goKindToJSONType(ft.Kind())}
+	}
 }
 
 // NewCallArgs constructs the []reflect.Value needed for method.Func.Call().
@@ -280,8 +336,17 @@ func (t *MCPToolMeta) zeroValueForParam(param *openapi.RouteParam) reflect.Value
 	return reflect.New(param.Prototype).Elem()
 }
 
-// Call executes the method and returns the result.
+// Call validates the arguments then executes the method and returns the result.
 func (t *MCPToolMeta) Call(in []reflect.Value) (result any, err error) {
+	for i, param := range t.inParams {
+		if param.SchemaType() != openapi.ObjectType || param.IsTime || param.IsFile {
+			continue
+		}
+		if err = validateMCPStruct(in[MCPFirstInParamOffset+1+i]); err != nil {
+			return nil, err
+		}
+	}
+
 	out := t.method.Func.Call(in)
 	if !out[MCPLastOutParamOffset].IsNil() {
 		err = out[MCPLastOutParamOffset].Interface().(error)
