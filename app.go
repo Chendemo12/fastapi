@@ -132,12 +132,18 @@ func (f *Wrapper) initMCPServer() *Wrapper {
 
 	f.mcpHandler = NewMCPHandler(f.mcpProviders, f.conf.Title, f.conf.Version)
 
-	err := f.mux.BindRoute(http.MethodPost, "/mcp", f.mcpHandler.ServeMCP)
-	if err != nil {
+	if err := f.mux.BindRoute(http.MethodPost, "/mcp", f.mcpHandler.ServeMCP); err != nil {
 		panic(fmt.Sprintf("bind mcp endpoint failed, %v", err))
 	}
+	// Streamable HTTP 规范要求同一端点同时支持 GET（SSE）与 DELETE（终止会话）。
+	// 本实现为无状态且不提供 SSE，因此二者均返回 405。
+	if err := f.mux.BindRoute(http.MethodGet, "/mcp", f.mcpHandler.ServeMCPGet); err != nil {
+		panic(fmt.Sprintf("bind mcp GET endpoint failed, %v", err))
+	}
+	if err := f.mux.BindRoute(http.MethodDelete, "/mcp", f.mcpHandler.ServeMCPDelete); err != nil {
+		panic(fmt.Sprintf("bind mcp DELETE endpoint failed, %v", err))
+	}
 
-	// 注册session清理
 	f.OnEvent(ShutdownEvent, f.mcpHandler.Shutdown)
 
 	return f

@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## 0.3.6 - (2026-10-24)
+
+### BREAKING
+
+- MCP 传输层改为**无状态**：不再签发或校验 `mcp-session-id`，移除 10 分钟固定会话超时；每个请求独立鉴权，客户端无需先 `initialize` 即可调用工具；
+- MCP 协议版本由 `2024-11-05` 升级为 `2025-03-26`（Streamable HTTP 正式版本），并在 `initialize` 中按客户端请求版本协商；
+
+### Feat
+
+- MCP 支持 JSON-RPC 批量请求（数组），通知类消息（`notifications/*`）按规范返回 202 且无响应体；`initialize` 不允许出现在批量请求中；
+- MCP 新增 `ping` 方法，返回空结果对象；
+- MCP 端点新增 `GET /mcp`（无 SSE，返回 405）与 `DELETE /mcp`（无会话，返回 405），符合 Streamable HTTP 对同一端点的方法要求；
+
+### Fix
+
+- 修复 MCP `prompts/get` 返回的 `messages` 结构不符合规范的问题（补齐 `role` 与嵌套 `content`）；
+- 修复 `resources/read` 返回结构与错误码：补充 `mimeType`，移除多余的 `type` 字段，资源不存在改为 `-32002`；
+- 修复解析错误、非法请求仍返回 HTTP 200 的问题，现分别返回 400；
+- 未知工具错误信息统一为 `Unknown tool: <name>`；
+- 校验 JSON-RPC 请求 `id` 类型（仅允许字符串/数字/null，非法时返回 `-32600`），批量请求同样适用；
+- 同名 Tool/Resource/Prompt 冲突时仅保留首个并打印告警，避免静默覆盖；
+
 ## 0.3.5-beta5 - (2026-10-24)
 
 ### Fix

@@ -1,13 +1,10 @@
 package fastapi
 
 import (
-	"crypto/rand"
-	"encoding/hex"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"sync"
-	"time"
 
 	"github.com/Chendemo12/fastapi/utils"
 )
@@ -21,11 +18,42 @@ type mcpJSONRPCRequest struct {
 	Params  json.RawMessage `json:"params,omitempty"`
 }
 
+// isNotification reports whether the request is a JSON-RPC notification,
+// i.e. it has no "id" member or its method belongs to the notifications namespace.
+// A request with an explicit null id is still a request and receives a response.
+func (r *mcpJSONRPCRequest) isNotification() bool {
+	if r.Method == "" {
+		// Malformed request: it must receive an error response.
+		return false
+	}
+	if len(r.ID) == 0 {
+		return true
+	}
+	return len(r.Method) > len("notifications/") && r.Method[:len("notifications/")] == "notifications/"
+}
+
+// isValidJSONRPCID reports whether the raw id is a valid JSON-RPC id:
+// String, Number, or Null (JSON-RPC 2.0 requires one of these).
+func isValidJSONRPCID(id json.RawMessage) bool {
+	if len(id) == 0 {
+		return false
+	}
+	b := id[0]
+	if b == '"' || b == 'n' { // string / null
+		return true
+	}
+	if b == '-' || (b >= '0' && b <= '9') { // number
+		return true
+	}
+	return false
+}
+
 type mcpJSONRPCResponse struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Result  any             `json:"result,omitempty"`
-	Error   *mcpRPCError    `json:"error,omitempty"`
+	JSONRPC string `json:"jsonrpc"`
+	// ID must always be present in responses; it is null when unknown.
+	ID     json.RawMessage `json:"id"`
+	Result any             `json:"result,omitempty"`
+	Error  *mcpRPCError    `json:"error,omitempty"`
 }
 
 type mcpRPCError struct {
@@ -34,87 +62,22 @@ type mcpRPCError struct {
 	Data    any    `json:"data,omitempty"`
 }
 
-// Standard JSON-RPC error codes
+// Standard JSON-RPC error codes plus MCP-defined server error codes.
 const (
-	errParse          = -32700
-	errInvalidRequest = -32600
-	errMethodNotFound = -32601
-	errInvalidParams  = -32602
-	errInternal       = -32603
+	errParse            = -32700
+	errInvalidRequest   = -32600
+	errMethodNotFound   = -32601
+	errInvalidParams    = -32602
+	errInternal         = -32603
+	errResourceNotFound = -32002
 )
 
-// MCP header constants
+// MCP protocol constants.
 const (
-	mcpSessionHeader      = "mcp-session-id"
-	mcpProtocolVersion    = "2024-11-05"
-	defaultSessionTimeout = 10 * time.Minute
+	// mcpProtocolVersion is the latest protocol revision supported by this server.
+	// Streamable HTTP was introduced in 2025-03-26.
+	mcpProtocolVersion = "2025-03-26"
 )
-
-// =================================== MCP Session ===================================
-
-type mcpSession struct {
-	ID        string
-	CreatedAt time.Time
-}
-
-type mcpSessionManager struct {
-	mu       sync.RWMutex
-	sessions map[string]*mcpSession
-	timeout  time.Duration
-}
-
-func newMCPSessionManager(timeout time.Duration) *mcpSessionManager {
-	return &mcpSessionManager{
-		sessions: make(map[string]*mcpSession),
-		timeout:  timeout,
-	}
-}
-
-func (sm *mcpSessionManager) create() *mcpSession {
-	id := generateSessionID()
-	s := &mcpSession{ID: id, CreatedAt: time.Now()}
-	sm.mu.Lock()
-	sm.sessions[id] = s
-	sm.mu.Unlock()
-	return s
-}
-
-func (sm *mcpSessionManager) get(id string) (*mcpSession, bool) {
-	sm.mu.RLock()
-	s, ok := sm.sessions[id]
-	sm.mu.RUnlock()
-	if !ok {
-		return nil, false
-	}
-	if time.Since(s.CreatedAt) > sm.timeout {
-		sm.delete(id)
-		return nil, false
-	}
-	return s, true
-}
-
-func (sm *mcpSessionManager) delete(id string) {
-	sm.mu.Lock()
-	delete(sm.sessions, id)
-	sm.mu.Unlock()
-}
-
-func (sm *mcpSessionManager) cleanup() {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	now := time.Now()
-	for id, s := range sm.sessions {
-		if now.Sub(s.CreatedAt) > sm.timeout {
-			delete(sm.sessions, id)
-		}
-	}
-}
-
-func generateSessionID() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
-}
 
 // =================================== MCP Capabilities ===================================
 
@@ -131,6 +94,10 @@ type mcpServerCapabilities struct {
 type mcpServerInfo struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
+}
+
+type mcpInitializeParams struct {
+	ProtocolVersion string `json:"protocolVersion"`
 }
 
 type mcpInitializeResult struct {
@@ -166,10 +133,11 @@ type mcpCallToolParams struct {
 }
 
 type mcpContentItem struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
-	Data string `json:"data,omitempty"`
-	URI  string `json:"uri,omitempty"`
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	Data     string `json:"data,omitempty"`
+	MimeType string `json:"mimeType,omitempty"`
+	URI      string `json:"uri,omitempty"`
 }
 
 type mcpToolCallResult struct {
@@ -177,19 +145,35 @@ type mcpToolCallResult struct {
 	IsError bool             `json:"isError,omitempty"`
 }
 
+// mcpResourceContents follows the MCP ResourceContents shape:
+// either "text" or "blob" is present.
+type mcpResourceContents struct {
+	URI      string `json:"uri"`
+	MimeType string `json:"mimeType,omitempty"`
+	Text     string `json:"text,omitempty"`
+	Blob     string `json:"blob,omitempty"`
+}
+
 type mcpResourceReadResult struct {
-	Contents []mcpContentItem `json:"contents"`
+	Contents []mcpResourceContents `json:"contents"`
+}
+
+// mcpPromptMessage follows the MCP PromptMessage shape.
+type mcpPromptMessage struct {
+	Role    string         `json:"role"`
+	Content mcpContentItem `json:"content"`
 }
 
 type mcpPromptGetResult struct {
-	Description string           `json:"description,omitempty"`
-	Messages    []mcpContentItem `json:"messages"`
+	Description string             `json:"description,omitempty"`
+	Messages    []mcpPromptMessage `json:"messages"`
 }
 
 // =================================== MCPHandler ===================================
 
 // MCPHandler handles JSON-RPC 2.0 requests for the MCP protocol.
-// Transport: Streamable HTTP (single POST /mcp endpoint).
+// Transport: Streamable HTTP (POST /mcp), stateless: no Mcp-Session-Id is
+// issued or required.
 type MCPHandler struct {
 	tools     []*MCPToolMeta
 	resources []*MCPResourceMeta
@@ -199,7 +183,6 @@ type MCPHandler struct {
 	resourceByURI map[string]*MCPResourceMeta
 	promptByName  map[string]*MCPPromptMeta
 
-	sessions  *mcpSessionManager
 	authFuncs []func(c *Context) error
 	appTitle  string
 	appVer    string
@@ -211,7 +194,6 @@ func NewMCPHandler(providers []*MCPProviderMeta, title, version string) *MCPHand
 		toolByName:    make(map[string]*MCPToolMeta),
 		resourceByURI: make(map[string]*MCPResourceMeta),
 		promptByName:  make(map[string]*MCPPromptMeta),
-		sessions:      newMCPSessionManager(defaultSessionTimeout),
 		authFuncs:     make([]func(c *Context) error, 0),
 		appTitle:      title,
 		appVer:        version,
@@ -223,12 +205,24 @@ func NewMCPHandler(providers []*MCPProviderMeta, title, version string) *MCPHand
 		h.prompts = append(h.prompts, p.Prompts()...)
 
 		for _, t := range p.Tools() {
+			if _, exists := h.toolByName[t.Name]; exists {
+				Warnf("mcp: duplicate tool name '%s' ignored", t.Name)
+				continue
+			}
 			h.toolByName[t.Name] = t
 		}
 		for _, r := range p.Resources() {
+			if _, exists := h.resourceByURI[r.URI]; exists {
+				Warnf("mcp: duplicate resource uri '%s' ignored", r.URI)
+				continue
+			}
 			h.resourceByURI[r.URI] = r
 		}
 		for _, pr := range p.Prompts() {
+			if _, exists := h.promptByName[pr.Name]; exists {
+				Warnf("mcp: duplicate prompt name '%s' ignored", pr.Name)
+				continue
+			}
 			h.promptByName[pr.Name] = pr
 		}
 
@@ -242,77 +236,177 @@ func NewMCPHandler(providers []*MCPProviderMeta, title, version string) *MCPHand
 
 // ServeMCP is the HTTP handler for the POST /mcp endpoint.
 func (h *MCPHandler) ServeMCP(ctx MuxContext) error {
-	// Read the raw JSON-RPC request body
+	// Read the raw body once so that both single requests and JSON-RPC batches
+	// (arrays) can be handled.
+	var raw json.RawMessage
+	if _, err := ctx.ShouldBind(&raw); err != nil {
+		return h.writeJSONRPCErrorStatus(ctx, nil, errParse, "Parse error: "+err.Error(), http.StatusBadRequest)
+	}
+
+	payload := bytes.TrimSpace(raw)
+	if len(payload) == 0 {
+		return h.writeJSONRPCErrorStatus(ctx, nil, errParse, "Parse error: empty body", http.StatusBadRequest)
+	}
+
+	if payload[0] == '[' {
+		return h.serveBatch(ctx, payload)
+	}
+
 	var request mcpJSONRPCRequest
-	_, err := ctx.ShouldBind(&request)
-	if err != nil {
-		return h.writeJSONRPCError(ctx, nil, errParse, "Parse error: "+err.Error())
+	if err := json.Unmarshal(payload, &request); err != nil {
+		return h.writeJSONRPCErrorStatus(ctx, nil, errParse, "Parse error: "+err.Error(), http.StatusBadRequest)
 	}
 
-	if request.JSONRPC != "2.0" {
-		return h.writeJSONRPCError(ctx, request.ID, errInvalidRequest, "Invalid Request: jsonrpc must be 2.0")
-	}
+	return h.serveOne(ctx, &request)
+}
 
-	// Session validation (non-initialize requests must carry a session ID)
-	if request.Method != "initialize" {
-		sessionID := ctx.GetHeader(mcpSessionHeader)
-		if sessionID == "" {
-			return h.writeJSONRPCError(ctx, request.ID, errInvalidRequest,
-				"Session required. Call initialize first.")
-		}
-		if _, ok := h.sessions.get(sessionID); !ok {
-			return h.writeJSONRPCError(ctx, request.ID, errInvalidRequest,
-				"Session expired or not found. Call initialize first.")
-		}
-	}
+// ServeMCPGet handles GET /mcp. This server does not offer a server-to-client
+// SSE stream, so it responds with 405 as allowed by the Streamable HTTP spec.
+func (h *MCPHandler) ServeMCPGet(ctx MuxContext) error {
+	return ctx.JSON(http.StatusMethodNotAllowed, map[string]string{
+		"error": "SSE stream is not supported",
+	})
+}
 
-	// Run auth funcs (for non-initialize requests)
-	if len(h.authFuncs) > 0 {
-		c := NewContext()
-		c.initContext(ctx)
-		defer c.resetContext()
-		for _, auth := range h.authFuncs {
-			if err := auth(c); err != nil {
-				return h.writeJSONRPCError(ctx, request.ID, errInternal, err.Error())
-			}
-		}
-	}
-
-	// Dispatch by method
-	switch request.Method {
-	case "initialize":
-		return h.handleInitialize(ctx, &request)
-	case "tools/list":
-		return h.handleToolsList(ctx, &request)
-	case "tools/call":
-		return h.handleToolsCall(ctx, &request)
-	case "resources/list":
-		return h.handleResourcesList(ctx, &request)
-	case "resources/read":
-		return h.handleResourcesRead(ctx, &request)
-	case "prompts/list":
-		return h.handlePromptsList(ctx, &request)
-	case "prompts/get":
-		return h.handlePromptsGet(ctx, &request)
-	default:
-		return h.writeJSONRPCError(ctx, request.ID, errMethodNotFound,
-			fmt.Sprintf("Method not found: %s", request.Method))
-	}
+// ServeMCPDelete handles DELETE /mcp. The server is stateless and does not
+// allow clients to terminate sessions, so it responds with 405.
+func (h *MCPHandler) ServeMCPDelete(ctx MuxContext) error {
+	return ctx.JSON(http.StatusMethodNotAllowed, map[string]string{
+		"error": "sessions are not supported",
+	})
 }
 
 // Shutdown performs cleanup (call on application shutdown).
-func (h *MCPHandler) Shutdown() {
-	h.sessions.cleanup()
+// The handler is stateless, so there is nothing to clean up.
+func (h *MCPHandler) Shutdown() {}
+
+// serveOne validates and dispatches a single JSON-RPC message.
+func (h *MCPHandler) serveOne(ctx MuxContext, request *mcpJSONRPCRequest) error {
+	if request.JSONRPC != "2.0" {
+		return h.writeJSONRPCErrorStatus(ctx, request.ID, errInvalidRequest,
+			"Invalid Request: jsonrpc must be 2.0", http.StatusBadRequest)
+	}
+
+	// JSON-RPC notifications never receive a response body.
+	if request.isNotification() {
+		ctx.Status(http.StatusAccepted)
+		return nil
+	}
+
+	if !isValidJSONRPCID(request.ID) {
+		return h.writeJSONRPCErrorStatus(ctx, nil, errInvalidRequest,
+			"Invalid Request: id must be a string, number, or null", http.StatusBadRequest)
+	}
+
+	if resp := h.authenticate(ctx, request.ID); resp != nil {
+		return h.writeResponse(ctx, resp)
+	}
+
+	return h.writeResponse(ctx, h.dispatch(ctx, request))
+}
+
+// serveBatch validates and dispatches a JSON-RPC batch.
+func (h *MCPHandler) serveBatch(ctx MuxContext, payload []byte) error {
+	var requests []mcpJSONRPCRequest
+	if err := json.Unmarshal(payload, &requests); err != nil {
+		return h.writeJSONRPCErrorStatus(ctx, nil, errParse, "Parse error: "+err.Error(), http.StatusBadRequest)
+	}
+	if len(requests) == 0 {
+		return h.writeJSONRPCErrorStatus(ctx, nil, errInvalidRequest,
+			"Invalid Request: empty batch", http.StatusBadRequest)
+	}
+
+	responses := make([]*mcpJSONRPCResponse, 0, len(requests))
+	for i := range requests {
+		req := &requests[i]
+
+		if req.JSONRPC != "2.0" {
+			responses = append(responses, mcpErrorResponse(req.ID, errInvalidRequest,
+				"Invalid Request: jsonrpc must be 2.0"))
+			continue
+		}
+		// The initialize request MUST NOT be part of a batch.
+		if req.Method == "initialize" {
+			responses = append(responses, mcpErrorResponse(req.ID, errInvalidRequest,
+				"Invalid Request: initialize must not be batched"))
+			continue
+		}
+		// Notifications produce no response entry.
+		if req.isNotification() {
+			continue
+		}
+		if !isValidJSONRPCID(req.ID) {
+			responses = append(responses, mcpErrorResponse(nil, errInvalidRequest,
+				"Invalid Request: id must be a string, number, or null"))
+			continue
+		}
+		if resp := h.authenticate(ctx, req.ID); resp != nil {
+			responses = append(responses, resp)
+			continue
+		}
+		responses = append(responses, h.dispatch(ctx, req))
+	}
+
+	if len(responses) == 0 {
+		ctx.Status(http.StatusAccepted)
+		return nil
+	}
+	return ctx.JSON(http.StatusOK, responses)
+}
+
+// authenticate runs all provider auth funcs. It returns a JSON-RPC error
+// response when authentication fails, or nil on success.
+func (h *MCPHandler) authenticate(ctx MuxContext, id json.RawMessage) *mcpJSONRPCResponse {
+	if len(h.authFuncs) == 0 {
+		return nil
+	}
+	c := NewContext()
+	c.initContext(ctx)
+	defer c.resetContext()
+	for _, auth := range h.authFuncs {
+		if err := auth(c); err != nil {
+			return mcpErrorResponse(id, errInternal, err.Error())
+		}
+	}
+	return nil
+}
+
+// dispatch routes a request to the corresponding handler and builds a
+// JSON-RPC response. Notifications must be filtered out by the caller.
+func (h *MCPHandler) dispatch(ctx MuxContext, req *mcpJSONRPCRequest) *mcpJSONRPCResponse {
+	switch req.Method {
+	case "initialize":
+		return h.handleInitialize(req)
+	case "ping":
+		// MCP ping MUST return an empty result object.
+		return mcpResultResponse(req.ID, struct{}{})
+	case "tools/list":
+		return h.handleToolsList(req)
+	case "tools/call":
+		return h.handleToolsCall(ctx, req)
+	case "resources/list":
+		return h.handleResourcesList(req)
+	case "resources/read":
+		return h.handleResourcesRead(ctx, req)
+	case "prompts/list":
+		return h.handlePromptsList(req)
+	case "prompts/get":
+		return h.handlePromptsGet(ctx, req)
+	default:
+		return mcpErrorResponse(req.ID, errMethodNotFound,
+			fmt.Sprintf("Method not found: %s", req.Method))
+	}
 }
 
 // =================================== Handler Methods ===================================
 
-func (h *MCPHandler) handleInitialize(ctx MuxContext, req *mcpJSONRPCRequest) error {
-	session := h.sessions.create()
-	ctx.Header(mcpSessionHeader, session.ID)
+func (h *MCPHandler) handleInitialize(req *mcpJSONRPCRequest) *mcpJSONRPCResponse {
+	// Stateless mode: never issue an Mcp-Session-Id header.
+	var params mcpInitializeParams
+	_ = json.Unmarshal(req.Params, &params)
 
 	result := mcpInitializeResult{
-		ProtocolVersion: mcpProtocolVersion,
+		ProtocolVersion: negotiateProtocolVersion(params.ProtocolVersion),
 		Capabilities: mcpServerCapabilities{
 			Tools:     &mcpToolCapability{},
 			Resources: &mcpToolCapability{},
@@ -324,27 +418,36 @@ func (h *MCPHandler) handleInitialize(ctx MuxContext, req *mcpJSONRPCRequest) er
 		},
 	}
 
-	return h.writeJSONRPCResult(ctx, req.ID, result, http.StatusOK)
+	return mcpResultResponse(req.ID, result)
 }
 
-func (h *MCPHandler) handleToolsList(ctx MuxContext, req *mcpJSONRPCRequest) error {
+// negotiateProtocolVersion echoes the client's requested version when it is
+// supported, otherwise falls back to the latest version supported by server.
+func negotiateProtocolVersion(requested string) string {
+	if requested == mcpProtocolVersion {
+		return requested
+	}
+	return mcpProtocolVersion
+}
+
+func (h *MCPHandler) handleToolsList(req *mcpJSONRPCRequest) *mcpJSONRPCResponse {
 	result := mcpListToolsResult{Tools: h.tools}
 	if result.Tools == nil {
 		result.Tools = make([]*MCPToolMeta, 0)
 	}
-	return h.writeJSONRPCResult(ctx, req.ID, result, http.StatusOK)
+	return mcpResultResponse(req.ID, result)
 }
 
-func (h *MCPHandler) handleToolsCall(ctx MuxContext, req *mcpJSONRPCRequest) error {
+func (h *MCPHandler) handleToolsCall(ctx MuxContext, req *mcpJSONRPCRequest) *mcpJSONRPCResponse {
 	var params mcpCallToolParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return h.writeJSONRPCError(ctx, req.ID, errInvalidParams, "Invalid params")
+		return mcpErrorResponse(req.ID, errInvalidParams, "Invalid params")
 	}
 
 	tool, ok := h.toolByName[params.Name]
 	if !ok {
-		return h.writeJSONRPCError(ctx, req.ID, errInvalidParams,
-			fmt.Sprintf("Tool not found: %s", params.Name))
+		return mcpErrorResponse(req.ID, errInvalidParams,
+			fmt.Sprintf("Unknown tool: %s", params.Name))
 	}
 
 	if params.Arguments == nil {
@@ -359,43 +462,43 @@ func (h *MCPHandler) handleToolsCall(ctx MuxContext, req *mcpJSONRPCRequest) err
 	args := tool.NewCallArgs(c, params.Arguments)
 	result, err := tool.Call(args)
 	if err != nil {
-		return h.writeJSONRPCResult(ctx, req.ID, mcpToolCallResult{
+		return mcpResultResponse(req.ID, mcpToolCallResult{
 			Content: []mcpContentItem{{
 				Type: "text",
 				Text: err.Error(),
 			}},
 			IsError: true,
-		}, http.StatusOK)
+		})
 	}
 
 	resultJSON, _ := utils.JsonMarshal(result)
 
-	return h.writeJSONRPCResult(ctx, req.ID, mcpToolCallResult{
+	return mcpResultResponse(req.ID, mcpToolCallResult{
 		Content: []mcpContentItem{{
 			Type: "text",
 			Text: string(resultJSON),
 		}},
-	}, http.StatusOK)
+	})
 }
 
-func (h *MCPHandler) handleResourcesList(ctx MuxContext, req *mcpJSONRPCRequest) error {
+func (h *MCPHandler) handleResourcesList(req *mcpJSONRPCRequest) *mcpJSONRPCResponse {
 	result := mcpListResourcesResult{Resources: h.resources}
 	if result.Resources == nil {
 		result.Resources = make([]*MCPResourceMeta, 0)
 	}
-	return h.writeJSONRPCResult(ctx, req.ID, result, http.StatusOK)
+	return mcpResultResponse(req.ID, result)
 }
 
-func (h *MCPHandler) handleResourcesRead(ctx MuxContext, req *mcpJSONRPCRequest) error {
+func (h *MCPHandler) handleResourcesRead(ctx MuxContext, req *mcpJSONRPCRequest) *mcpJSONRPCResponse {
 	var params mcpReadResourceParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return h.writeJSONRPCError(ctx, req.ID, errInvalidParams, "Invalid params")
+		return mcpErrorResponse(req.ID, errInvalidParams, "Invalid params")
 	}
 
 	res, ok := h.resourceByURI[params.URI]
 	if !ok {
-		return h.writeJSONRPCError(ctx, req.ID, errInvalidParams,
-			fmt.Sprintf("Resource not found: %s", params.URI))
+		return mcpErrorResponseWithData(req.ID, errResourceNotFound,
+			"Resource not found", map[string]any{"uri": params.URI})
 	}
 
 	c := NewContext()
@@ -405,37 +508,37 @@ func (h *MCPHandler) handleResourcesRead(ctx MuxContext, req *mcpJSONRPCRequest)
 	args := res.NewCallArgs(c, nil)
 	result, err := res.Call(args)
 	if err != nil {
-		return h.writeJSONRPCError(ctx, req.ID, errInternal, err.Error())
+		return mcpErrorResponse(req.ID, errInternal, err.Error())
 	}
 
 	resultJSON, _ := utils.JsonMarshal(result)
 
-	return h.writeJSONRPCResult(ctx, req.ID, mcpResourceReadResult{
-		Contents: []mcpContentItem{{
-			URI:  res.URI,
-			Type: "text",
-			Text: string(resultJSON),
+	return mcpResultResponse(req.ID, mcpResourceReadResult{
+		Contents: []mcpResourceContents{{
+			URI:      res.URI,
+			MimeType: res.MimeType,
+			Text:     string(resultJSON),
 		}},
-	}, http.StatusOK)
+	})
 }
 
-func (h *MCPHandler) handlePromptsList(ctx MuxContext, req *mcpJSONRPCRequest) error {
+func (h *MCPHandler) handlePromptsList(req *mcpJSONRPCRequest) *mcpJSONRPCResponse {
 	result := mcpListPromptsResult{Prompts: h.prompts}
 	if result.Prompts == nil {
 		result.Prompts = make([]*MCPPromptMeta, 0)
 	}
-	return h.writeJSONRPCResult(ctx, req.ID, result, http.StatusOK)
+	return mcpResultResponse(req.ID, result)
 }
 
-func (h *MCPHandler) handlePromptsGet(ctx MuxContext, req *mcpJSONRPCRequest) error {
+func (h *MCPHandler) handlePromptsGet(ctx MuxContext, req *mcpJSONRPCRequest) *mcpJSONRPCResponse {
 	var params mcpGetPromptParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return h.writeJSONRPCError(ctx, req.ID, errInvalidParams, "Invalid params")
+		return mcpErrorResponse(req.ID, errInvalidParams, "Invalid params")
 	}
 
 	prompt, ok := h.promptByName[params.Name]
 	if !ok {
-		return h.writeJSONRPCError(ctx, req.ID, errInvalidParams,
+		return mcpErrorResponse(req.ID, errInvalidParams,
 			fmt.Sprintf("Prompt not found: %s", params.Name))
 	}
 
@@ -450,39 +553,57 @@ func (h *MCPHandler) handlePromptsGet(ctx MuxContext, req *mcpJSONRPCRequest) er
 	args := prompt.NewCallArgs(c, params.Arguments)
 	result, err := prompt.Call(args)
 	if err != nil {
-		return h.writeJSONRPCError(ctx, req.ID, errInternal, err.Error())
+		return mcpErrorResponse(req.ID, errInternal, err.Error())
 	}
 
 	resultJSON, _ := utils.JsonMarshal(result)
 
-	return h.writeJSONRPCResult(ctx, req.ID, mcpPromptGetResult{
+	return mcpResultResponse(req.ID, mcpPromptGetResult{
 		Description: prompt.Description,
-		Messages: []mcpContentItem{{
-			Type: "text",
-			Text: string(resultJSON),
+		Messages: []mcpPromptMessage{{
+			Role: "user",
+			Content: mcpContentItem{
+				Type: "text",
+				Text: string(resultJSON),
+			},
 		}},
-	}, http.StatusOK)
+	})
 }
 
 // =================================== Response Helpers ===================================
 
-func (h *MCPHandler) writeJSONRPCResult(ctx MuxContext, id json.RawMessage, result any, status int) error {
-	resp := mcpJSONRPCResponse{
+func mcpResultResponse(id json.RawMessage, result any) *mcpJSONRPCResponse {
+	return &mcpJSONRPCResponse{
 		JSONRPC: "2.0",
 		ID:      id,
 		Result:  result,
 	}
-	return ctx.JSON(status, resp)
 }
 
-func (h *MCPHandler) writeJSONRPCError(ctx MuxContext, id json.RawMessage, code int, message string) error {
-	resp := mcpJSONRPCResponse{
+func mcpErrorResponse(id json.RawMessage, code int, message string) *mcpJSONRPCResponse {
+	return mcpErrorResponseWithData(id, code, message, nil)
+}
+
+func mcpErrorResponseWithData(id json.RawMessage, code int, message string, data any) *mcpJSONRPCResponse {
+	return &mcpJSONRPCResponse{
 		JSONRPC: "2.0",
 		ID:      id,
 		Error: &mcpRPCError{
 			Code:    code,
 			Message: message,
+			Data:    data,
 		},
 	}
+}
+
+func (h *MCPHandler) writeResponse(ctx MuxContext, resp *mcpJSONRPCResponse) error {
+	if resp == nil {
+		ctx.Status(http.StatusAccepted)
+		return nil
+	}
 	return ctx.JSON(http.StatusOK, resp)
+}
+
+func (h *MCPHandler) writeJSONRPCErrorStatus(ctx MuxContext, id json.RawMessage, code int, message string, status int) error {
+	return ctx.JSON(status, mcpErrorResponse(id, code, message))
 }

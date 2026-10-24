@@ -1,11 +1,14 @@
 package fastapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"mime/multipart"
+	"net/http"
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/Chendemo12/fastapi/openapi"
 )
@@ -486,28 +489,17 @@ func TestGoKindToJSONType(t *testing.T) {
 	}
 }
 
-func TestMCPSessionManager(t *testing.T) {
-	sm := newMCPSessionManager(100 * time.Millisecond)
-
-	s := sm.create()
-	if s.ID == "" {
-		t.Error("expected non-empty session ID")
+func TestMCPHandlerIsStateless(t *testing.T) {
+	provider := &TestToolProvider{}
+	meta := NewMCPProviderMeta(provider)
+	if err := meta.Init(); err != nil {
+		t.Fatalf("Init failed: %v", err)
 	}
 
-	got, ok := sm.get(s.ID)
-	if !ok {
-		t.Error("expected session to exist")
-	}
-	if got.ID != s.ID {
-		t.Error("session IDs don't match")
-	}
+	handler := NewMCPHandler([]*MCPProviderMeta{meta}, "TestApp", "1.0.0")
 
-	// Test deletion
-	sm.delete(s.ID)
-	_, ok = sm.get(s.ID)
-	if ok {
-		t.Error("expected session to be deleted")
-	}
+	// Stateless handler: Shutdown must be a harmless no-op.
+	handler.Shutdown()
 }
 
 func TestMCPToolMetaHasArgs(t *testing.T) {
@@ -607,5 +599,269 @@ func TestMCPProviderAuthFuncDefault(t *testing.T) {
 	c.initContext(nil)
 	if err := handler.authFuncs[0](c); err != nil {
 		t.Errorf("default auth should pass, got: %v", err)
+	}
+}
+
+// =================================== Stateless MCP Handler Tests ===================================
+
+// fakeMuxContext is a minimal MuxContext implementation for handler tests.
+type fakeMuxContext struct {
+	body     []byte
+	status   int
+	jsonData any
+	headers  map[string]string
+}
+
+func newFakeMuxContext(body string) *fakeMuxContext {
+	return &fakeMuxContext{body: []byte(body)}
+}
+
+func (f *fakeMuxContext) Method() string                                 { return http.MethodPost }
+func (f *fakeMuxContext) Path() string                                   { return "/mcp" }
+func (f *fakeMuxContext) WrapperContext() *Context                       { return nil }
+func (f *fakeMuxContext) Ctx() any                                       { return nil }
+func (f *fakeMuxContext) Done() <-chan struct{}                          { return nil }
+func (f *fakeMuxContext) RequestContext() context.Context                { return context.Background() }
+func (f *fakeMuxContext) ClientIP() string                               { return "127.0.0.1" }
+func (f *fakeMuxContext) ContentType() string                            { return "application/json" }
+func (f *fakeMuxContext) GetHeader(key string) string                    { return f.headers[key] }
+func (f *fakeMuxContext) Cookie(name string) (string, error)             { return "", nil }
+func (f *fakeMuxContext) Params(key string, undefined ...string) string  { return "" }
+func (f *fakeMuxContext) Query(key string, undefined ...string) string   { return "" }
+func (f *fakeMuxContext) MultipartForm() (*multipart.Form, error)        { return nil, nil }
+func (f *fakeMuxContext) SetCookie(cookie *http.Cookie)                  {}
+func (f *fakeMuxContext) Redirect(code int, location string) error       { return nil }
+func (f *fakeMuxContext) SendString(s string) error                      { return nil }
+func (f *fakeMuxContext) SendStream(stream io.Reader, size ...int) error { return nil }
+func (f *fakeMuxContext) File(filepath string) error                     { return nil }
+func (f *fakeMuxContext) FileAttachment(filepath, filename string) error { return nil }
+func (f *fakeMuxContext) Write(p []byte) (int, error)                    { return len(p), nil }
+func (f *fakeMuxContext) SSE(message *SSE) error                         { return nil }
+
+func (f *fakeMuxContext) ShouldBind(obj any) (bool, error) {
+	return true, json.Unmarshal(f.body, obj)
+}
+
+func (f *fakeMuxContext) Header(key, value string) {
+	if f.headers == nil {
+		f.headers = make(map[string]string)
+	}
+	f.headers[key] = value
+}
+
+func (f *fakeMuxContext) Status(code int) { f.status = code }
+
+func (f *fakeMuxContext) JSON(code int, data any) error {
+	f.status = code
+	f.jsonData = data
+	return nil
+}
+
+func newStatelessTestHandler(t *testing.T) *MCPHandler {
+	t.Helper()
+	provider := &TestToolProvider{}
+	meta := NewMCPProviderMeta(provider)
+	if err := meta.Init(); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	return NewMCPHandler([]*MCPProviderMeta{meta}, "TestApp", "1.0.0")
+}
+
+func TestMCPInitializeNoSession(t *testing.T) {
+	h := newStatelessTestHandler(t)
+	f := newFakeMuxContext(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}`)
+
+	if err := h.ServeMCP(f); err != nil {
+		t.Fatalf("ServeMCP failed: %v", err)
+	}
+	if f.status != http.StatusOK {
+		t.Fatalf("expected 200, got %d", f.status)
+	}
+	if _, ok := f.headers["mcp-session-id"]; ok {
+		t.Error("stateless server must not issue mcp-session-id")
+	}
+	resp, ok := f.jsonData.(*mcpJSONRPCResponse)
+	if !ok {
+		t.Fatalf("unexpected response type %T", f.jsonData)
+	}
+	result := resp.Result.(mcpInitializeResult)
+	if result.ProtocolVersion != mcpProtocolVersion {
+		t.Errorf("expected protocol %q, got %q", mcpProtocolVersion, result.ProtocolVersion)
+	}
+}
+
+func TestMCPProtocolVersionFallback(t *testing.T) {
+	h := newStatelessTestHandler(t)
+	f := newFakeMuxContext(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"1999-01-01"}}`)
+
+	if err := h.ServeMCP(f); err != nil {
+		t.Fatalf("ServeMCP failed: %v", err)
+	}
+	resp := f.jsonData.(*mcpJSONRPCResponse)
+	if got := resp.Result.(mcpInitializeResult).ProtocolVersion; got != mcpProtocolVersion {
+		t.Errorf("expected fallback %q, got %q", mcpProtocolVersion, got)
+	}
+}
+
+func TestMCPNotificationAccepted(t *testing.T) {
+	h := newStatelessTestHandler(t)
+	f := newFakeMuxContext(`{"jsonrpc":"2.0","method":"notifications/initialized"}`)
+
+	if err := h.ServeMCP(f); err != nil {
+		t.Fatalf("ServeMCP failed: %v", err)
+	}
+	if f.status != http.StatusAccepted {
+		t.Errorf("expected 202, got %d", f.status)
+	}
+	if f.jsonData != nil {
+		t.Errorf("notifications must not produce a body, got %v", f.jsonData)
+	}
+}
+
+func TestMCPPing(t *testing.T) {
+	h := newStatelessTestHandler(t)
+	f := newFakeMuxContext(`{"jsonrpc":"2.0","id":"p1","method":"ping"}`)
+
+	if err := h.ServeMCP(f); err != nil {
+		t.Fatalf("ServeMCP failed: %v", err)
+	}
+	resp := f.jsonData.(*mcpJSONRPCResponse)
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %v", resp.Error)
+	}
+}
+
+func TestMCPBatch(t *testing.T) {
+	h := newStatelessTestHandler(t)
+	f := newFakeMuxContext(`[
+		{"jsonrpc":"2.0","id":1,"method":"ping"},
+		{"jsonrpc":"2.0","method":"notifications/initialized"},
+		{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+	]`)
+
+	if err := h.ServeMCP(f); err != nil {
+		t.Fatalf("ServeMCP failed: %v", err)
+	}
+	responses, ok := f.jsonData.([]*mcpJSONRPCResponse)
+	if !ok {
+		t.Fatalf("unexpected response type %T", f.jsonData)
+	}
+	if len(responses) != 2 {
+		t.Fatalf("expected 2 responses (notification excluded), got %d", len(responses))
+	}
+}
+
+func TestMCPBatchRejectsInitialize(t *testing.T) {
+	h := newStatelessTestHandler(t)
+	f := newFakeMuxContext(`[{"jsonrpc":"2.0","id":1,"method":"initialize"}]`)
+
+	if err := h.ServeMCP(f); err != nil {
+		t.Fatalf("ServeMCP failed: %v", err)
+	}
+	responses := f.jsonData.([]*mcpJSONRPCResponse)
+	if responses[0].Error == nil || responses[0].Error.Code != errInvalidRequest {
+		t.Errorf("expected invalid request error for batched initialize, got %v", responses[0].Error)
+	}
+}
+
+func TestMCPResourcesReadNotFoundCode(t *testing.T) {
+	h := newStatelessTestHandler(t)
+	f := newFakeMuxContext(`{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{"uri":"missing://x"}}`)
+
+	if err := h.ServeMCP(f); err != nil {
+		t.Fatalf("ServeMCP failed: %v", err)
+	}
+	resp := f.jsonData.(*mcpJSONRPCResponse)
+	if resp.Error == nil || resp.Error.Code != errResourceNotFound {
+		t.Errorf("expected %d resource-not-found, got %v", errResourceNotFound, resp.Error)
+	}
+}
+
+func TestMCPUnknownToolCode(t *testing.T) {
+	h := newStatelessTestHandler(t)
+	f := newFakeMuxContext(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"nope"}}`)
+
+	if err := h.ServeMCP(f); err != nil {
+		t.Fatalf("ServeMCP failed: %v", err)
+	}
+	resp := f.jsonData.(*mcpJSONRPCResponse)
+	if resp.Error == nil || resp.Error.Code != errInvalidParams {
+		t.Errorf("expected %d invalid params, got %v", errInvalidParams, resp.Error)
+	}
+}
+
+func TestMCPParseErrorStatus(t *testing.T) {
+	h := newStatelessTestHandler(t)
+	f := newFakeMuxContext(`{not-json`)
+
+	if err := h.ServeMCP(f); err != nil {
+		t.Fatalf("ServeMCP failed: %v", err)
+	}
+	if f.status != http.StatusBadRequest {
+		t.Errorf("expected 400 for parse error, got %d", f.status)
+	}
+	resp := f.jsonData.(*mcpJSONRPCResponse)
+	if resp.Error == nil || resp.Error.Code != errParse {
+		t.Errorf("expected parse error, got %v", resp.Error)
+	}
+}
+
+func TestMCPPromptGetShape(t *testing.T) {
+	provider := &FullMCPProvider{}
+	meta := NewMCPProviderMeta(provider)
+	if err := meta.Init(); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	h := NewMCPHandler([]*MCPProviderMeta{meta}, "TestApp", "1.0.0")
+
+	prompt := h.prompts[0]
+	argName := prompt.Arguments[0].Name
+	body := `{"jsonrpc":"2.0","id":1,"method":"prompts/get","params":{"name":"` +
+		prompt.Name + `","arguments":{"` + argName + `":"Bob"}}}`
+	f := newFakeMuxContext(body)
+
+	if err := h.ServeMCP(f); err != nil {
+		t.Fatalf("ServeMCP failed: %v", err)
+	}
+	resp := f.jsonData.(*mcpJSONRPCResponse)
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %v", resp.Error)
+	}
+	result := resp.Result.(mcpPromptGetResult)
+	if len(result.Messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(result.Messages))
+	}
+	if result.Messages[0].Role != "user" {
+		t.Errorf("expected role 'user', got %q", result.Messages[0].Role)
+	}
+	if result.Messages[0].Content.Type != "text" || result.Messages[0].Content.Text == "" {
+		t.Errorf("unexpected content: %+v", result.Messages[0].Content)
+	}
+}
+
+func TestMCPInvalidIDType(t *testing.T) {
+	h := newStatelessTestHandler(t)
+	f := newFakeMuxContext(`{"jsonrpc":"2.0","id":{"x":1},"method":"tools/list"}`)
+
+	if err := h.ServeMCP(f); err != nil {
+		t.Fatalf("ServeMCP failed: %v", err)
+	}
+	if f.status != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", f.status)
+	}
+	resp := f.jsonData.(*mcpJSONRPCResponse)
+	if resp.Error == nil || resp.Error.Code != errInvalidRequest {
+		t.Errorf("expected invalid request error, got %v", resp.Error)
+	}
+	// The id must serialize to null; a nil RawMessage marshals to "null".
+	out, _ := json.Marshal(resp)
+	var parsed struct {
+		ID json.RawMessage `json:"id"`
+	}
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	if string(parsed.ID) != "null" {
+		t.Errorf("expected null id in error response, got %s", parsed.ID)
 	}
 }

@@ -2,7 +2,7 @@
 
 Go-FastApi 内置了 MCP 能力，允许将 Go 结构体方法通过反射暴露为 MCP 的 **Tool**、**Resource**、**Prompt**，供 AI Agent（Claude Desktop、Cursor、Cline 等）直接调用。
 
-MCP 端点采用 **Streamable HTTP** 传输协议，单端点 `POST /mcp`，通过 `mcp-session-id` header 管理会话。
+MCP 端点采用 **Streamable HTTP** 传输协议，单端点 `POST /mcp`，运行在**无状态模式**下：不签发也不校验 `mcp-session-id`，每个请求独立鉴权。
 
 ## 快速开始
 
@@ -262,15 +262,15 @@ Client                                    Server
   │
   │── POST /mcp
   │   {"jsonrpc":"2.0","id":1,"method":"initialize",...}
-  │                                         → 创建 session
-  │◀── 200 OK  mcp-session-id: <uuid>
+  │                                         → 无会话，不返回 mcp-session-id
+  │◀── 200 OK
   │    {"jsonrpc":"2.0","id":1,"result":{"capabilities":{"tools":{},"resources":{},"prompts":{}}}}
   │
-  │── POST /mcp  (带 mcp-session-id header)
+  │── POST /mcp
   │   {"jsonrpc":"2.0","id":2,"method":"tools/list"}
   │◀── {"jsonrpc":"2.0","id":2,"result":{"tools":[...]}}
   │
-  │── POST /mcp  (带 mcp-session-id header)
+  │── POST /mcp
   │   {"jsonrpc":"2.0","id":3,"method":"tools/call",
   │    "params":{"name":"myapp_get_user","arguments":{"userId":42}}}
   │◀── {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{...}"}]}}
@@ -278,15 +278,15 @@ Client                                    Server
 
 ## 配置
 
-```go
-type MCPConfig struct {
-    Endpoint       string        // MCP 端点路径，默认 "/mcp"
-    SessionTimeout time.Duration // 会话超时，默认 10 分钟
-    ToolNaming     string        // 工具命名策略，默认 "summary"（可选 "operation"）
-}
-```
+> **注意**：当前 MCP 配置通过 `MCPProvider` 接口方法控制（`Prefix`, `PathSchema`, `Summary`, `Description` 等），无需额外的 `MCPConfig` 参数。传输层为无状态，不存在会话超时配置。
 
-> **注意**：当前 MCP 配置通过 `MCPProvider` 接口方法控制（`Prefix`, `PathSchema`, `Summary`, `Description` 等），无需额外的 `MCPConfig` 参数。
+## 协议兼容性
+
+- 协议版本：`2025-03-26`（Streamable HTTP）。
+- 传输层无状态：不签发、不校验 `mcp-session-id`。
+- `POST /mcp` 同时支持单个 JSON-RPC 消息与批量数组；通知（`notifications/*`）返回 `202 Accepted` 且无响应体。
+- 不提供服务端 SSE 流：`GET /mcp` 返回 `405`；`DELETE /mcp`（终止会话）返回 `405`。
+- 支持的方法：`initialize`、`ping`、`tools/list`、`tools/call`、`resources/list`、`resources/read`、`prompts/list`、`prompts/get`。
 
 ## 已知限制
 
@@ -295,3 +295,5 @@ type MCPConfig struct {
 2. **不支持 map 返回值**：受框架类型校验限制，Tool/Resource/Prompt 的返回值不能是 `map` 类型，需使用 struct。
 
 3. **不支持 SSE 和文件类型的返回值**：MCP Tool 目前只支持 JSON 序列化的返回值（struct、基本类型、slice），不支持 `*FileResponse` 或 `*SSE`。
+
+4. **未内置 Origin 校验**：为防 DNS rebinding，建议仅监听 `127.0.0.1`，或由反向代理统一校验 `Origin`。
