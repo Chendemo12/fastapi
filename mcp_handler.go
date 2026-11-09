@@ -298,8 +298,8 @@ func (h *MCPHandler) serveOne(ctx MuxContext, request *mcpJSONRPCRequest) error 
 			"Invalid Request: id must be a string, number, or null", http.StatusBadRequest)
 	}
 
-	if resp := h.authenticate(ctx, request.ID); resp != nil {
-		return h.writeResponse(ctx, resp)
+	if resp, status := h.authenticate(ctx, request.ID); resp != nil {
+		return h.writeResponse(ctx, resp, status)
 	}
 
 	return h.writeResponse(ctx, h.dispatch(ctx, request))
@@ -340,9 +340,10 @@ func (h *MCPHandler) serveBatch(ctx MuxContext, payload []byte) error {
 				"Invalid Request: id must be a string, number, or null"))
 			continue
 		}
-		if resp := h.authenticate(ctx, req.ID); resp != nil {
-			responses = append(responses, resp)
-			continue
+		// Authentication applies to the whole HTTP request: on failure reject the
+		// entire batch instead of collecting per-message auth errors.
+		if resp, status := h.authenticate(ctx, req.ID); resp != nil {
+			return h.writeResponse(ctx, resp, status)
 		}
 		responses = append(responses, h.dispatch(ctx, req))
 	}
@@ -355,20 +356,27 @@ func (h *MCPHandler) serveBatch(ctx MuxContext, payload []byte) error {
 }
 
 // authenticate runs all provider auth funcs. It returns a JSON-RPC error
-// response when authentication fails, or nil on success.
-func (h *MCPHandler) authenticate(ctx MuxContext, id json.RawMessage) *mcpJSONRPCResponse {
+// response and the HTTP status code when authentication fails, or (nil, 0) on
+// success. The status defaults to 401 and can be overridden by the provider via
+// Context.Status.
+func (h *MCPHandler) authenticate(ctx MuxContext, id json.RawMessage) (*mcpJSONRPCResponse, int) {
 	if len(h.authFuncs) == 0 {
-		return nil
+		return nil, 0
 	}
 	c := NewContext()
 	c.initContext(ctx)
 	defer c.resetContext()
 	for _, auth := range h.authFuncs {
 		if err := auth(c); err != nil {
-			return mcpErrorResponse(id, errInternal, err.Error())
+			// Read the status before resetContext releases the Response.
+			status := c.Response().StatusCode
+			if status < 100 || status > 599 {
+				status = http.StatusUnauthorized
+			}
+			return mcpErrorResponse(id, errInternal, err.Error()), status
 		}
 	}
-	return nil
+	return nil, 0
 }
 
 // dispatch routes a request to the corresponding handler and builds a
@@ -596,12 +604,17 @@ func mcpErrorResponseWithData(id json.RawMessage, code int, message string, data
 	}
 }
 
-func (h *MCPHandler) writeResponse(ctx MuxContext, resp *mcpJSONRPCResponse) error {
+func (h *MCPHandler) writeResponse(ctx MuxContext, resp *mcpJSONRPCResponse, status ...int) error {
 	if resp == nil {
 		ctx.Status(http.StatusAccepted)
 		return nil
 	}
-	return ctx.JSON(http.StatusOK, resp)
+
+	code := http.StatusOK
+	if len(status) > 0 && status[0] >= 100 && status[0] <= 599 {
+		code = status[0]
+	}
+	return ctx.JSON(code, resp)
 }
 
 func (h *MCPHandler) writeJSONRPCErrorStatus(ctx MuxContext, id json.RawMessage, code int, message string, status int) error {

@@ -1,5 +1,39 @@
 # CHANGELOG
 
+## 0.3.7 - (2026-11-09)
+
+### BREAKING
+
+- MCP `AuthFunc` 认证失败时不再固定返回 HTTP 200：
+    - 未调用 `c.Status()` 时，默认返回 **401 Unauthorized**；
+    - 可通过 `c.Status(code)` 覆盖，例如凭证有效但 scope 不足时返回 403；
+    - 可通过 `c.Status(http.StatusOK)` 显式保留旧的 200 行为；
+- MCP 批量请求（JSON-RPC batch）中任一消息认证失败时，整个 HTTP 请求直接返回认证失败状态码，
+  不再继续处理并返回 200 + 逐条 JSON-RPC 错误（fail-fast）；
+
+### Feat
+
+- MCP `AuthFunc` 支持自定义认证失败状态码：`authenticate` 读取 `Context.Response().StatusCode`
+  并透传至 `writeResponse`；非法状态码（小于 100 或大于 599）回退为 401；
+- MCP `AuthFunc` 可通过 `c.MuxContext().Header(key, value)` 设置 `WWW-Authenticate` 等响应头，
+  框架原样透传，不自动生成 challenge（避免 API Key 模式被误认为 OAuth）；
+- `MCPHandler.writeResponse` 增加可选 HTTP 状态码参数，未传入时保持原有 200 行为；
+- `MCPHandler.authenticate` 返回值增加 HTTP 状态码，供 `serveOne` / `serveBatch` 统一写出；
+
+### Docs
+
+- 补充 `MCPProvider.AuthFunc` 文档：说明认证失败默认状态码、`c.Status` 覆盖方式及响应头设置方式；
+- 补充 `Context.Status` 文档：说明其在 MCP `AuthFunc` 中用于指定认证失败状态码；
+
+### Test
+
+- 新增 MCP 认证失败测试：
+    - 未设置状态码时默认返回 401；
+    - `c.Status(403)` 生效；
+    - `WWW-Authenticate` 响应头原样保留；
+    - 批量请求认证失败时整体拒绝，不返回逐条错误；
+    - `Response` 池复用不会把上一次认证失败的状态码带入下一次请求；
+
 ## 0.3.6 - (2026-10-24)
 
 ### BREAKING

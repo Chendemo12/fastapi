@@ -59,6 +59,11 @@ type MCPProvider interface {
 	// AuthFunc provides authentication for this MCP provider's requests.
 	// Return nil to allow the request; return error to reject it with a JSON-RPC error.
 	// The provided *Context has a valid MuxContext for reading headers.
+	//
+	// On failure the HTTP response status defaults to 401 Unauthorized. A provider
+	// may override it with c.Status(code), for example 403 when the credential is
+	// valid but lacks the required scope. Response headers such as WWW-Authenticate
+	// can be set with c.MuxContext().Header(key, value).
 	AuthFunc(c *Context) error
 }
 

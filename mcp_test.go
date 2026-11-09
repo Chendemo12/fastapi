@@ -602,6 +602,133 @@ func TestMCPProviderAuthFuncDefault(t *testing.T) {
 	}
 }
 
+// statusAuthProvider rejects every request and lets tests control the HTTP
+// status and response headers set by AuthFunc.
+type statusAuthProvider struct {
+	BaseMCPProvider
+	status  int
+	headers map[string]string
+}
+
+func (p *statusAuthProvider) Prefix() string { return "statusauth" }
+
+func (p *statusAuthProvider) ToolPing(c *Context) (string, error) { return "pong", nil }
+
+func (p *statusAuthProvider) AuthFunc(c *Context) error {
+	if p.status != 0 {
+		c.Status(p.status)
+	}
+	for k, v := range p.headers {
+		c.MuxContext().Header(k, v)
+	}
+	return errors.New("access denied")
+}
+
+func newStatusAuthHandler(t *testing.T, p *statusAuthProvider) *MCPHandler {
+	t.Helper()
+	meta := NewMCPProviderMeta(p)
+	if err := meta.Init(); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	return NewMCPHandler([]*MCPProviderMeta{meta}, "TestApp", "1.0.0")
+}
+
+func TestMCPAuthFailureDefaultStatus(t *testing.T) {
+	h := newStatusAuthHandler(t, &statusAuthProvider{})
+	f := newFakeMuxContext(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`)
+
+	if err := h.ServeMCP(f); err != nil {
+		t.Fatalf("ServeMCP failed: %v", err)
+	}
+	if f.status != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", f.status)
+	}
+	resp, ok := f.jsonData.(*mcpJSONRPCResponse)
+	if !ok {
+		t.Fatalf("unexpected response type %T", f.jsonData)
+	}
+	if resp.Error == nil || resp.Error.Code != errInternal {
+		t.Errorf("expected auth error, got %v", resp.Error)
+	}
+}
+
+func TestMCPAuthFailureCustomStatus(t *testing.T) {
+	h := newStatusAuthHandler(t, &statusAuthProvider{status: http.StatusForbidden})
+	f := newFakeMuxContext(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)
+
+	if err := h.ServeMCP(f); err != nil {
+		t.Fatalf("ServeMCP failed: %v", err)
+	}
+	if f.status != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", f.status)
+	}
+}
+
+func TestMCPAuthFailureKeepsHeaders(t *testing.T) {
+	h := newStatusAuthHandler(t, &statusAuthProvider{
+		status:  http.StatusUnauthorized,
+		headers: map[string]string{"WWW-Authenticate": "Bearer realm=mcp"},
+	})
+	f := newFakeMuxContext(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)
+
+	if err := h.ServeMCP(f); err != nil {
+		t.Fatalf("ServeMCP failed: %v", err)
+	}
+	if got := f.headers["WWW-Authenticate"]; got != "Bearer realm=mcp" {
+		t.Errorf("expected WWW-Authenticate header, got %q", got)
+	}
+	if f.status != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", f.status)
+	}
+}
+
+func TestMCPAuthStatusNotLeakedToNextRequest(t *testing.T) {
+	reject := newStatusAuthHandler(t, &statusAuthProvider{status: http.StatusForbidden})
+	f1 := newFakeMuxContext(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)
+	if err := reject.ServeMCP(f1); err != nil {
+		t.Fatalf("ServeMCP failed: %v", err)
+	}
+	if f1.status != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", f1.status)
+	}
+
+	// The auth Context and its pooled Response are released after the request;
+	// a subsequent success must not inherit the previous status.
+	ok := newStatelessTestHandler(t)
+	f2 := newFakeMuxContext(`{"jsonrpc":"2.0","id":2,"method":"ping"}`)
+	if err := ok.ServeMCP(f2); err != nil {
+		t.Fatalf("ServeMCP failed: %v", err)
+	}
+	if f2.status != http.StatusOK {
+		t.Errorf("expected 200 after pool reuse, got %d", f2.status)
+	}
+}
+
+func TestMCPAuthFailureBatchRejectsWholeRequest(t *testing.T) {
+	h := newStatusAuthHandler(t, &statusAuthProvider{})
+	f := newFakeMuxContext(`[
+		{"jsonrpc":"2.0","id":1,"method":"ping"},
+		{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+	]`)
+
+	if err := h.ServeMCP(f); err != nil {
+		t.Fatalf("ServeMCP failed: %v", err)
+	}
+	if f.status != http.StatusUnauthorized {
+		t.Errorf("expected 401 for batch auth failure, got %d", f.status)
+	}
+	if _, ok := f.jsonData.([]*mcpJSONRPCResponse); ok {
+		t.Errorf("batch auth failure must reject the whole request, got per-message responses")
+	}
+	resp, ok := f.jsonData.(*mcpJSONRPCResponse)
+	if !ok {
+		t.Fatalf("unexpected response type %T", f.jsonData)
+	}
+	if resp.Error == nil || resp.Error.Code != errInternal {
+		t.Errorf("expected auth error, got %v", resp.Error)
+	}
+}
+
 // =================================== Stateless MCP Handler Tests ===================================
 
 // fakeMuxContext is a minimal MuxContext implementation for handler tests.
