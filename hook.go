@@ -253,7 +253,7 @@ func pathParamsValidate(c *Context, route RouteIface, stopImmediately bool) []*o
 				Loc:  []string{"path", p.SchemaTitle()},
 				Msg:  PathPsIsEmpty,
 				Type: string(openapi.StringType), // 路径参数都是字符串类型
-				Ctx:  whereClientError,
+				Ctx:  clientErrorCtx(),
 			})
 			if stopImmediately {
 				break
@@ -292,7 +292,7 @@ func queryParamsValidate(c *Context, route RouteIface, stopImmediately bool) []*
 					Loc:  []string{"query", q.JsonName()},
 					Msg:  QueryPsIsEmpty,
 					Type: string(q.DataType),
-					Ctx:  whereClientError,
+					Ctx:  clientErrorCtx(),
 				})
 				if stopImmediately {
 					break
@@ -313,7 +313,12 @@ func queryParamsValidate(c *Context, route RouteIface, stopImmediately bool) []*
 			continue
 		}
 
-		sv := v.(string)
+		sv, ok := v.(string)
+		if !ok {
+			// 该参数已被同名校验器转换过（例如结构体字段与函数参数同名），
+			// 此处不能再按字符串处理，否则会触发类型断言 panic。
+			continue
+		}
 		value, err := binder.Validate(c, sv)
 		if err != nil {
 			ves = append(ves, err...)

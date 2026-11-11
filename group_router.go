@@ -254,7 +254,7 @@ func (r *GroupRouterMeta) scanMethod() (err error) {
 		swagger.Url = r.scanPath(swagger, method)
 		swagger.Summary = r.scanSummary(swagger, method)
 		swagger.Description = r.scanDescription(swagger, method)
-		swagger.Tags = append(r.tags)
+		swagger.Tags = append(swagger.Tags, r.tags...)
 
 		r.routes = append(r.routes, NewGroupRoute(swagger, method, r))
 	}

@@ -1,5 +1,42 @@
 # CHANGELOG
 
+## 0.3.8 - (2026-11-11)
+
+### Fix
+
+- **修复结构体查询参数（GET/DELETE）数值、布尔、时间类型必然失败的历史缺陷**：
+    - `ScanHelper.InferQueryBinder` 对结构体字段（`QModel.InStruct`）改用查询名（`JsonName`）作为校验器名称，
+      此前使用 Go 字段名（`SchemaTitle`），导致 `Context.queryFields` 取名失败、**类型转换被整段跳过**，
+      参数始终以 URL 原始字符串进入结构体绑定；
+    - 典型表现：`?size=3&unreadOnly=true` 返回 500（并触发 panic）而非 200；`?size=abc` 返回 500 而非 422；
+      `?startAt=2024-01-02` 等非 RFC3339 的 `time.Time` 参数同样失败；
+    - 新增 `ScanHelper.InferParamBinderWithName`，允许显式指定校验器名称；`InferParamBinder` 签名与行为保持不变；
+    - 附带修正：结构体字段校验错误的 `loc` 由 Go 字段名变为查询名，与 OpenAPI 文档声明一致；
+- **修复 `ParseJsoniterError` 下标越界 panic**：
+    - 分割后的长度判断由恒真的 `len(msgs) >= jsonErrorFieldMsgIndex+1`（即 `>=1`）改为 `len(msgs) > jsonErrorFormIndex`；
+    - 该解析逻辑仅适用于 json-iterator 的错误文本，本项目实际使用 sonic / encoding/json（错误文本不含 `|`），
+      修复前任何非 jsoniter 文本都会越界 panic；
+    - 解析失败时以原始错误文本兜底，`Msg` 不再为空；sonic 的多行上下文只保留首行；
+    - 移除 `msgs[0][len(ve.Loc[1])+2:]` 的潜在越界写法；
+    - 该函数同时服务请求体校验（fiber 适配器）与 multipart json 参数校验，一并修复；
+- **修复校验错误上下文复用包级 map 导致的跨请求污染与 data race**：
+    - `whereClientError` / `whereServerError` 不再直接作为 `ValidationError.Ctx` 暴露给调用方；
+    - 新增 `clientErrorCtx()` / `serverErrorCtx()`，每次返回全新 map；`ParseValidatorError` 内部同样改为局部新建；
+    - 此前一次请求体校验错误会把 `param description` 写入全局 map，导致后续**查询参数**错误的响应里出现残留字段；
+- **修复 `hook.go` 中的裸类型断言 panic**：`queryParamsValidate` 中 `v.(string)` 改为带 `ok` 判断，
+  避免结构体字段与函数参数同名时，第二个校验器收到已转换的 `int64`/`bool` 而 panic；
+- 修复 `go vet` 告警：`GroupRouterMeta.scanMethod` 中 `swagger.Tags = append(r.tags)` 改为追加语义，
+  避免多条路由共享同一个 tags 切片。
+
+### Test
+
+- 新增 `validate_error_test.go`：覆盖 `ParseJsoniterError` 对纯文本 / encoding/json / sonic 多行 /
+  `|` 分隔不足 / jsoniter 格式文本的处理（均不得 panic），以及 `Ctx` 在多次调用间相互隔离；
+- 新增 `test/query_bind_test.go`：以真实 HTTP 覆盖结构体查询参数的
+  `string/int/int64/float64/bool/time.Time` 绑定（含负数、`int64` 精度、空值与缺参取零值），
+  以及非法整数 / 整数溢出 / 非法布尔 / 非法时间返回 422 且 `loc` 为查询名，
+  同时回归"纯字符串结构体"的历史写法行为不变。
+
 ## 0.3.7 - (2026-11-09)
 
 ### BREAKING

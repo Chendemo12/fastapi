@@ -43,6 +43,19 @@ var validateErrorTagLabel = "tag"
 var whereServerError = map[string]any{whereErrorLabel: "server"}
 var whereClientError = map[string]any{whereErrorLabel: "client"}
 
+// clientErrorCtx 返回一个全新的“客户端错误”上下文。
+//
+// 校验错误的 Ctx 会被上层继续写入（例如 modelDescLabel），若复用包级 map，
+// 会造成跨请求污染以及并发写入的 data race。因此所有对外暴露的 Ctx 必须新建。
+func clientErrorCtx() map[string]any {
+	return map[string]any{whereErrorLabel: whereClientError[whereErrorLabel]}
+}
+
+// serverErrorCtx 返回一个全新的“服务端错误”上下文，语义同 clientErrorCtx
+func serverErrorCtx() map[string]any {
+	return map[string]any{whereErrorLabel: whereServerError[whereErrorLabel]}
+}
+
 // ModelBinder 参数模型校验
 type ModelBinder interface {
 	Name() string                           // 名称，用来区分不同实现
@@ -124,7 +137,7 @@ func (m *IntModelBinder[T]) Validate(c *Context, requestParam any) (any, []*open
 				Loc:  []string{string(m.paramType), m.modelName},
 				Msg:  fmt.Sprintf("value: '%s' is not an integer", requestParam),
 				Type: string(openapi.IntegerType),
-				Ctx:  whereClientError,
+				Ctx:  clientErrorCtx(),
 			}}
 		}
 		return result, m.valid(result)
@@ -143,7 +156,7 @@ func (m *IntModelBinder[T]) Validate(c *Context, requestParam any) (any, []*open
 			Loc:  []string{string(m.paramType), m.modelName},
 			Msg:  fmt.Sprintf("value: '%s' is not an integer", requestParam),
 			Type: string(openapi.IntegerType),
-			Ctx:  whereClientError,
+			Ctx:  clientErrorCtx(),
 		}}
 	}
 }
@@ -189,7 +202,7 @@ func (m *UintModelBinder[T]) Validate(c *Context, requestParam any) (any, []*ope
 				Loc:  []string{string(m.paramType), m.modelName},
 				Msg:  fmt.Sprintf("value: '%s' is not an integer", requestParam),
 				Type: string(openapi.IntegerType),
-				Ctx:  whereClientError,
+				Ctx:  clientErrorCtx(),
 			}}
 		}
 		return result, m.valid(result)
@@ -208,7 +221,7 @@ func (m *UintModelBinder[T]) Validate(c *Context, requestParam any) (any, []*ope
 			Loc:  []string{string(m.paramType), m.modelName},
 			Msg:  fmt.Sprintf("value: '%s' is not an integer", requestParam),
 			Type: string(openapi.IntegerType),
-			Ctx:  whereClientError,
+			Ctx:  clientErrorCtx(),
 		}}
 	}
 }
@@ -251,7 +264,7 @@ func (m *FloatModelBinder[T]) Validate(c *Context, requestParam any) (any, []*op
 			Loc:  []string{string(m.paramType), m.modelName},
 			Msg:  fmt.Sprintf("value: '%s' is not an number", requestParam),
 			Type: string(openapi.NumberType),
-			Ctx:  whereClientError,
+			Ctx:  clientErrorCtx(),
 		})
 		//} else {
 		// 暂不验证范围
@@ -294,7 +307,7 @@ func (m *BoolModelBinder) Validate(c *Context, requestParam any) (any, []*openap
 			Loc:  []string{"query", m.modelName},
 			Msg:  fmt.Sprintf("value: '%s' is not a bool", sv),
 			Type: string(openapi.BoolType),
-			Ctx:  whereClientError,
+			Ctx:  clientErrorCtx(),
 		})
 		return false, ves
 	}
@@ -394,7 +407,7 @@ func (m *TimeModelBinder) Validate(c *Context, requestParam any) (any, []*openap
 		Loc:  []string{"query", m.modelName},
 		Msg:  fmt.Sprintf("value: '%s' is not a time, err:%v", sv, err),
 		Type: string(openapi.StringType),
-		Ctx:  whereClientError,
+		Ctx:  clientErrorCtx(),
 	})
 	return nil, ves
 }
@@ -432,7 +445,7 @@ func (m *DateModelBinder) Validate(c *Context, requestParam any) (any, []*openap
 		Loc:  []string{"query", m.modelName},
 		Msg:  fmt.Sprintf("value: '%s' is not a date, err:%v", sv, err),
 		Type: string(openapi.StringType),
-		Ctx:  whereClientError,
+		Ctx:  clientErrorCtx(),
 	})
 	return nil, ves
 }
@@ -482,7 +495,7 @@ func (m *DateTimeModelBinder) Validate(c *Context, requestParam any) (any, []*op
 			Loc:  []string{"query", m.modelName},
 			Msg:  fmt.Sprintf("value: '%s' is not a datetime, err:%s", sv, err.Error()),
 			Type: string(openapi.StringType),
-			Ctx:  whereClientError,
+			Ctx:  clientErrorCtx(),
 		})
 	}
 
@@ -565,7 +578,7 @@ func (m *FileModelBinder) Validate(c *Context, requestParam any) (any, []*openap
 			Loc:  []string{"requestBody", "multiform-data"},
 			Msg:  "read multiform failed",
 			Type: string(openapi.ObjectType),
-			Ctx:  whereClientError,
+			Ctx:  clientErrorCtx(),
 		}}
 	}
 
@@ -575,7 +588,7 @@ func (m *FileModelBinder) Validate(c *Context, requestParam any) (any, []*openap
 			Loc:  []string{"requestBody", "multiform-data", openapi.MultipartFormFileName},
 			Msg:  fmt.Sprintf("'%s' value not found", openapi.MultipartFormFileName),
 			Type: string(openapi.ObjectType),
-			Ctx:  whereClientError,
+			Ctx:  clientErrorCtx(),
 		}}
 	}
 	c.file = &File{files}
@@ -608,7 +621,7 @@ func (m *FileWithParamModelBinder) Validate(c *Context, requestParam any) (any, 
 			Loc:  []string{"requestBody", "multiform-data", openapi.MultipartFormParamName},
 			Msg:  fmt.Sprintf("'%s' value not found", openapi.MultipartFormParamName),
 			Type: string(openapi.ObjectType),
-			Ctx:  whereClientError,
+			Ctx:  clientErrorCtx(),
 		}}
 	}
 
@@ -802,34 +815,50 @@ func ParseJsoniterError(err error, loc openapi.RouteParamType, objName string) *
 	//		"sex": "F"
 	// 	}|...
 	msg := err.Error()
-	var where map[string]any
+
+	ve := &openapi.ValidationError{Loc: []string{string(loc)}}
 	if loc == openapi.RouteParamResponse {
-		where = whereServerError
+		ve.Ctx = serverErrorCtx()
 	} else {
-		where = whereClientError
+		ve.Ctx = clientErrorCtx()
 	}
-	ve := &openapi.ValidationError{Loc: []string{string(loc)}, Ctx: where}
 	if objName != "" {
 		ve.Loc = append(ve.Loc, objName)
 	}
 
-	for i := 0; i < len(msg); i++ {
-		if msg[i:i+1] == ":" {
+	// 兜底: 非 jsoniter 文本的解析结果为原始错误消息，且 Message 不允许为空
+	veMsg := msg
+
+	// 仅当确实是 jsoniter 的错误文本（至少 4 段）时才按该格式解析。
+	// 注意: 本项目实际使用 sonic / encoding/json，其错误文本不含 '|'，
+	// 若不做长度判断会直接越界 panic（历史缺陷）。
+	msgs := strings.Split(msg, jsoniterUnmarshalErrorSeparator)
+	if len(msgs) > jsonErrorFormIndex {
+		if i := strings.IndexByte(msg, ':'); i > 0 {
 			ve.Loc = append(ve.Loc, msg[:i])
-			break
+		}
+		if err = utils.JsonUnmarshal([]byte(msgs[jsonErrorFormIndex]), &ve.Ctx); err == nil {
+			reason := msgs[jsonErrorFieldMsgIndex]
+			// 去掉错误原因前缀 "字段名: "
+			if len(ve.Loc) > 0 {
+				if i := strings.IndexByte(reason, ':'); i > 0 {
+					reason = strings.TrimSpace(reason[i+1:])
+				}
+			}
+			if s := strings.Split(reason, ":"); len(s) > 0 && s[0] != "" {
+				ve.Type = strings.TrimSpace(s[0])
+			}
+			if reason != "" {
+				veMsg = reason
+			}
 		}
 	}
-	if msgs := strings.Split(msg, jsoniterUnmarshalErrorSeparator); len(msgs) >= jsonErrorFieldMsgIndex+1 {
-		err = utils.JsonUnmarshal([]byte(msgs[jsonErrorFormIndex]), &ve.Ctx)
-		if err == nil {
-			if len(ve.Loc) >= 2 {
-				ve.Msg = msgs[jsonErrorFieldMsgIndex][len(ve.Loc[1])+2:]
-			}
-			if s := strings.Split(ve.Msg, ":"); len(s) > 0 {
-				ve.Type = s[0]
-			}
-		}
+
+	// sonic 的错误文本包含多行上下文，这里只保留首行，避免响应体被撑大
+	if i := strings.IndexAny(veMsg, "\r\n"); i > 0 {
+		veMsg = veMsg[:i]
 	}
+	ve.Msg = veMsg
 
 	return ve
 }
@@ -843,12 +872,10 @@ func ParseValidatorError(err error, loc openapi.RouteParamType, objName string) 
 
 	var vErr validator.ValidationErrors // validator的校验错误信息
 	var ves []*openapi.ValidationError
-	var where map[string]any
 
+	where := clientErrorCtx()
 	if loc == openapi.RouteParamResponse {
-		where = whereServerError
-	} else {
-		where = whereClientError
+		where = serverErrorCtx()
 	}
 
 	if ok := errors.As(err, &vErr); ok { // Validator的模型验证错误
